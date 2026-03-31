@@ -5,20 +5,26 @@ import json
 import uuid
 import re
 import os
+import io
 from datetime import datetime
+from PIL import Image
+import google.generativeai as genai
 
 # ==========================================
-# --- 1. 클라우드 연결 세팅 (다이렉트 방식) ---
+# --- 1. 클라우드 및 무료 AI(Gemini) 세팅 ---
 # ==========================================
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
-
 HEADERS = {
     "apikey": KEY,
     "Authorization": f"Bearer {KEY}",
     "Content-Type": "application/json",
     "Prefer": "return=representation"
 }
+
+# 구글 Gemini AI 키 세팅
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 # ==========================================
 # --- 2. 클라우드 DB 통신 도우미 함수들 ---
@@ -39,26 +45,21 @@ def upload_image_to_supabase(img_file, prefix="img"):
         file_bytes = img_file.getvalue()
         
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
-        img_headers = {
-            "apikey": KEY,
-            "Authorization": f"Bearer {KEY}",
-            "Content-Type": img_file.type
-        }
+        img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": img_file.type}
         
         res = requests.post(upload_url, headers=img_headers, data=file_bytes)
         if res.status_code == 200:
             return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
         return None
-    except Exception as e:
+    except Exception:
         return None
 
 # ==========================================
-# --- 3. 데이터 로드 및 시뮬레이션 함수 ---
+# --- 3. 데이터 로드 함수 ---
 # ==========================================
 def load_trade_data():
     res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
-    if res.status_code == 200 and res.json():
-        return pd.DataFrame(res.json())
+    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "date", "ticker", "timeframe", "setup_pattern", "position", "result", "rr_ratio", "profit", "chart_image_paths", "entry_basis", "exit_basis"])
 
 def load_archive_data():
@@ -75,83 +76,65 @@ def load_theory_db():
     db_dict = {}
     if res.status_code == 200 and res.json():
         for row in res.json():
-            cat = row['category']
-            title = row['title']
+            cat, title = row['category'], row['title']
             if cat not in db_dict: db_dict[cat] = {}
-            db_dict[cat][title] = {
-                "content": row.get('content', ''),
-                "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []
-            }
+            db_dict[cat][title] = {"content": row.get('content', ''), "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []}
     else:
         db_dict = {"기본 카테고리": {"환영합니다!": {"content": "새로운 이론을 추가해 보세요.", "images": []}}}
     return db_dict
 
-# --- 이미지 렌더링 도우미 (클라우드 URL 방식 적용) ---
+# ==========================================
+# --- 4. 🚀 무료 AI(Gemini) 텍스트 추출 & 분석 함수 ---
+# ==========================================
+def get_real_ocr_text(image_url):
+    if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
+    try:
+        # 이미지를 다운로드 받아 AI에게 보여줄 준비를 합니다.
+        res = requests.get(image_url)
+        img = Image.open(io.BytesIO(res.content))
+        
+        # 가장 빠르고 똑똑한 무료 모델(1.5 Flash) 사용
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(["이 이미지에 적힌 텍스트를 모두 추출해줘. 요약하거나 다른 말을 덧붙이지 말고 원본 글자만 그대로 출력해줘.", img])
+        return response.text
+    except Exception as e:
+        return f"텍스트 추출 실패: {e}"
+
+def get_real_ai_advice(image_url, ticker):
+    if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
+    try:
+        res = requests.get(image_url)
+        img = Image.open(io.BytesIO(res.content))
+        
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘."
+        response = model.generate_content([prompt, img])
+        return response.text
+    except Exception as e:
+        return f"AI 분석 실패: {e}"
+
+# --- 렌더링 도우미 ---
 def render_blog_image_html(url):
-    return f"""
-        <div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;">
-            <img src="{url}" 
-                 style="max-width: 100%; max-height: 80vh; width: auto; height: auto; 
-                        object-fit: contain; image-rendering: -webkit-optimize-contrast; 
-                        border: 1px solid #ddd; padding: 2px;" />
-        </div>
-    """
+    return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
 
 def render_crisp_image_html(url):
-    return f"""
-        <div style="width: 100%; display: flex; justify-content: center; margin-bottom: 10px;">
-            <img src="{url}" 
-                 style="max-width: 100%; max-height: 80vh; width: auto; height: auto; 
-                        object-fit: contain; image-rendering: -webkit-optimize-contrast; 
-                        image-rendering: crisp-edges; 
-                        border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" />
-        </div>
-    """
+    return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 10px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; image-rendering: crisp-edges; border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" /></div>'
 
 def get_file_group_info(filename):
     name_without_ext = os.path.splitext(filename)[0]
     matches = re.findall(r'(\d+)(?:-(\d+))?', name_without_ext)
     if matches:
         last_match = matches[-1]
-        group = last_match[0] 
-        sub = last_match[1] if last_match[1] else '0' 
-        return group, int(sub)
+        return last_match[0], int(last_match[1] if last_match[1] else '0')
     return str(uuid.uuid4().hex[:4]), 0
-
-# (영우님의 AI & OCR 텍스트 로직 그대로 유지)
-def get_simulated_ai_advice_per_chart(chart_num, ticker):
-    ticker_upper = ticker.upper() if ticker else "해당 종목"
-    return f"포스팅 내용과 {ticker_upper} 차트를 교차 검증한 결과입니다.\n\n현재 캔들이 주요 지지/저항 라인에서 유의미한 반응(꼬리 달림 등)을 보이고 있습니다. 하위 프레임에서의 구조 변화(CH)를 확인한 후 진입하는 것이 안전합니다."
-
-def get_simulated_ocr_text(chart_num, date_str):
-    if "03-25" in date_str or "03-28" in date_str:
-        mapping_25 = {
-            '2': "↑ 트레이딩 현황\n\n롱포지션은 짧게 스탑로스가 발동되어 종료되었습니다.\n\n이후 약 1.7%가 더 하락하며, 나름 타이트하게 잘 잘라냈던 것 같네요.\n\n앞으로의 대응은 밑에 차트 보면서 차근차근 살펴보겠습니다.",
-            '3': "↑ 비트코인 1시간\n\n최근 활용했던 주요 상승 추세선(파랑)은 이제 사실상 트레이딩에 활용할 수 없습니다.\n\n현재의 움직임을 살펴보면, 추세선이 거의 없는 듯 의식하지 않고 움직이고 있습니다.",
-            '4': "↑ 비트코인 날봉\n\n첫 번째로는 날봉 오더블럭 입니다.\n\n새벽의 하락은 이 FVG에서 멈췄고, 반등까지 강력하게 나오고 있는 모습을 보여주고 있습니다."
-        }
-        return mapping_25.get(chart_num, "")
-    elif "03-30" in date_str or "03-31" in date_str:
-        mapping_30 = {
-            '2': "↑ AMD 구조\n\n↑ 비트코인 30분봉\n\n현재 비트코인을 단기적으로 보면, AMD 구조가 출현했습니다.\n\nAMD 구조는 그리 어려운 구조는 아닙니다.\n\n* 축적 = 횡보\n* 조작 = Fake out 혹은 Trap 혹은 유동성 흡수\n* 분배 = 패턴 컨펌 후 추세 출현",
-            '3': "↑ 비트코인 6시간봉\n\n현재 메인 상승 추세선(파랑)을 기준으로 움직이고 있습니다.\n\n메인 추세선을 하향 돌파 이후, 다시 상향 돌파하면서 Trap 패턴을 형성해준 것으로 보여지네요."
-        }
-        return mapping_30.get(chart_num, "")
-    else:
-        return ""
 
 # ==========================================
 # --- 화면 구성 시작 ---
 # ==========================================
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
-st.title("📈 나만의 클라우드 매매 복기 & 분석 시스템")
+st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
-st.markdown("""
-<style>
-    div[data-testid="stInfo"] p { font-size: 1.1rem; }
-    div[data-testid="stError"] p { font-size: 1.1rem; }
-</style>
-""", unsafe_allow_html=True)
+st.markdown("""<style>div[data-testid="stInfo"] p { font-size: 1.1rem; } div[data-testid="stError"] p { font-size: 1.1rem; }</style>""", unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 차트 분석 도구 (AI)", "📚 기본 이론 & DB", "📊 통계", "📁 분석 자료 아카이브"])
 
@@ -182,18 +165,9 @@ with tab1:
             if st.form_submit_button("☁️ 클라우드에 기록 저장", type="primary", use_container_width=True):
                 if not ticker: st.error("종목명을 입력해주세요!")
                 else:
-                    saved_urls = []
-                    if uploaded_images:
-                        for img in uploaded_images:
-                            url = upload_image_to_supabase(img, "trade")
-                            if url: saved_urls.append(url)
-                            
-                    insert_data = {
-                        "date": date.strftime("%Y-%m-%d"), "ticker": ticker, "timeframe": timeframe,
-                        "setup_pattern": setup_pattern, "position": position, "result": result,
-                        "rr_ratio": rr_ratio, "profit": profit, "chart_image_paths": "|".join(saved_urls),
-                        "entry_basis": entry_basis, "exit_basis": exit_basis
-                    }
+                    saved_urls = [upload_image_to_supabase(img, "trade") for img in (uploaded_images or [])]
+                    saved_urls = [u for u in saved_urls if u]
+                    insert_data = {"date": date.strftime("%Y-%m-%d"), "ticker": ticker, "timeframe": timeframe, "setup_pattern": setup_pattern, "position": position, "result": result, "rr_ratio": rr_ratio, "profit": profit, "chart_image_paths": "|".join(saved_urls), "entry_basis": entry_basis, "exit_basis": exit_basis}
                     insert_db("trade_history", insert_data)
                     st.success("성공적으로 저장되었습니다!")
                     st.rerun()
@@ -218,8 +192,7 @@ with tab1:
             
             c_chart, c_memo = st.columns([6, 4], gap="large")
             with c_chart:
-                urls = str(trade_data.get("chart_image_paths", "")).split("|")
-                for u in urls:
+                for u in str(trade_data.get("chart_image_paths", "")).split("|"):
                     if u: st.markdown(render_crisp_image_html(u), unsafe_allow_html=True)
             with c_memo:
                 with st.form(f"edit_tr_{trade_id}"):
@@ -234,10 +207,10 @@ with tab4: st.header("📊 통계 (준비중)")
 with tab3: st.header("📚 이론 DB (준비중)")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (영우님 커스텀 UI 완벽 복구!) ---
+# --- Tab 5: 분석 아카이브 (무료 Gemini 연동 완료!) ---
 # ==============================
 with tab5:
-    st.header("📁 분석 자료 아카이브")
+    st.header("📁 분석 자료 아카이브 (AI 자동화)")
     df_archive = load_archive_data()
     sub_tab_a, sub_tab_b = st.tabs(["👨‍🏫 타인 분석 스크랩", "👀 나의 관점 (Watchlist)"])
     
@@ -246,10 +219,10 @@ with tab5:
             col_up1, col_up2 = st.columns(2)
             with col_up1:
                 st.markdown("### 🖼️ 1. 포스팅 원본 (블로그/글 캡처)")
-                arch_imgs_blog = st.file_uploader("인사이트 내용 캡처", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="arch_imgs_blog", label_visibility="collapsed")
+                arch_imgs_blog = st.file_uploader("인사이트 내용 캡처 (AI가 자동으로 텍스트 추출)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="arch_imgs_blog", label_visibility="collapsed")
             with col_up2:
                 st.markdown("### 🔍 2. 세부 고해상도 차트")
-                arch_imgs_detail = st.file_uploader("고해상도 차트 (예: 차트2-1.png)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="arch_imgs_detail", label_visibility="collapsed")
+                arch_imgs_detail = st.file_uploader("고해상도 차트 (AI가 차트를 분석합니다)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="arch_imgs_detail", label_visibility="collapsed")
             
             with st.form("archive_form_others", clear_on_submit=True):
                 col1, col2, col3 = st.columns(3)
@@ -261,43 +234,45 @@ with tab5:
                 if arch_imgs_detail:
                     st.divider()
                     st.markdown("### 🤖 세부 차트 AI 조언 요청")
-                    st.caption("기본적으로 업로드된 모든 세부 차트에 대해 AI 조언이 생성됩니다.")
                     chart_names_for_ai = [f"{img_file.name}" for img_file in arch_imgs_detail]
                     selected_charts_for_ai = st.multiselect("AI 조언을 받을 차트(들)를 선택하세요.", chart_names_for_ai, default=chart_names_for_ai)
                 
-                if st.form_submit_button("☁️ 스크랩 클라우드 저장", use_container_width=True, type="primary"):
+                if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
                     if not arch_ticker1: st.error("종목명을 입력해주세요!")
                     else:
-                        blog_urls, detail_urls = [], []
-                        ai_advice_final_mapping, ocr_final_mapping = {}, {}
-                        date_str = arch_date1.strftime("%Y-%m-%d")
-                        
-                        if arch_imgs_blog:
-                            arch_imgs_blog = sorted(arch_imgs_blog, key=lambda x: int(get_file_group_info(x.name)[0]) if get_file_group_info(x.name)[0].isdigit() else 9999)
-                            for img_file in arch_imgs_blog:
-                                group, sub = get_file_group_info(img_file.name)
-                                url = upload_image_to_supabase(img_file, f"arch_blog_{group}_{sub}")
-                                if url:
-                                    blog_urls.append(url)
-                                    ocr_final_mapping[group] = get_simulated_ocr_text(group, date_str)
-                        
-                        if arch_imgs_detail:
-                            for img_file in arch_imgs_detail:
-                                group, sub = get_file_group_info(img_file.name)
-                                url = upload_image_to_supabase(img_file, f"arch_detail_{group}_{sub}")
-                                if url:
-                                    detail_urls.append(url)
-                                    if img_file.name in selected_charts_for_ai:
-                                        ai_advice_final_mapping[group] = get_simulated_ai_advice_per_chart(group, arch_ticker1)
+                        with st.spinner("무료 AI(Gemini)가 차트를 분석 중입니다... 잠시만 기다려주세요! 🤖"):
+                            blog_urls, detail_urls = [], []
+                            ai_advice_final_mapping, ocr_final_mapping = {}, {}
+                            date_str = arch_date1.strftime("%Y-%m-%d")
+                            
+                            if arch_imgs_blog:
+                                arch_imgs_blog = sorted(arch_imgs_blog, key=lambda x: int(get_file_group_info(x.name)[0]) if get_file_group_info(x.name)[0].isdigit() else 9999)
+                                for img_file in arch_imgs_blog:
+                                    group, sub = get_file_group_info(img_file.name)
+                                    url = upload_image_to_supabase(img_file, f"arch_blog_{group}_{sub}")
+                                    if url:
+                                        blog_urls.append(url)
+                                        # ✨ [자동화 1] Gemini가 원본 사진의 텍스트를 무료로 추출!
+                                        ocr_final_mapping[group] = get_real_ocr_text(url)
+                            
+                            if arch_imgs_detail:
+                                for img_file in arch_imgs_detail:
+                                    group, sub = get_file_group_info(img_file.name)
+                                    url = upload_image_to_supabase(img_file, f"arch_detail_{group}_{sub}")
+                                    if url:
+                                        detail_urls.append(url)
+                                        if img_file.name in selected_charts_for_ai:
+                                            # ✨ [자동화 2] Gemini가 차트를 보고 분석 조언을 무료로 작성!
+                                            ai_advice_final_mapping[group] = get_real_ai_advice(url, arch_ticker1)
 
-                        insert_data = {
-                            "date": date_str, "ticker": arch_ticker1, "category": "타인분석", "source_view": arch_source1,
-                            "chart_image_paths": "|".join(blog_urls), "detail_image_paths": "|".join(detail_urls), "memo": "",
-                            "ai_advice_mapping": json.dumps(ai_advice_final_mapping, ensure_ascii=False),
-                            "ocr_text_mapping": json.dumps(ocr_final_mapping, ensure_ascii=False)
-                        }
-                        insert_db("analysis_archive", insert_data)
-                        st.success("클라우드 DB에 스크랩 완료!")
+                            insert_data = {
+                                "date": date_str, "ticker": arch_ticker1, "category": "타인분석", "source_view": arch_source1,
+                                "chart_image_paths": "|".join(blog_urls), "detail_image_paths": "|".join(detail_urls), "memo": "",
+                                "ai_advice_mapping": json.dumps(ai_advice_final_mapping, ensure_ascii=False),
+                                "ocr_text_mapping": json.dumps(ocr_final_mapping, ensure_ascii=False)
+                            }
+                            insert_db("analysis_archive", insert_data)
+                        st.success("무료 AI 분석 및 클라우드 저장 완료!")
                         st.rerun()
 
         df_others = df_archive[df_archive['category'] == '타인분석'].copy()
@@ -326,7 +301,6 @@ with tab5:
                         with c1: new_date = st.date_input("날짜", value=pd.to_datetime(arch_data['date']).date())
                         with c2: new_ticker = st.text_input("종목명", value=arch_data['ticker'])
                         with c3: new_source = st.text_input("출처_관점", value=arch_data['source_view'])
-                        
                         if st.form_submit_button("정보 업데이트", use_container_width=True):
                             update_db("analysis_archive", "id", arch_id_current, {"date": new_date.strftime("%Y-%m-%d"), "ticker": new_ticker.upper(), "source_view": new_source})
                             st.rerun()
@@ -340,7 +314,7 @@ with tab5:
                         st.rerun()
 
                 st.divider()
-                st.markdown("### 📄 고해상도 차트 및 분석 (메인 뷰어)")
+                st.markdown("### 📄 고해상도 차트 및 자동 AI 분석 결과")
                 
                 blog_path_str = arch_data.get("chart_image_paths", "")
                 detail_path_str = arch_data.get("detail_image_paths", "")
@@ -363,9 +337,7 @@ with tab5:
                         if group not in detail_dict: detail_dict[group] = []
                         detail_dict[group].append((sub, dp))
 
-                for group in detail_dict:
-                    detail_dict[group] = [x[1] for x in sorted(detail_dict[group])]
-
+                for group in detail_dict: detail_dict[group] = [x[1] for x in sorted(detail_dict[group])]
                 rendered_details = set()
                 total_blogs = len(valid_blogs)
 
@@ -394,18 +366,15 @@ with tab5:
                                         st.rerun()
                                     st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                 with c_det:
-                                    for mdp in matched_detail_paths:
-                                        st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
+                                    for mdp in matched_detail_paths: st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
                                 with c_txt:
-                                    if num in ai_advice_mapping and ai_advice_mapping[num]:
-                                        st.success(f"🤖 **{num}번 차트 종합 AI 조언**\n\n{ai_advice_mapping[num]}")
+                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                     display_txt = ocr_mapping.get(num, "").strip()
-                                    if display_txt: st.info(f"📄 **텍스트 추출**\n\n{display_txt}")
-                                    else: st.info(f"📄 **텍스트 추출**\n\n*(등록된 텍스트가 없습니다. 아래에서 직접 입력해주세요.)*")
-                                    
+                                    if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
+                                    else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
                                     with st.expander("✏️ 텍스트 입력/교정", expanded=False):
                                         with st.form(key=f"edit_ocr_open_{arch_id_current}_{num}"):
-                                            edited_ocr = st.text_area("내용을 입력하세요", value=display_txt, height=150)
+                                            edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                             if st.form_submit_button("클라우드 저장", use_container_width=True):
                                                 ocr_mapping[num] = edited_ocr
                                                 update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
@@ -413,22 +382,19 @@ with tab5:
                             else:
                                 c_det, c_txt = st.columns([7.5, 2.5], gap="medium")
                                 with c_det:
-                                    for mdp in matched_detail_paths:
-                                        st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
+                                    for mdp in matched_detail_paths: st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
                                 with c_txt:
                                     st.write("") 
                                     if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 데이터 보기", key=f"open_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = True
                                         st.rerun()
-                                    if num in ai_advice_mapping and ai_advice_mapping[num]:
-                                        st.success(f"🤖 **{num}번 차트 종합 AI 조언**\n\n{ai_advice_mapping[num]}")
+                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                     display_txt = ocr_mapping.get(num, "").strip()
-                                    if display_txt: st.info(f"📄 **텍스트 추출**\n\n{display_txt}")
-                                    else: st.info(f"📄 **텍스트 추출**\n\n*(등록된 텍스트가 없습니다. 아래에서 직접 입력해주세요.)*")
-                                    
+                                    if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
+                                    else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
                                     with st.expander("✏️ 텍스트 입력/교정", expanded=False):
                                         with st.form(key=f"edit_ocr_closed_{arch_id_current}_{num}"):
-                                            edited_ocr = st.text_area("내용을 입력하세요", value=display_txt, height=150)
+                                            edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                             if st.form_submit_button("클라우드 저장", use_container_width=True):
                                                 ocr_mapping[num] = edited_ocr
                                                 update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
@@ -440,15 +406,13 @@ with tab5:
                                 st.markdown(badge_html, unsafe_allow_html=True)
                                 st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                             with c_txt:
-                                if num in ai_advice_mapping and ai_advice_mapping[num]:
-                                    st.success(f"🤖 **{num}번 차트 AI 조언**\n\n{ai_advice_mapping[num]}")
+                                if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                 display_txt = ocr_mapping.get(num, "").strip()
-                                if display_txt: st.info(f"📄 **텍스트 추출**\n\n{display_txt}")
-                                else: st.info(f"📄 **텍스트 추출**\n\n*(등록된 텍스트가 없습니다. 아래에서 직접 입력해주세요.)*")
-                                
+                                if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
+                                else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
                                 with st.expander("✏️ 텍스트 입력/교정", expanded=False):
                                     with st.form(key=f"edit_ocr_alone_{arch_id_current}_{num}"):
-                                        edited_ocr = st.text_area("내용을 입력하세요", value=display_txt, height=150)
+                                        edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                         if st.form_submit_button("클라우드 저장", use_container_width=True):
                                             ocr_mapping[num] = edited_ocr
                                             update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
@@ -465,18 +429,15 @@ with tab5:
                         num = group
                         
                         c_u_img, c_u_txt = st.columns([7.5, 2.5], gap="medium")
-                        with c_u_img:
-                            st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
+                        with c_u_img: st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
                         with c_u_txt:
-                            if num in ai_advice_mapping and ai_advice_mapping[num]:
-                                st.success(f"🤖 **{num}번 차트 조언**\n\n{ai_advice_mapping[num]}")
+                            if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 조언**\n\n{ai_advice_mapping[num]}")
                             display_txt = ocr_mapping.get(num, "").strip()
-                            if display_txt: st.info(f"📄 **텍스트 추출**\n\n{display_txt}")
-                            else: st.info(f"📄 **텍스트 추출**\n\n*(등록된 텍스트가 없습니다. 아래에서 직접 입력해주세요.)*")
-                            
+                            if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
+                            else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
                             with st.expander("✏️ 텍스트 입력/교정", expanded=False):
                                 with st.form(key=f"edit_ocr_other_{arch_id_current}_{num}"):
-                                    edited_ocr = st.text_area("내용을 입력하세요", value=display_txt, height=150)
+                                    edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                     if st.form_submit_button("클라우드 저장", use_container_width=True):
                                         ocr_mapping[num] = edited_ocr
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
