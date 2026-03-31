@@ -89,12 +89,11 @@ def load_theory_db():
 def get_real_ocr_text(image_url):
     if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
     try:
-        # 이미지를 다운로드 받아 AI에게 보여줄 준비를 합니다.
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 가장 빠르고 똑똑한 무료 모델(1.5 Flash) 사용
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 💡 구글의 최신 무료 모델(2.5 Flash)로 이름 수정 완료!
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(["이 이미지에 적힌 텍스트를 모두 추출해줘. 요약하거나 다른 말을 덧붙이지 말고 원본 글자만 그대로 출력해줘.", img])
         return response.text
     except Exception as e:
@@ -106,7 +105,8 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 💡 구글의 최신 무료 모델(2.5 Flash)로 이름 수정 완료!
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘."
         response = model.generate_content([prompt, img])
         return response.text
@@ -207,7 +207,7 @@ with tab4: st.header("📊 통계 (준비중)")
 with tab3: st.header("📚 이론 DB (준비중)")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (무료 Gemini 연동 완료!) ---
+# --- Tab 5: 분석 아카이브 (무료 Gemini 최신버전 연동!) ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -240,7 +240,7 @@ with tab5:
                 if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
                     if not arch_ticker1: st.error("종목명을 입력해주세요!")
                     else:
-                        with st.spinner("무료 AI(Gemini)가 차트를 분석 중입니다... 잠시만 기다려주세요! 🤖"):
+                        with st.spinner("무료 AI(Gemini 최신버전)가 차트를 분석 중입니다... 잠시만 기다려주세요! 🤖"):
                             blog_urls, detail_urls = [], []
                             ai_advice_final_mapping, ocr_final_mapping = {}, {}
                             date_str = arch_date1.strftime("%Y-%m-%d")
@@ -252,7 +252,6 @@ with tab5:
                                     url = upload_image_to_supabase(img_file, f"arch_blog_{group}_{sub}")
                                     if url:
                                         blog_urls.append(url)
-                                        # ✨ [자동화 1] Gemini가 원본 사진의 텍스트를 무료로 추출!
                                         ocr_final_mapping[group] = get_real_ocr_text(url)
                             
                             if arch_imgs_detail:
@@ -262,7 +261,6 @@ with tab5:
                                     if url:
                                         detail_urls.append(url)
                                         if img_file.name in selected_charts_for_ai:
-                                            # ✨ [자동화 2] Gemini가 차트를 보고 분석 조언을 무료로 작성!
                                             ai_advice_final_mapping[group] = get_real_ai_advice(url, arch_ticker1)
 
                             insert_data = {
