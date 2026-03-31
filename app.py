@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 
 # ==========================================
-# --- 1. 클라우드 연결 세팅 (에러 없는 다이렉트 방식) ---
+# --- 1. 클라우드 연결 세팅 (다이렉트 방식) ---
 # ==========================================
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
@@ -38,7 +38,6 @@ def upload_image_to_supabase(img_file, prefix="img"):
         file_name = f"{prefix}_{uuid.uuid4().hex[:8]}.{file_ext}"
         file_bytes = img_file.getvalue()
         
-        # 스토리지 다이렉트 업로드 주소
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
         img_headers = {
             "apikey": KEY,
@@ -48,7 +47,6 @@ def upload_image_to_supabase(img_file, prefix="img"):
         
         res = requests.post(upload_url, headers=img_headers, data=file_bytes)
         if res.status_code == 200:
-            # 성공 시 외부에서 볼 수 있는 공용 URL 반환
             return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
         else:
             st.error("이미지 업로드 실패! 용량을 확인해주세요.")
@@ -111,9 +109,7 @@ st.title("☁️ 나만의 클라우드 매매 복기 & 분석 시스템")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 차트 분석 (AI)", "📚 기본 이론 & DB", "📊 통계", "📁 분석 아카이브"])
 
-# ==============================
-# --- Tab 1: 매매 기록 보관지 ---
-# ==============================
+# --- Tab 1 ~ 4 생략 (기존과 동일하게 유지) ---
 with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
@@ -201,9 +197,6 @@ with tab1:
 with tab2: st.header("🔎 차트 분석 (준비중)")
 with tab4: st.header("📊 통계 (준비중)")
 
-# ==============================
-# --- Tab 3: 기본 이론 & DB ---
-# ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
     theory_db = load_theory_db()
@@ -235,8 +228,7 @@ with tab3:
                                 url = upload_image_to_supabase(img, "theory")
                                 if url: saved_img_urls.append(url)
                         
-                        # 기존 이론 업데이트 또는 새로 추가
-                        update_db("theory_db", "title", add_title, {"content": add_content}) # 임시 로직 처리
+                        update_db("theory_db", "title", add_title, {"content": add_content}) 
                         insert_data = {
                             "category": add_cat,
                             "title": add_title,
@@ -269,7 +261,7 @@ with tab3:
                             st.rerun()
 
 # ==============================
-# --- Tab 5: 분석 아카이브 ---
+# --- Tab 5: 분석 아카이브 (매핑 복구 완료!) ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브")
@@ -328,11 +320,34 @@ with tab5:
                     delete_db("analysis_archive", "id", arch_id)
                     st.rerun()
             
-            blog_paths = str(arch_data.get("chart_image_paths", "")).split("|")
-            for url in blog_paths:
-                if url: st.markdown(render_blog_image_html(url), unsafe_allow_html=True)
+            # 클라우드 저장된 URL들을 파싱해서 다시 그룹핑하는 로직
+            blog_paths = [u for u in str(arch_data.get("chart_image_paths", "")).split("|") if u]
+            detail_paths = [u for u in str(arch_data.get("detail_image_paths", "")).split("|") if u]
             
-            detail_paths = str(arch_data.get("detail_image_paths", "")).split("|")
-            if any(detail_paths): st.markdown("### 🔍 세부 차트")
+            grouped_data = {}
+            
+            for url in blog_paths:
+                match = re.search(r'arch_blog_(\w+)_', url)
+                group = match.group(1) if match else "기타"
+                if group not in grouped_data: grouped_data[group] = {"blog": [], "detail": []}
+                grouped_data[group]["blog"].append(url)
+                
             for url in detail_paths:
-                if url: st.markdown(render_crisp_image_html(url), unsafe_allow_html=True)
+                match = re.search(r'arch_detail_(\w+)_', url)
+                group = match.group(1) if match else "기타"
+                if group not in grouped_data: grouped_data[group] = {"blog": [], "detail": []}
+                grouped_data[group]["detail"].append(url)
+
+            # 매핑된 그룹별로 예쁘게 화면에 출력!
+            for group, urls in sorted(grouped_data.items(), key=lambda x: str(x[0])):
+                st.markdown(f"### 📌 [세트 {group}] 원본 및 세부 차트")
+                
+                for b_url in urls["blog"]:
+                    st.markdown(render_blog_image_html(b_url), unsafe_allow_html=True)
+                
+                if urls["detail"]:
+                    cols = st.columns(len(urls["detail"]))
+                    for idx, d_url in enumerate(urls["detail"]):
+                        with cols[idx]:
+                            st.markdown(render_crisp_image_html(d_url), unsafe_allow_html=True)
+                st.divider()
