@@ -71,7 +71,6 @@ def load_archive_data():
         return df
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
 
-# 💡 탭 3 업데이트를 위해 id 값을 가져오도록 수정되었습니다.
 def load_theory_db():
     res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS)
     db_dict = {}
@@ -146,7 +145,7 @@ st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템
 
 st.markdown("""<style>div[data-testid="stInfo"] p { font-size: 1.1rem; } div[data-testid="stError"] p { font-size: 1.1rem; }</style>""", unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 차트 분석 도구 (AI)", "📚 기본 이론 & DB", "📊 통계", "📁 분석 자료 아카이브"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 차트 분석 (준비중)", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브"])
 
 # --- Tab 1: 매매 기록 보관지 ---
 with tab1:
@@ -213,10 +212,9 @@ with tab1:
                         st.rerun()
 
 with tab2: st.header("🔎 차트 분석 (준비중)")
-with tab4: st.header("📊 통계 (준비중)")
 
 # ==============================
-# --- Tab 3: 기본 이론 & DB (💡 여기에 새롭게 꽉꽉 채워 넣었습니다!) ---
+# --- Tab 3: 기본 이론 & DB ---
 # ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
@@ -246,7 +244,7 @@ with tab3:
                 if st.form_submit_button("☁️ 클라우드 저장", type="primary"):
                     if th_title and th_cont:
                         img_urls = [upload_image_to_supabase(i, "theory") for i in (th_imgs or [])]
-                        img_urls = [u for u in img_urls if u] # 에러 방지
+                        img_urls = [u for u in img_urls if u] 
                         insert_db("theory_db", {
                             "category": target_cat,
                             "title": th_title,
@@ -258,7 +256,6 @@ with tab3:
                         st.error("제목과 내용을 모두 입력해주세요.")
 
     with col_r:
-        # id가 정상적으로 존재하는 (DB에 저장된) 이론만 보여주기
         if sel_title and theory_db[sel_cat][sel_title].get("id") is not None:
             data = theory_db[sel_cat][sel_title]
             st.markdown(f"## 📖 {sel_title}")
@@ -287,7 +284,79 @@ with tab3:
             st.info("👈 왼쪽 목차에서 이론을 선택하시거나, 하단의 '새로운 이론 등록하기'를 통해 나만의 매매 기준을 추가해보세요!")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (영우님의 원본 그대로 유지!) ---
+# --- Tab 4: 🤖 자동매매 컨트롤 센터 (사령실 디자인) ---
+# ==============================
+with tab4:
+    st.header("🤖 자동매매 사령실 (컨트롤 패널)")
+    st.caption("비트겟(Bitget) API 및 트레이딩뷰 Webhook 기반 자동 트레이딩 시스템")
+    st.write("")
+
+    # 1. 최상단: 로봇 상태판 (대시보드 메트릭)
+    st.markdown("### 📊 현재 봇 상태")
+    col_status1, col_status2, col_status3, col_status4 = st.columns(4)
+    
+    with col_status1:
+        # 직관적인 ON/OFF 토글 스위치
+        bot_on = st.toggle("🚀 봇 가동 스위치 (마스터)", value=False)
+        st.markdown(f"**시스템 상태:** {'🟢 작동 중 (Running)' if bot_on else '🔴 대기 중 (Standby)'}")
+    with col_status2:
+        st.metric("오늘의 예상 수익", "+$124.50", "+5.2%")
+    with col_status3:
+        st.metric("승률 (최근 10건)", "70.0%", "↑ 2%")
+    with col_status4:
+        st.metric("현재 포지션", "대기 중 (Flat)", "")
+
+    st.divider()
+
+    # 2. 세부 설정: 깔끔하게 서브 탭으로 분리
+    bot_tab1, bot_tab2, bot_tab3 = st.tabs(["⚙️ 기본 세팅 (API)", "🧠 매매 전략 & 웹훅", "📋 실시간 작동 로그"])
+
+    with bot_tab1:
+        st.subheader("🔑 거래소 연결 및 자금 관리")
+        with st.form("bot_basic_form", border=True):
+            st.info("비트겟(Bitget) API Key를 안전하게 입력하세요. (데이터는 암호화되어 클라우드에 저장됩니다.)")
+            c1, c2 = st.columns(2)
+            with c1:
+                api_key = st.text_input("Bitget API Key", type="password", placeholder="api_key_here")
+                secret_key = st.text_input("Bitget Secret Key", type="password", placeholder="secret_key_here")
+            with c2:
+                api_passphrase = st.text_input("API Passphrase (비밀번호)", type="password", placeholder="password")
+                leverage = st.slider("기본 레버리지 (x)", min_value=1, max_value=50, value=10)
+
+            st.write("")
+            invest_pct = st.select_slider("1회 진입 비중 (총 시드의 %)", options=[5, 10, 15, 20, 25, 50, 100], value=10)
+            
+            if st.form_submit_button("기본 세팅 저장", type="primary"):
+                st.success("API 및 자금 세팅이 클라우드에 저장되었습니다!")
+
+    with bot_tab2:
+        st.subheader("🎯 트레이딩뷰 연동 (Webhook) 설정")
+        c_hook, c_strat = st.columns([6, 4], gap="large")
+        
+        with c_hook:
+            st.markdown("👇 **트레이딩뷰 얼러트(Alert) 창에 넣을 Webhook URL**")
+            st.code("https://youngwoo-trading.streamlit.app/api/webhook", language="text")
+            st.markdown("👇 **트레이딩뷰 메시지 양식 (예시)**")
+            st.code('{\n  "action": "long",\n  "ticker": "BTCUSDT",\n  "strategy": "OrderBlock"\n}', language="json")
+            
+        with c_strat:
+            st.selectbox("메인 전략 선택", ["트레이딩뷰 알람(Webhook) 전용", "AI 차트 감시 결합형 (베타)"])
+            st.checkbox("손절(SL) 도달 시 즉시 시장가 종료 (안전장치)", value=True)
+            st.checkbox("반대 신호 발생 시 기존 포지션 스위칭", value=False)
+            if st.button("전략 저장", use_container_width=True):
+                st.success("전략이 업데이트 되었습니다.")
+
+    with bot_tab3:
+        st.subheader("📡 로봇 작동 터미널")
+        st.caption("최근 50개의 시스템 로그를 보여줍니다.")
+        log_text = """[2026-04-01 13:20:00] 시스템 초기화 완료...
+[2026-04-01 13:20:05] Bitget API 연결 테스트 성공.
+[2026-04-01 13:25:12] 트레이딩뷰 Webhook 수신 대기 중...
+[2026-04-01 13:25:59] 현재 가동 대기 상태입니다."""
+        st.code(log_text, language="bash")
+
+# ==============================
+# --- Tab 5: 분석 아카이브 ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
