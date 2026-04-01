@@ -89,32 +89,44 @@ def load_theory_db():
     return db_dict
 
 # ==========================================
-# --- 4. 🚀 무료 AI(Gemini) 텍스트 추출 & 분석 함수 ---
+# --- 4. 🚀 무료 AI(Gemini) 궁극의 자동 추적 시스템 ---
 # ==========================================
-def ask_gemini_with_fallback(prompt, img):
-    # 💡 [핵심 방어 코드] 구글 서버 상태에 따라 사용 가능한 모델을 자동으로 찾아냅니다!
-    models_to_try = [
-        'gemini-1.5-flash-latest', 
-        'gemini-1.5-flash', 
-        'gemini-1.5-pro-latest', 
-        'gemini-1.5-pro'
-    ]
-    last_error = ""
-    for model_name in models_to_try:
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content([prompt, img])
-            return response.text
-        except Exception as e:
-            last_error = str(e)
-            # 404 에러(이름 못 찾음)면 즉시 다음 모델로 재시도!
-            if "404" in last_error or "not found" in last_error.lower():
+def ask_gemini_dynamic(prompt, img):
+    try:
+        # 1. 영우님의 API 키로 쓸 수 있는 모든 구글 모델 목록을 싹 다 털어옵니다!
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                available_models.append(m.name.replace('models/', ''))
+        
+        # 2. 빠르고 한도가 높은 'flash' 모델을 1순위로, 없으면 'pro' 모델을 2순위로 줄 세웁니다.
+        flash_models = [m for m in available_models if 'flash' in m.lower()]
+        pro_models = [m for m in available_models if 'pro' in m.lower()]
+        
+        models_to_try = flash_models + pro_models
+        if not models_to_try:
+            models_to_try = available_models # 만약 둘 다 없으면 아무거나 잡히는 대로!
+            
+        last_error = ""
+        
+        # 3. 찾은 모델들을 위에서부터 순서대로 찔러봅니다. (불도저 모드)
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content([prompt, img])
+                return response.text
+            except Exception as e:
+                last_error = str(e)
+                # 💡 만약 하루 할당량(Quota) 초과 에러면, 다른 모델을 찔러도 소용없으니 바로 에러 출력
+                if "429" in last_error or "quota" in last_error.lower():
+                    return f"API 일일 사용량(Quota) 한도 초과입니다. 내일 다시 시도해주세요! (사용된 모델: {model_name})"
+                # 404 에러(이름 못 찾음) 등이면 당황하지 않고 즉시 다음 모델로 넘어감!
                 continue
-            else:
-                # 429(속도제한) 등 다른 에러면 바로 리턴
-                return f"API 에러 발생 ({model_name}): {last_error}"
-    
-    return f"모든 AI 모델 연결 실패: {last_error}"
+                
+        return f"모든 모델 시도 실패. (시도한 모델 목록: {models_to_try})\n마지막 에러: {last_error}"
+        
+    except Exception as e:
+        return f"AI 시스템 초기화 실패: {e}"
 
 def get_real_ocr_text(image_url):
     if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
@@ -127,9 +139,9 @@ def get_real_ocr_text(image_url):
         오직 차트 위/아래에 작성된 **블로그 본문 설명글, 글머리 기호(불릿 포인트), 문장 형태의 텍스트**만 정확하게 추출해. 
         절대 내용을 요약하거나 너의 의견을 덧붙이지 말고, 원본글의 줄바꿈과 띄어쓰기 양식을 최대한 그대로 유지해서 출력해줘.
         """
-        return ask_gemini_with_fallback(prompt, img) # 자동 우회 함수 호출
+        return ask_gemini_dynamic(prompt, img) # 💡 자동 추적 시스템 가동!
     except Exception as e:
-        return f"텍스트 추출 실패: {e}"
+        return f"이미지 다운로드 실패: {e}"
 
 def get_real_ai_advice(image_url, ticker):
     if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
@@ -138,9 +150,9 @@ def get_real_ai_advice(image_url, ticker):
         img = Image.open(io.BytesIO(res.content))
         
         prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
-        return ask_gemini_with_fallback(prompt, img) # 자동 우회 함수 호출
+        return ask_gemini_dynamic(prompt, img) # 💡 자동 추적 시스템 가동!
     except Exception as e:
-        return f"AI 분석 실패: {e}"
+        return f"이미지 다운로드 실패: {e}"
 
 # --- 렌더링 도우미 ---
 def render_blog_image_html(url):
@@ -316,7 +328,6 @@ with tab4:
     col_status1, col_status2, col_status3, col_status4 = st.columns(4)
     
     with col_status1:
-        # 직관적인 ON/OFF 토글 스위치
         bot_on = st.toggle("🚀 봇 가동 스위치 (마스터)", value=False)
         st.markdown(f"**시스템 상태:** {'🟢 작동 중 (Running)' if bot_on else '🔴 대기 중 (Standby)'}")
     with col_status2:
@@ -408,7 +419,7 @@ with tab5:
                 if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
                     if not arch_ticker1: st.error("종목명을 입력해주세요!")
                     else:
-                        with st.spinner("무료 AI(Gemini)가 차트를 분석 중입니다... 7장을 올리면 속도 제한 방지를 위해 약간 시간이 걸립니다! 🤖"):
+                        with st.spinner("무료 AI(Gemini)가 최적의 모델을 찾아 분석 중입니다... 여러 장을 올리면 속도 제한 방지를 위해 시간이 조금 걸립니다! 🤖"):
                             blog_urls, detail_urls = [], []
                             ai_advice_final_mapping, ocr_final_mapping = {}, {}
                             date_str = arch_date1.strftime("%Y-%m-%d")
