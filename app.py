@@ -96,7 +96,8 @@ def get_real_ocr_text(image_url):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # 💡 정답 모델명(gemini-1.5-flash)으로 다시 롤백했습니다!
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = """
         이 이미지에서 '차트 캔들 옆에 있는 가격 숫자(예: 69,000.00 등)', '시간 축 숫자', '차트 그림 내부에 적힌 라벨(축적, 조작, 분배 등)'은 완벽하게 무시해줘. 
@@ -115,7 +116,8 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # 💡 정답 모델명(gemini-1.5-flash)으로 다시 롤백했습니다!
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘."
         response = model.generate_content([prompt, img])
         return response.text
@@ -300,9 +302,9 @@ with tab4:
         bot_on = st.toggle("🚀 봇 가동 스위치 (마스터)", value=False)
         st.markdown(f"**시스템 상태:** {'🟢 작동 중 (Running)' if bot_on else '🔴 대기 중 (Standby)'}")
     with col_status2:
-        st.metric("오늘의 예상 수익", "+$124.50", "+5.2%")
+        st.metric("오늘의 예상 수익", "+$0.00", "0.0%")
     with col_status3:
-        st.metric("승률 (최근 10건)", "70.0%", "↑ 2%")
+        st.metric("승률 (최근 10건)", "0.0%", "-")
     with col_status4:
         st.metric("현재 포지션", "대기 중 (Flat)", "")
 
@@ -314,20 +316,20 @@ with tab4:
     with bot_tab1:
         st.subheader("🔑 거래소 연결 및 자금 관리")
         with st.form("bot_basic_form", border=True):
-            st.info("비트겟(Bitget) API Key를 안전하게 입력하세요. (데이터는 암호화되어 클라우드에 저장됩니다.)")
+            st.info("방금 발급받은 비트겟(Bitget) API Key 3종 세트를 입력하세요. (현재는 UI 테스트 상태입니다.)")
             c1, c2 = st.columns(2)
             with c1:
-                api_key = st.text_input("Bitget API Key", type="password", placeholder="api_key_here")
-                secret_key = st.text_input("Bitget Secret Key", type="password", placeholder="secret_key_here")
+                api_key = st.text_input("Bitget API Key (Access Key)", type="password", placeholder="발급받은 API 키 입력")
+                secret_key = st.text_input("Bitget Secret Key", type="password", placeholder="Secret Key 입력")
             with c2:
-                api_passphrase = st.text_input("API Passphrase (비밀번호)", type="password", placeholder="password")
+                api_passphrase = st.text_input("API Passphrase (비밀번호)", type="password", placeholder="설정한 비밀번호 입력")
                 leverage = st.slider("기본 레버리지 (x)", min_value=1, max_value=50, value=10)
 
             st.write("")
             invest_pct = st.select_slider("1회 진입 비중 (총 시드의 %)", options=[5, 10, 15, 20, 25, 50, 100], value=10)
             
             if st.form_submit_button("기본 세팅 저장", type="primary"):
-                st.success("API 및 자금 세팅이 클라우드에 저장되었습니다!")
+                st.success("API 및 자금 세팅이 임시 저장되었습니다! (추후 로봇 서버 연결 시 연동됩니다.)")
 
     with bot_tab2:
         st.subheader("🎯 트레이딩뷰 연동 (Webhook) 설정")
@@ -349,10 +351,9 @@ with tab4:
     with bot_tab3:
         st.subheader("📡 로봇 작동 터미널")
         st.caption("최근 50개의 시스템 로그를 보여줍니다.")
-        log_text = """[2026-04-01 13:20:00] 시스템 초기화 완료...
-[2026-04-01 13:20:05] Bitget API 연결 테스트 성공.
-[2026-04-01 13:25:12] 트레이딩뷰 Webhook 수신 대기 중...
-[2026-04-01 13:25:59] 현재 가동 대기 상태입니다."""
+        log_text = """[System] 컨트롤 패널이 정상적으로 활성화되었습니다.
+[System] Bitget API 키 대기 중...
+[System] 봇 가동 시 이 터미널에 매매 내역이 기록됩니다."""
         st.code(log_text, language="bash")
 
 # ==============================
@@ -389,7 +390,7 @@ with tab5:
                 if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
                     if not arch_ticker1: st.error("종목명을 입력해주세요!")
                     else:
-                        with st.spinner("무료 AI(Gemini 최신버전)가 차트를 분석 중입니다... 잠시만 기다려주세요! 🤖"):
+                        with st.spinner("무료 AI(Gemini)가 차트를 분석 중입니다... 잠시만 기다려주세요! 🤖"):
                             blog_urls, detail_urls = [], []
                             ai_advice_final_mapping, ocr_final_mapping = {}, {}
                             date_str = arch_date1.strftime("%Y-%m-%d")
