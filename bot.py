@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 
-# 💡 비트겟 API 키는 코드에 직접 적지 않고, 나중에 클라우드 서버(Render) 환경변수에 안전하게 숨겨둘 겁니다!
+# 💡 비트겟 API 키는 코드에 직접 적지 않고, 나중에 클라우드 서버 환경변수에 안전하게 숨겨둘 겁니다!
 BITGET_API_KEY = os.environ.get('BITGET_API_KEY')
 BITGET_SECRET_KEY = os.environ.get('BITGET_SECRET_KEY')
 BITGET_PASSPHRASE = os.environ.get('BITGET_PASSPHRASE')
@@ -21,12 +21,13 @@ def webhook():
         data = request.json
         print(f"📩 트레이딩뷰 신호 수신 완료: {data}")
         
-        # --- (이곳에 나중에 비트겟 매수/매도 로직이 추가될 예정입니다) ---
         ticker = data.get('ticker')
         action = data.get('action')
         
         # 터미널에 로그 찍기
         print(f"실행 명령: {ticker} 종목 {action} 포지션 진입!")
+        
+        # --- (이곳에 나중에 비트겟 매수/매도 로직이 추가될 예정입니다) ---
         
         return jsonify({"status": "success", "message": "신호 수신 및 처리 완료"}), 200
 
