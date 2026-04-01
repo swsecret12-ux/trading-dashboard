@@ -96,8 +96,8 @@ def get_real_ocr_text(image_url):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 정답 모델명(gemini-1.5-flash)으로 다시 롤백했습니다!
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 💡 영우님 직감이 맞았습니다! 구글의 최신 표준 버전인 2.5로 수정했습니다.
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         prompt = """
         이 이미지에서 '차트 캔들 옆에 있는 가격 숫자(예: 69,000.00 등)', '시간 축 숫자', '차트 그림 내부에 적힌 라벨(축적, 조작, 분배 등)'은 완벽하게 무시해줘. 
@@ -116,8 +116,8 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 정답 모델명(gemini-1.5-flash)으로 다시 롤백했습니다!
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # 💡 여기도 2.5 버전으로 수정 완료!
+        model = genai.GenerativeModel('gemini-2.5-flash')
         prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘."
         response = model.generate_content([prompt, img])
         return response.text
