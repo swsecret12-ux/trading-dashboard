@@ -71,6 +71,7 @@ def load_archive_data():
         return df
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
 
+# 💡 탭 3 업데이트를 위해 id 값을 가져오도록 수정되었습니다.
 def load_theory_db():
     res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS)
     db_dict = {}
@@ -78,9 +79,13 @@ def load_theory_db():
         for row in res.json():
             cat, title = row['category'], row['title']
             if cat not in db_dict: db_dict[cat] = {}
-            db_dict[cat][title] = {"content": row.get('content', ''), "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []}
+            db_dict[cat][title] = {
+                "id": row.get('id'), 
+                "content": row.get('content', ''), 
+                "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []
+            }
     else:
-        db_dict = {"기본 카테고리": {"환영합니다!": {"content": "새로운 이론을 추가해 보세요.", "images": []}}}
+        db_dict = {"기본 카테고리": {"환영합니다!": {"id": None, "content": "새로운 이론을 추가해 보세요.", "images": []}}}
     return db_dict
 
 # ==========================================
@@ -94,7 +99,6 @@ def get_real_ocr_text(image_url):
         
         model = genai.GenerativeModel('gemini-2.5-flash')
         
-        # 💡 AI에게 내리는 명령을 아주 디테일하게 수정했습니다!
         prompt = """
         이 이미지에서 '차트 캔들 옆에 있는 가격 숫자(예: 69,000.00 등)', '시간 축 숫자', '차트 그림 내부에 적힌 라벨(축적, 조작, 분배 등)'은 완벽하게 무시해줘. 
         오직 차트 위/아래에 작성된 **블로그 본문 설명글, 글머리 기호(불릿 포인트), 문장 형태의 텍스트**만 정확하게 추출해. 
@@ -210,10 +214,80 @@ with tab1:
 
 with tab2: st.header("🔎 차트 분석 (준비중)")
 with tab4: st.header("📊 통계 (준비중)")
-with tab3: st.header("📚 이론 DB (준비중)")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (무료 Gemini 최신버전 연동!) ---
+# --- Tab 3: 기본 이론 & DB (💡 여기에 새롭게 꽉꽉 채워 넣었습니다!) ---
+# ==============================
+with tab3:
+    st.header("📚 나의 매매 기준 & 기본 이론 DB")
+    theory_db = load_theory_db()
+
+    col_l, col_r = st.columns([3, 7], gap="large")
+
+    with col_l:
+        st.subheader("📑 목차")
+        cats = list(theory_db.keys())
+        sel_cat = st.selectbox("카테고리 선택", cats + ["➕ 새 카테고리 추가"])
+
+        if sel_cat == "➕ 새 카테고리 추가":
+            new_cat_name = st.text_input("새 카테고리명 입력")
+            sel_title = None
+        else:
+            titles = list(theory_db[sel_cat].keys())
+            sel_title = st.radio("세부 이론 선택", titles) if titles else None
+
+        st.divider()
+        with st.expander("📝 새로운 이론 등록하기", expanded=False):
+            with st.form("add_th_form", clear_on_submit=True):
+                target_cat = sel_cat if sel_cat != "➕ 새 카테고리 추가" else new_cat_name
+                th_title = st.text_input("이론 제목")
+                th_cont = st.text_area("상세 내용", height=200)
+                th_imgs = st.file_uploader("참고 차트 업로드 (선택)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
+                if st.form_submit_button("☁️ 클라우드 저장", type="primary"):
+                    if th_title and th_cont:
+                        img_urls = [upload_image_to_supabase(i, "theory") for i in (th_imgs or [])]
+                        img_urls = [u for u in img_urls if u] # 에러 방지
+                        insert_db("theory_db", {
+                            "category": target_cat,
+                            "title": th_title,
+                            "content": th_cont,
+                            "image_paths": "|".join(img_urls)
+                        })
+                        st.rerun()
+                    else:
+                        st.error("제목과 내용을 모두 입력해주세요.")
+
+    with col_r:
+        # id가 정상적으로 존재하는 (DB에 저장된) 이론만 보여주기
+        if sel_title and theory_db[sel_cat][sel_title].get("id") is not None:
+            data = theory_db[sel_cat][sel_title]
+            st.markdown(f"## 📖 {sel_title}")
+            st.caption(f"분류: {sel_cat}")
+            st.divider()
+
+            st.markdown(data['content'])
+
+            if data['images']:
+                st.markdown("<br>### 🖼️ 참고 차트 캡처", unsafe_allow_html=True)
+                for u in data['images']:
+                    if u: st.markdown(render_crisp_image_html(u), unsafe_allow_html=True)
+
+            st.write("")
+            with st.expander("⚙️ 이 내용 수정 / 삭제하기", expanded=False):
+                with st.form(f"ed_th_{data['id']}"):
+                    ed_cont = st.text_area("내용 수정", value=data['content'], height=250)
+                    c_s, c_d = st.columns([7, 3])
+                    if c_s.form_submit_button("📝 수정 내용 저장", type="primary", use_container_width=True):
+                        update_db("theory_db", "id", data['id'], {"content": ed_cont})
+                        st.rerun()
+                    if c_d.form_submit_button("🗑️ 이 이론 삭제", use_container_width=True):
+                        delete_db("theory_db", "id", data['id'])
+                        st.rerun()
+        else:
+            st.info("👈 왼쪽 목차에서 이론을 선택하시거나, 하단의 '새로운 이론 등록하기'를 통해 나만의 매매 기준을 추가해보세요!")
+
+# ==============================
+# --- Tab 5: 분석 아카이브 (영우님의 원본 그대로 유지!) ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
