@@ -6,7 +6,7 @@ import uuid
 import re
 import os
 import io
-import time  # 💡 무료 API 속도 제한 방지를 위해 시간을 제어하는 부품 추가!
+import time
 from datetime import datetime
 from PIL import Image
 import google.generativeai as genai
@@ -97,7 +97,8 @@ def get_real_ocr_text(image_url):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # 💡 하루 1,500번 가능한 정식 버전으로 원복! (이제 서버가 최신이라 404 에러 안 남!)
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = """
         이 이미지에서 '차트 캔들 옆에 있는 가격 숫자(예: 69,000.00 등)', '시간 축 숫자', '차트 그림 내부에 적힌 라벨(축적, 조작, 분배 등)'은 완벽하게 무시해줘. 
@@ -116,9 +117,9 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # 💡 여기도 하루 1,500번 가능한 정식 버전으로 원복!
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
-        # 💡 AI가 띄어쓰기를 뭉개지 않도록 강력한 명령을 추가했습니다!
         prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
         
         response = model.generate_content([prompt, img])
@@ -392,7 +393,7 @@ with tab5:
                 if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
                     if not arch_ticker1: st.error("종목명을 입력해주세요!")
                     else:
-                        with st.spinner("무료 AI(Gemini)가 차트를 분석 중입니다... 7장을 올리면 속도 제한 방지를 위해 30초 정도 걸립니다! 🤖"):
+                        with st.spinner("무료 AI(Gemini)가 차트를 분석 중입니다... 7장을 올리면 속도 제한 방지를 위해 약간 시간이 걸립니다! 🤖"):
                             blog_urls, detail_urls = [], []
                             ai_advice_final_mapping, ocr_final_mapping = {}, {}
                             date_str = arch_date1.strftime("%Y-%m-%d")
@@ -405,7 +406,7 @@ with tab5:
                                     if url:
                                         blog_urls.append(url)
                                         ocr_final_mapping[group] = get_real_ocr_text(url)
-                                        time.sleep(3) # 💡 과속 방지 3초 대기!
+                                        time.sleep(4) # 💡 과속 완벽 방지! 4초 딜레이
                             
                             if arch_imgs_detail:
                                 for img_file in arch_imgs_detail:
@@ -415,7 +416,7 @@ with tab5:
                                         detail_urls.append(url)
                                         if img_file.name in selected_charts_for_ai:
                                             ai_advice_final_mapping[group] = get_real_ai_advice(url, arch_ticker1)
-                                            time.sleep(3) # 💡 과속 방지 3초 대기!
+                                            time.sleep(4) # 💡 과속 완벽 방지! 4초 딜레이
 
                             insert_data = {
                                 "date": date_str, "ticker": arch_ticker1, "category": "타인분석", "source_view": arch_source1,
