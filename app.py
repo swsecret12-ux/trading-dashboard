@@ -89,27 +89,29 @@ def load_theory_db():
     return db_dict
 
 # ==========================================
-# --- 4. 🚀 무료 AI(Gemini) 궁극의 자동 추적 시스템 ---
+# --- 4. 🚀 무료 AI(Gemini) 무한 좀비 추적 시스템 ---
 # ==========================================
 def ask_gemini_dynamic(prompt, img):
     try:
-        # 1. 영우님의 API 키로 쓸 수 있는 모든 구글 모델 목록을 싹 다 털어옵니다!
         available_models = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name.replace('models/', ''))
+                name = m.name.replace('models/', '')
+                # 💡 [블랙리스트 필터] 하루 한도가 20번인 2.5 버전이나 실험용(exp) 모델은 명시적으로 제외!
+                if '2.5' not in name and 'exp' not in name and 'thinking' not in name:
+                    available_models.append(name)
         
-        # 2. 빠르고 한도가 높은 'flash' 모델을 1순위로, 없으면 'pro' 모델을 2순위로 줄 세웁니다.
+        # 하루 1,500번 쓸 수 있는 flash와 pro 모델을 정렬합니다.
         flash_models = [m for m in available_models if 'flash' in m.lower()]
         pro_models = [m for m in available_models if 'pro' in m.lower()]
         
         models_to_try = flash_models + pro_models
         if not models_to_try:
-            models_to_try = available_models # 만약 둘 다 없으면 아무거나 잡히는 대로!
+            models_to_try = available_models
             
         last_error = ""
         
-        # 3. 찾은 모델들을 위에서부터 순서대로 찔러봅니다. (불도저 모드)
+        # 모델을 위에서부터 하나씩 찔러봅니다.
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
@@ -117,13 +119,15 @@ def ask_gemini_dynamic(prompt, img):
                 return response.text
             except Exception as e:
                 last_error = str(e)
-                # 💡 만약 하루 할당량(Quota) 초과 에러면, 다른 모델을 찔러도 소용없으니 바로 에러 출력
-                if "429" in last_error or "quota" in last_error.lower():
-                    return f"API 일일 사용량(Quota) 한도 초과입니다. 내일 다시 시도해주세요! (사용된 모델: {model_name})"
-                # 404 에러(이름 못 찾음) 등이면 당황하지 않고 즉시 다음 모델로 넘어감!
-                continue
+                # 💡 [좀비 모드] 404 에러(이름 못 찾음)나 429 에러(할당량 초과)가 뜨면
+                # 절대 포기하지 않고 즉시 다음 모델로 갈아타서 끈질기게 다시 물어봅니다!
+                if "429" in last_error or "quota" in last_error.lower() or "404" in last_error or "not found" in last_error.lower():
+                    time.sleep(1) # 아주 잠깐 숨 고르고 다음 모델로 돌격
+                    continue
+                else:
+                    break # 완전히 다른 성격의 치명적 에러면 중단
                 
-        return f"모든 모델 시도 실패. (시도한 모델 목록: {models_to_try})\n마지막 에러: {last_error}"
+        return f"모든 모델 시도 실패. 일일 한도가 모두 소진되었거나 알 수 없는 접속 오류입니다.\n마지막 에러: {last_error}"
         
     except Exception as e:
         return f"AI 시스템 초기화 실패: {e}"
@@ -139,7 +143,7 @@ def get_real_ocr_text(image_url):
         오직 차트 위/아래에 작성된 **블로그 본문 설명글, 글머리 기호(불릿 포인트), 문장 형태의 텍스트**만 정확하게 추출해. 
         절대 내용을 요약하거나 너의 의견을 덧붙이지 말고, 원본글의 줄바꿈과 띄어쓰기 양식을 최대한 그대로 유지해서 출력해줘.
         """
-        return ask_gemini_dynamic(prompt, img) # 💡 자동 추적 시스템 가동!
+        return ask_gemini_dynamic(prompt, img) 
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
 
@@ -150,7 +154,7 @@ def get_real_ai_advice(image_url, ticker):
         img = Image.open(io.BytesIO(res.content))
         
         prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
-        return ask_gemini_dynamic(prompt, img) # 💡 자동 추적 시스템 가동!
+        return ask_gemini_dynamic(prompt, img) 
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
 
@@ -419,7 +423,7 @@ with tab5:
                 if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
                     if not arch_ticker1: st.error("종목명을 입력해주세요!")
                     else:
-                        with st.spinner("무료 AI(Gemini)가 최적의 모델을 찾아 분석 중입니다... 여러 장을 올리면 속도 제한 방지를 위해 시간이 조금 걸립니다! 🤖"):
+                        with st.spinner("무료 AI(Gemini)가 최적의 모델을 찾아 분석 중입니다... 여러 장을 올리면 시간이 조금 걸립니다! 🤖"):
                             blog_urls, detail_urls = [], []
                             ai_advice_final_mapping, ocr_final_mapping = {}, {}
                             date_str = arch_date1.strftime("%Y-%m-%d")
@@ -432,7 +436,7 @@ with tab5:
                                     if url:
                                         blog_urls.append(url)
                                         ocr_final_mapping[group] = get_real_ocr_text(url)
-                                        time.sleep(4) # 💡 과속 완벽 방지! 4초 딜레이
+                                        time.sleep(4) 
                             
                             if arch_imgs_detail:
                                 for img_file in arch_imgs_detail:
@@ -442,7 +446,7 @@ with tab5:
                                         detail_urls.append(url)
                                         if img_file.name in selected_charts_for_ai:
                                             ai_advice_final_mapping[group] = get_real_ai_advice(url, arch_ticker1)
-                                            time.sleep(4) # 💡 과속 완벽 방지! 4초 딜레이
+                                            time.sleep(4) 
 
                             insert_data = {
                                 "date": date_str, "ticker": arch_ticker1, "category": "타인분석", "source_view": arch_source1,
