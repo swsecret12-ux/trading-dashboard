@@ -91,23 +91,43 @@ def load_theory_db():
 # ==========================================
 # --- 4. 🚀 무료 AI(Gemini) 텍스트 추출 & 분석 함수 ---
 # ==========================================
+def ask_gemini_with_fallback(prompt, img):
+    # 💡 [핵심 방어 코드] 구글 서버 상태에 따라 사용 가능한 모델을 자동으로 찾아냅니다!
+    models_to_try = [
+        'gemini-1.5-flash-latest', 
+        'gemini-1.5-flash', 
+        'gemini-1.5-pro-latest', 
+        'gemini-1.5-pro'
+    ]
+    last_error = ""
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content([prompt, img])
+            return response.text
+        except Exception as e:
+            last_error = str(e)
+            # 404 에러(이름 못 찾음)면 즉시 다음 모델로 재시도!
+            if "404" in last_error or "not found" in last_error.lower():
+                continue
+            else:
+                # 429(속도제한) 등 다른 에러면 바로 리턴
+                return f"API 에러 발생 ({model_name}): {last_error}"
+    
+    return f"모든 AI 모델 연결 실패: {last_error}"
+
 def get_real_ocr_text(image_url):
     if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
     try:
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 하루 1,500번 가능한 정식 버전으로 원복! (이제 서버가 최신이라 404 에러 안 남!)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
         prompt = """
         이 이미지에서 '차트 캔들 옆에 있는 가격 숫자(예: 69,000.00 등)', '시간 축 숫자', '차트 그림 내부에 적힌 라벨(축적, 조작, 분배 등)'은 완벽하게 무시해줘. 
         오직 차트 위/아래에 작성된 **블로그 본문 설명글, 글머리 기호(불릿 포인트), 문장 형태의 텍스트**만 정확하게 추출해. 
         절대 내용을 요약하거나 너의 의견을 덧붙이지 말고, 원본글의 줄바꿈과 띄어쓰기 양식을 최대한 그대로 유지해서 출력해줘.
         """
-        
-        response = model.generate_content([prompt, img])
-        return response.text
+        return ask_gemini_with_fallback(prompt, img) # 자동 우회 함수 호출
     except Exception as e:
         return f"텍스트 추출 실패: {e}"
 
@@ -117,13 +137,8 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 여기도 하루 1,500번 가능한 정식 버전으로 원복!
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
         prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
-        
-        response = model.generate_content([prompt, img])
-        return response.text
+        return ask_gemini_with_fallback(prompt, img) # 자동 우회 함수 호출
     except Exception as e:
         return f"AI 분석 실패: {e}"
 
