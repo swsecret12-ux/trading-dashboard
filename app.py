@@ -153,7 +153,6 @@ def get_real_ai_advice(image_url, ticker):
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
 
-# --- 렌더링 도우미 ---
 def render_blog_image_html(url):
     return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
 
@@ -176,7 +175,6 @@ st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템
 
 st.markdown("""<style>div[data-testid="stInfo"] p { font-size: 1.1rem; } div[data-testid="stError"] p { font-size: 1.1rem; }</style>""", unsafe_allow_html=True)
 
-# 💡 [핵심 변경] tab2의 이름을 '차트 분석 (준비중)'에서 'AI 차트 & 관점 분석'으로 변경했습니다.
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브"])
 
 # --- Tab 1: 매매 기록 보관지 ---
@@ -244,7 +242,7 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- 💡 Tab 2: 내 관점 분석 (신규 기능) ---
+# --- Tab 2: 내 관점 분석 ---
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백")
@@ -266,10 +264,7 @@ with tab2:
             elif view_uploaded_file is not None and user_view:
                 with st.spinner('AI가 유동성 스윕 여부와 셋업을 정밀 분석 중입니다... 🤖'):
                     try:
-                        # 이미지를 PIL 형식으로 열어서 좀비 함수에 전달
                         img_to_analyze = Image.open(view_uploaded_file)
-                        
-                        # AI에게 내릴 '유동성 스윕' 맞춤형 프롬프트 작성
                         analysis_prompt = f"""
                         당신은 월스트리트 출신의 전문 트레이더이자 나의 트레이딩 멘토입니다. 
                         내가 작성한 [나의 관점]과 첨부된 차트 이미지를 분석해주세요.
@@ -284,8 +279,6 @@ with tab2:
 
                         가독성 좋고 자연스러운 한국어로 출력해주세요.
                         """
-                        
-                        # 좀비 모드 함수 실행
                         analysis_result = ask_gemini_dynamic(analysis_prompt, img_to_analyze)
                         
                         st.success("✅ AI 분석 완료!")
@@ -298,12 +291,37 @@ with tab2:
                 st.warning("⚠️ 차트 이미지 업로드와 나의 관점 텍스트를 모두 입력해 주세요.")
 
 # ==============================
-# --- Tab 3: 기본 이론 & DB ---
+# --- 💡 Tab 3: 기본 이론 & DB (유동성 스윕 하드코딩 추가) ---
 # ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
-    theory_db = load_theory_db()
+    
+    # 💡 영우님이 요청하신 AI 정리본을 최상단에 영구 박제해 둡니다!
+    with st.expander("🔥 [기본 셋업 #1] 유동성 스윕 (Liquidity Sweep) - AI 정리본", expanded=True):
+        st.markdown("""
+        **■ 1. 유동성(Liquidity)의 기본 개념**
+        * **트레이딩에서의 유동성:** 대기 중인 미체결 주문, 특히 개미들의 **'손절 물량(Stop Loss)'**이 뭉쳐있는 구간.
+        * **스마트 머니(세력)의 목표:** 세력이 대량 매수를 하려면 누군가 대량으로 팔아주어야 함. 따라서 개미들의 손절 물량이 쏟아지는 곳으로 가격을 밀어 유동성을 흡수(매집)한 뒤 방향을 틈. (유동성은 차트를 움직이는 연료!)
 
+        **■ 2. 유동성 구간 찾기 & 작도법**
+        * **위치:** 99%의 트레이더들이 손절을 거는 직전 **전고점(Swing High)과 전저점(Swing Low)**.
+        * **작도:** 트레이딩뷰 **'자석 모드(Magnet)'**를 켜고 전고/전저점 캔들 꼬리 끝에 Shift 키를 누른 채 정확한 수평선을 작도.
+
+        **■ 3. 🎯 진입 트리거 (핵심)**
+        * 가격이 선을 돌파한 후, 반드시 **'봉 마감'**을 지켜보아야 함. (미리 예측 진입 금지)
+        * 꼬리(Wick)만 길게 남기고 캔들의 몸통(Body)이 선 안쪽으로 다시 올라와서 마감했을 때(스윕 확인) 즉시 진입.
+        * *(주의: 캔들 몸통 자체가 유동성 선 밖에서 마감해버리면 추세가 강하게 밀리는 것이므로 진입 포기)*
+
+        **■ 4. 리스크 관리 (SL / TP)**
+        * **손절(SL):** 유동성을 찌르고 돌아온 캔들의 **'꼬리 끝점'**. (매우 직관적이고 짧은 손절 라인)
+        * **익절(TP):** 반대편에 있는 다음 주요 유동성 구간 (다음 전고점 또는 전저점).
+        """)
+        st.info("💡 팁: 영상 속 훌륭한 예시 차트를 발견하셨다면 캡처하신 뒤, 아래의 '새로운 이론 등록하기'를 통해 이미지와 함께 나만의 DB로 복사해서 저장해 두세요!")
+
+    st.divider()
+    
+    # 아래부터는 기존의 동적 DB 로드 로직입니다.
+    theory_db = load_theory_db()
     col_l, col_r = st.columns([3, 7], gap="large")
 
     with col_l:
@@ -375,7 +393,6 @@ with tab4:
     st.caption("비트겟(Bitget) API 및 트레이딩뷰 Webhook 기반 자동 트레이딩 시스템")
     st.write("")
 
-    # 1. 최상단: 로봇 상태판 (대시보드 메트릭)
     st.markdown("### 📊 현재 봇 상태")
     col_status1, col_status2, col_status3, col_status4 = st.columns(4)
     
@@ -391,7 +408,6 @@ with tab4:
 
     st.divider()
 
-    # 2. 세부 설정: 깔끔하게 서브 탭으로 분리
     bot_tab1, bot_tab2, bot_tab3 = st.tabs(["⚙️ 기본 세팅 (API)", "🧠 매매 전략 & 웹훅", "📋 실시간 작동 로그"])
 
     with bot_tab1:
