@@ -97,11 +97,9 @@ def ask_gemini_dynamic(prompt, img):
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 name = m.name.replace('models/', '')
-                # 💡 [블랙리스트 필터] 하루 한도가 20번인 2.5 버전이나 실험용(exp) 모델은 명시적으로 제외!
                 if '2.5' not in name and 'exp' not in name and 'thinking' not in name:
                     available_models.append(name)
         
-        # 하루 1,500번 쓸 수 있는 flash와 pro 모델을 정렬합니다.
         flash_models = [m for m in available_models if 'flash' in m.lower()]
         pro_models = [m for m in available_models if 'pro' in m.lower()]
         
@@ -111,7 +109,6 @@ def ask_gemini_dynamic(prompt, img):
             
         last_error = ""
         
-        # 모델을 위에서부터 하나씩 찔러봅니다.
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
@@ -119,13 +116,11 @@ def ask_gemini_dynamic(prompt, img):
                 return response.text
             except Exception as e:
                 last_error = str(e)
-                # 💡 [좀비 모드] 404 에러(이름 못 찾음)나 429 에러(할당량 초과)가 뜨면
-                # 절대 포기하지 않고 즉시 다음 모델로 갈아타서 끈질기게 다시 물어봅니다!
                 if "429" in last_error or "quota" in last_error.lower() or "404" in last_error or "not found" in last_error.lower():
-                    time.sleep(1) # 아주 잠깐 숨 고르고 다음 모델로 돌격
+                    time.sleep(1) 
                     continue
                 else:
-                    break # 완전히 다른 성격의 치명적 에러면 중단
+                    break 
                 
         return f"모든 모델 시도 실패. 일일 한도가 모두 소진되었거나 알 수 없는 접속 오류입니다.\n마지막 에러: {last_error}"
         
@@ -181,7 +176,8 @@ st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템
 
 st.markdown("""<style>div[data-testid="stInfo"] p { font-size: 1.1rem; } div[data-testid="stError"] p { font-size: 1.1rem; }</style>""", unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 차트 분석 (준비중)", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브"])
+# 💡 [핵심 변경] tab2의 이름을 '차트 분석 (준비중)'에서 'AI 차트 & 관점 분석'으로 변경했습니다.
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브"])
 
 # --- Tab 1: 매매 기록 보관지 ---
 with tab1:
@@ -247,7 +243,59 @@ with tab1:
                         update_db("trade_history", "id", trade_id, {"entry_basis": e_entry, "exit_basis": e_exit})
                         st.rerun()
 
-with tab2: st.header("🔎 차트 분석 (준비중)")
+# ==============================
+# --- 💡 Tab 2: 내 관점 분석 (신규 기능) ---
+# ==============================
+with tab2:
+    st.header("🔍 AI 차트 분석 및 관점 피드백")
+    st.info("차트 스크린샷을 업로드하고 현재 관점을 입력하시면, AI가 '유동성 스윕(Liquidity Sweep)' 등 기본 이론을 바탕으로 정밀 분석해 드립니다.")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        view_uploaded_file = st.file_uploader("📷 차트 이미지 업로드", type=["png", "jpg", "jpeg"], key="view_uploader")
+        if view_uploaded_file is not None:
+            st.image(view_uploaded_file, caption="업로드된 차트", use_container_width=True)
+            
+    with col2:
+        user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=150)
+        
+        if st.button("🚀 AI 관점 분석 요청", type="primary", use_container_width=True):
+            if "GEMINI_API_KEY" not in st.secrets:
+                st.error("Gemini API 키가 설정되지 않았습니다.")
+            elif view_uploaded_file is not None and user_view:
+                with st.spinner('AI가 유동성 스윕 여부와 셋업을 정밀 분석 중입니다... 🤖'):
+                    try:
+                        # 이미지를 PIL 형식으로 열어서 좀비 함수에 전달
+                        img_to_analyze = Image.open(view_uploaded_file)
+                        
+                        # AI에게 내릴 '유동성 스윕' 맞춤형 프롬프트 작성
+                        analysis_prompt = f"""
+                        당신은 월스트리트 출신의 전문 트레이더이자 나의 트레이딩 멘토입니다. 
+                        내가 작성한 [나의 관점]과 첨부된 차트 이미지를 분석해주세요.
+                        
+                        [나의 관점]: {user_view}
+
+                        특히 '유동성 스윕(Liquidity Sweep)' 이론을 바탕으로 아래 항목을 정밀하게 분석해 주세요.
+                        1. 레벨 식별: 차트상 주요 전고점/전저점 등 유동성이 몰려있는 구간 파악
+                        2. 스윕 판독: 캔들이 꼬리(Wick)로만 유동성을 찌르고 몸통(Body)은 안착했는지 여부
+                        3. 셋업 검증: 현재 진입하기 적합한 기준을 충족했는지 (아니면 관망해야 하는지)
+                        4. 멘토 피드백: 나의 관점에 대한 팩트 폭행 및 조언, 기대 손익비(SL/TP) 설정 가이드
+
+                        가독성 좋고 자연스러운 한국어로 출력해주세요.
+                        """
+                        
+                        # 좀비 모드 함수 실행
+                        analysis_result = ask_gemini_dynamic(analysis_prompt, img_to_analyze)
+                        
+                        st.success("✅ AI 분석 완료!")
+                        st.subheader("🤖 AI 멘토의 피드백")
+                        st.write(analysis_result)
+                        
+                    except Exception as e:
+                        st.error(f"분석 중 오류가 발생했습니다: {e}")
+            else:
+                st.warning("⚠️ 차트 이미지 업로드와 나의 관점 텍스트를 모두 입력해 주세요.")
 
 # ==============================
 # --- Tab 3: 기본 이론 & DB ---
@@ -600,7 +648,7 @@ with tab5:
                                             ocr_mapping[num] = edited_ocr
                                             update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                             st.rerun()
-                        st.markdown("<hr style='margin: 10px 0px; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+                    st.markdown("<hr style='margin: 10px 0px; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
                 else: st.info("저장된 포스팅 원본 이미지가 없습니다.")
                 
                 unrendered_details = [dp for dp in valid_details if dp not in rendered_details]
