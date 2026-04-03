@@ -16,7 +16,7 @@ exchange = ccxt.bitget({
     'password': bitget_passphrase,
     'enableRateLimit': True,
     'options': {
-        'defaultType': 'swap', # 현물이 아닌 선물(Futures) 거래로 설정!
+        'defaultType': 'swap',
     }
 })
 
@@ -27,35 +27,38 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        data = request.json
-        print(f"📩 트레이딩뷰 신호 수신: {data}")
+        # 💡 [핵심 수정] 트레이딩뷰의 텍스트 포장지를 강제로 찢고 JSON으로 읽어옵니다!
+        data = request.get_json(force=True)
+        print(f"📩 트레이딩뷰 신호 수신: {data}", flush=True) # flush=True 로 터미널에 즉시 출력!
         
-        action = data.get('action')   # 'long' 또는 'short'
-        ticker = data.get('ticker')   # 'XRPUSDT' 등
-        amount = float(data.get('amount', 0)) # 구매할 코인 수량 (예: 10)
+        action = data.get('action')
+        ticker = data.get('ticker')
+        amount = float(data.get('amount', 0))
         
         if amount <= 0:
-            return jsonify({"status": "error", "message": "수량이 0이거나 설정되지 않았습니다."}), 400
+            print("❌ 수량 오류: amount 값이 없거나 0입니다.", flush=True)
+            return jsonify({"status": "error", "message": "수량이 0입니다."}), 400
 
         # 3. 비트겟 전용 선물 종목 이름으로 변환 (예: XRPUSDT -> XRP/USDT:USDT)
         symbol = ticker.replace("USDT", "/USDT:USDT")
         
-        print(f"🤖 [명령 하달] {symbol} 종목 {action} 방향으로 {amount}개 시장가 진입 시도!")
+        print(f"🤖 [명령 하달] {symbol} 종목 {action} 방향으로 {amount}개 시장가 진입 시도!", flush=True)
 
         # 4. 롱/숏 시장가 주문 때리기!
         if action == 'long':
             order = exchange.create_market_buy_order(symbol, amount)
-            print(f"🟢 [롱 진입 성공] 주문 번호: {order['id']}")
+            print(f"🟢 [롱 진입 성공] 주문 번호: {order['id']}", flush=True)
         elif action == 'short':
             order = exchange.create_market_sell_order(symbol, amount)
-            print(f"🔴 [숏 진입 성공] 주문 번호: {order['id']}")
+            print(f"🔴 [숏 진입 성공] 주문 번호: {order['id']}", flush=True)
         else:
-            print("알 수 없는 포지션 방향입니다.")
+            print("❌ 알 수 없는 포지션 방향입니다.", flush=True)
 
         return jsonify({"status": "success", "message": "주문 쏴버렸습니다!"}), 200
 
     except Exception as e:
-        print(f"❌ [주문 에러 발생] {e}")
+        # 💡 에러가 나면 숨기지 말고 무조건 즉시 출력하게 만듭니다.
+        print(f"❌ [주문 에러 발생] {e}", flush=True)
         return jsonify({"status": "error", "message": str(e)}), 400
 
 if __name__ == '__main__':
