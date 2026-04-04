@@ -10,6 +10,7 @@ import time
 from datetime import datetime
 from PIL import Image
 import google.generativeai as genai
+import ccxt  # 비트겟 API 통신을 위한 ccxt 추가
 
 # ==========================================
 # --- 1. 클라우드 및 무료 AI(Gemini) 세팅 ---
@@ -364,6 +365,21 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
     * 아무리 차트 패턴이 예쁘고 지표가 완벽해 보여도 **과감하게 그 자리는 매매를 포기(Pass)해야 합니다.**
     * "1을 잃을 각오로 3을 먹을 수 있는 자리"에서만 기계적으로 방아쇠를 당기는 것이 장기 생존의 유일한 비결입니다."""
 
+    # 💡 13. 실전 매매 4 (생존으로서의 손절) - 4강 내용 신규 추가!
+    stop_loss_text = """**■ 1. 손절은 패배가 아닌 '생존'이자 '사업 비용'**
+* **자본 보존 (시드 지키기):** 잃지 않아야 다음 기회에 배팅할 수 있습니다. 단 한 번의 큰 손실이 그동안 쌓아온 수익을 모두 날릴 수 있습니다.
+* **복구의 수학적 한계:** 손실률이 커질수록 원금을 복구하기 위해 필요한 수익률은 기하급수적으로 늘어납니다 (예: 50% 손실 시 100% 수익 필요).
+* **기회비용 확보:** 잘못된 포지션에 자금이 묶여 있으면, 훨씬 더 좋은 자리가 나타나도 돈이 없어 진입하지 못합니다.
+
+**■ 2. 기계적인 손절을 위한 실전 팁**
+* **진입 전 손절가 정하기:** 감정이 개입하기 전인 진입 계획 단계에서 '어디까지 내리면 자를 것인지' 명확한 기준을 세워야 합니다.
+* **스탑로스(Stop-Market) 즉시 세팅:** 진입과 동시에 손절 주문을 미리 세팅하여 뇌동매매와 감정적 개입을 철저히 차단합니다.
+* **사업 비용으로 인식하기:** 손절을 '내 돈을 잃는 것'이 아니라, 트레이딩이라는 사업을 운영하며 수익을 내기 위해 지불하는 '유지비' 개념으로 접근합니다.
+
+**■ 3. 손절 후의 올바른 대응**
+* **복수 매매 금지:** 잃은 돈을 바로 찾겠다는 분노 매매는 계좌를 녹입니다. HTS/MTS를 끄고 휴식을 취하세요.
+* **복기 및 기록:** 오답 노트를 쓰듯 손절 이유를 트레이딩 일지에 기록하여 단순한 손해를 '수업료'로 탈바꿈시킵니다."""
+
     # 💡 전체 커리큘럼 뼈대 조립
     db_dict = {
         "1. 기본 이론 규칙": {
@@ -385,7 +401,7 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
             "실전 1: 숲을 보고 나무를 봐라 (탑다운 분석)": {"id": "default", "content": top_down_text, "images": []},
             "실전 2: 차트는 항상 깨끗하게 유지하라": {"id": "default", "content": clean_chart_text, "images": []},
             "실전 3: 손익비의 중요성 (승률의 함정)": {"id": "default", "content": rr_ratio_text, "images": []},
-            "실전 4 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
+            "실전 4: 생존으로서의 손절 (기계적 스탑로스)": {"id": "default", "content": stop_loss_text, "images": []}, # 💡 여기에 추가되었습니다!
             "실전 5 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
             "실전 6 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []}
         },
@@ -485,6 +501,68 @@ def get_file_group_info(filename):
         last_match = matches[-1]
         return last_match[0], int(last_match[1] if last_match[1] else '0')
     return str(uuid.uuid4().hex[:4]), 0
+
+# ==========================================
+# --- 5. 🚀 생존 매매 봇 핵심 함수 (신규 추가!) ---
+# ==========================================
+def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_percent, reason, risk_limit_percent):
+    """지정한 리스크 기반으로 수량을 계산하고 진입과 동시에 스탑로스를 거는 함수"""
+    try:
+        exchange = ccxt.bitget({
+            'apiKey': api_key,
+            'secret': secret_key,
+            'password': passphrase,
+            'enableRateLimit': True,
+            'options': {'defaultType': 'swap'} # 선물 거래 기준
+        })
+        
+        # 1. 현재가 및 잔고 조회
+        ticker = exchange.fetch_ticker(symbol)
+        current_price = ticker['last']
+        balance = exchange.fetch_balance()
+        total_usdt = balance['USDT']['free']
+        
+        # 2. 리스크 한도에 따른 안전 수량 계산
+        max_loss_usdt = total_usdt * (risk_limit_percent / 100.0)
+        loss_per_coin = current_price * (sl_percent / 100.0)
+        amount = round(max_loss_usdt / loss_per_coin, 3) # 최소 주문단위에 맞춰 반올림
+        
+        if amount <= 0:
+            return False, f"❌ 진입 가능 수량이 0입니다. (잔고: {round(total_usdt, 2)} USDT)"
+
+        # 3. 손절가 계산
+        stop_loss_price = current_price * (1 - sl_percent/100.0) if side == 'buy' else current_price * (1 + sl_percent/100.0)
+
+        # 4. 포지션 진입 (시장가)
+        entry_order = exchange.create_order(symbol, 'market', side, amount)
+
+        # 5. 스탑로스 설정 (reduceOnly 속성으로 포지션 종료 전용)
+        sl_side = 'sell' if side == 'buy' else 'buy'
+        sl_params = {
+            'stopPrice': stop_loss_price,
+            'triggerPrice': stop_loss_price,
+            'reduceOnly': True
+        }
+        sl_order = exchange.create_order(symbol, 'market', sl_side, amount, params=sl_params)
+
+        # 6. Tab 1 매매 기록 보관지로 데이터 자동 전송
+        insert_data = {
+            "date": datetime.today().strftime("%Y-%m-%d"),
+            "ticker": symbol.split('/')[0],
+            "timeframe": "Auto",
+            "setup_pattern": "생존매매 (자동SL)",
+            "position": "Long" if side == 'buy' else "Short",
+            "result": "진입완료",
+            "rr_ratio": "-",
+            "profit": 0,
+            "entry_basis": reason,
+            "exit_basis": f"자동 스탑로스 설정 완료: {stop_loss_price}"
+        }
+        insert_db("trade_history", insert_data)
+
+        return True, f"✅ 진입 성공! (평단가: {current_price} | 수량: {amount} | 스탑로스: {stop_loss_price})"
+    except Exception as e:
+        return False, f"❌ 실행 오류 발생: {str(e)}"
 
 # ==========================================
 # --- 화면 구성 시작 ---
@@ -691,7 +769,7 @@ with tab3:
 # ==============================
 with tab4:
     st.header("🤖 자동매매 사령실 (컨트롤 패널)")
-    st.caption("비트겟(Bitget) API 및 트레이딩뷰 Webhook 기반 자동 트레이딩 시스템")
+    st.caption("비트겟(Bitget) API 연동 반자동 생존 매매 및 트레이딩뷰 Webhook 시스템")
     st.write("")
 
     st.markdown("### 📊 현재 봇 상태")
@@ -709,27 +787,62 @@ with tab4:
 
     st.divider()
 
-    bot_tab1, bot_tab2, bot_tab3 = st.tabs(["⚙️ 기본 세팅 (API)", "🧠 매매 전략 & 웹훅", "📋 실시간 작동 로그"])
+    # 💡 탭 4개로 확장 (생존 매매 추가)
+    bot_tab1, bot_tab2, bot_tab3, bot_tab4 = st.tabs(["⚙️ 기본 세팅 (API)", "🛡️ 반자동 생존 매매", "🧠 매매 전략 & 웹훅", "📋 실시간 작동 로그"])
 
     with bot_tab1:
         st.subheader("🔑 거래소 연결 및 자금 관리")
         with st.form("bot_basic_form", border=True):
-            st.info("방금 발급받은 비트겟(Bitget) API Key 3종 세트를 입력하세요. (현재는 UI 테스트 상태입니다.)")
+            st.info("발급받은 비트겟(Bitget) API Key를 입력하세요.")
             c1, c2 = st.columns(2)
             with c1:
-                api_key = st.text_input("Bitget API Key (Access Key)", type="password", placeholder="발급받은 API 키 입력")
-                secret_key = st.text_input("Bitget Secret Key", type="password", placeholder="Secret Key 입력")
+                api_key = st.text_input("Bitget API Key (Access Key)", type="password", value=st.session_state.get('bg_api', ''))
+                secret_key = st.text_input("Bitget Secret Key", type="password", value=st.session_state.get('bg_secret', ''))
             with c2:
-                api_passphrase = st.text_input("API Passphrase (비밀번호)", type="password", placeholder="설정한 비밀번호 입력")
-                leverage = st.slider("기본 레버리지 (x)", min_value=1, max_value=50, value=10)
+                api_passphrase = st.text_input("API Passphrase (비밀번호)", type="password", value=st.session_state.get('bg_pass', ''))
+                risk_limit = st.slider("1회 진입 시 허용 리스크 (총 시드의 %)", min_value=0.1, max_value=5.0, value=1.0, step=0.1, help="이 비율만큼만 잃도록 진입 수량을 자동 조절합니다.")
 
-            st.write("")
-            invest_pct = st.select_slider("1회 진입 비중 (총 시드의 %)", options=[5, 10, 15, 20, 25, 50, 100], value=10)
-            
-            if st.form_submit_button("기본 세팅 저장", type="primary"):
-                st.success("API 및 자금 세팅이 임시 저장되었습니다! (추후 로봇 서버 연결 시 연동됩니다.)")
+            if st.form_submit_button("기본 세팅 및 세션 저장", type="primary"):
+                st.session_state['bg_api'] = api_key
+                st.session_state['bg_secret'] = secret_key
+                st.session_state['bg_pass'] = api_passphrase
+                st.session_state['bg_risk'] = risk_limit
+                st.success("API 및 자금 세팅이 활성화되었습니다! 이제 생존 매매 탭을 이용할 수 있습니다.")
 
     with bot_tab2:
+        st.subheader("🛡️ 반자동 생존 매매 (기계적 손절)")
+        st.markdown("**'손절은 패배가 아닌 필수 생존법입니다.'** 진입과 동시에 스탑로스가 API를 통해 서버에 꽂힙니다.")
+        
+        with st.form("survival_trade_form"):
+            col_s1, col_s2, col_s3 = st.columns(3)
+            with col_s1: sv_symbol = st.text_input("종목명 (예: BTC/USDT:USDT)", value="BTC/USDT:USDT")
+            with col_s2: sv_side = st.selectbox("포지션 방향", ["buy (Long)", "sell (Short)"])
+            with col_s3: sv_sl_percent = st.number_input("손절 비율 (%)", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
+            
+            sv_reason = st.text_area("📝 진입 근거 (매매 일지에 자동 기록됩니다)", placeholder="예: 1시간봉 주요 유동성 스윕 확인 후 진입")
+            
+            submit_trade = st.form_submit_button("🚀 진입 및 스탑로스 자동 세팅", type="primary", use_container_width=True)
+            
+            if submit_trade:
+                if not st.session_state.get('bg_api'):
+                    st.error("⚠️ 먼저 [기본 세팅 (API)] 탭에서 API 키를 저장해주세요.")
+                else:
+                    with st.spinner("비트겟 서버로 주문을 전송하는 중입니다..."):
+                        real_side = "buy" if "buy" in sv_side else "sell"
+                        success, message = execute_survival_trade(
+                            st.session_state['bg_api'], 
+                            st.session_state['bg_secret'], 
+                            st.session_state['bg_pass'],
+                            sv_symbol, 
+                            real_side, 
+                            sv_sl_percent, 
+                            sv_reason, 
+                            st.session_state.get('bg_risk', 1.0)
+                        )
+                        if success: st.success(message)
+                        else: st.error(message)
+
+    with bot_tab3:
         st.subheader("🎯 트레이딩뷰 연동 (Webhook) 설정")
         c_hook, c_strat = st.columns([6, 4], gap="large")
         
@@ -746,12 +859,13 @@ with tab4:
             if st.button("전략 저장", use_container_width=True):
                 st.success("전략이 업데이트 되었습니다.")
 
-    with bot_tab3:
+    with bot_tab4:
         st.subheader("📡 로봇 작동 터미널")
         st.caption("최근 50개의 시스템 로그를 보여줍니다.")
         log_text = """[System] 컨트롤 패널이 정상적으로 활성화되었습니다.
 [System] Bitget API 키 대기 중...
-[System] 봇 가동 시 이 터미널에 매매 내역이 기록됩니다."""
+[System] 봇 가동 시 이 터미널에 매매 내역이 기록됩니다.
+[System] 생존 매매 모듈 활성화 완료..."""
         st.code(log_text, language="bash")
 
 # ==============================
