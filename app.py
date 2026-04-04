@@ -124,7 +124,7 @@ def load_theory_db():
 **■ 3. 오더블록 작도 방법 (캔들 감싸기)**
 * **상승 오더블록 (Bullish OB):** 롱(매수) 진입을 노릴 때 찾습니다.
     * 추세를 상승으로 반전시킨 강력한 상승 캔들(양봉)의 **'직전에 나타난 하락 캔들(음봉)'**을 찾습니다.
-    * 이 음봉의 **꼬리 끝부터 몸통 끝까지**를 사각형 박스로 감싸 그립니다.
+    * 이 음봉의 **꼬리 끝부터 몸통 끝까지** 사각형 박스로 감싸 그립니다.
 * **하락 오더블록 (Bearish OB):** 숏(매도) 진입을 노릴 때 찾습니다.
     * 추세를 하락으로 반전시킨 강력한 하락 캔들(음봉)의 **'직전에 나타난 상승 캔들(양봉)'**을 찾습니다.
     * 이 양봉의 **꼬리 끝부터 몸통 끝까지**를 사각형 박스로 감싸 그립니다.
@@ -300,7 +300,7 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
     * 목적: 전체적인 시장의 큰 추세(상승장인지 하락장인지)와 거대한 매물대를 파악합니다.
     * 작도: 가장 큼직하고 뚜렷한 추세선, 거대한 오더블록, 강력한 지지/저항선 등 굵직한 구조물을 그려둡니다.
 * **[2단계] 중위 타임프레임 (4시간봉 4H / 1시간봉 1H) - "나무들이 모인 구역 파악"**
-    * 목적: 상위 타임프레임에서 그어둔 큰 틀 안에서, 현재 가격이 어디쯤 위치해 파악합니다.
+    * 목적: 상위 타임프레임에서 그어둔 큰 틀 안에서, 현재 가격이 어디쯤 위치해 있는지 파악합니다.
     * 작도: 현재 형성되고 있는 채널이나, 가까운 유동성(전고/전저점), 중기적인 FVG 등을 확인하여 내가 매매할 '작전 반경'을 설정합니다.
 * **[3단계] 하위 타임프레임 (15분봉 15m / 5분봉 5m) - "정밀 타격(Entry) 지점 포착"**
     * 목적: 상위와 중위 타임프레임의 분석을 바탕으로, 리스크(손절)를 최소화할 수 있는 정확한 진입 타이밍을 잡습니다.
@@ -598,6 +598,8 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 AI
 with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
+    if not df_trade.empty:
+        df_trade = df_trade.sort_values(by='date', ascending=False).reset_index(drop=True) # 💡 날짜순(최신순) 정렬 적용
     
     with st.expander("➕ 새로운 매매 기록 추가하기", expanded=False):
         uploaded_images = st.file_uploader("차트 캡처 업로드", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="trade_uploader")
@@ -659,7 +661,7 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- Tab 2: 내 관점 분석 (업데이트!) ---
+# --- Tab 2: 내 관점 분석 (파이프라인 적용 완료) ---
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백")
@@ -733,7 +735,6 @@ with tab2:
                         st.error("종목명을 입력해주세요!")
                     else:
                         with st.spinner("클라우드에 안전하게 보관 중입니다..."):
-                            # 바이너리 데이터를 업로드용 객체로 변환하기 위한 헬퍼 클래스
                             class DummyFile:
                                 def __init__(self, b, n, t):
                                     self.b = b
@@ -748,17 +749,16 @@ with tab2:
                             insert_data = {
                                 "date": w_date.strftime("%Y-%m-%d"), 
                                 "ticker": w_ticker, 
-                                "category": "나의관점", # 카테고리를 '나의관점'으로 지정
+                                "category": "나의관점", 
                                 "source_view": st.session_state.ai_view_text,
                                 "chart_image_paths": img_url if img_url else "", 
                                 "detail_image_paths": "", 
-                                "memo": st.session_state.ai_result, # AI 피드백을 메모로 저장
+                                "memo": st.session_state.ai_result, 
                                 "ai_advice_mapping": "{}",
                                 "ocr_text_mapping": "{}"
                             }
                             insert_db("analysis_archive", insert_data)
                             
-                            # 저장 완료 후 상태 초기화
                             st.session_state.ai_analysis_done = False
                             st.success("✅ Watchlist에 성공적으로 저장되었습니다! [📁 분석 자료 아카이브] 탭에서 확인하세요.")
                             st.rerun()
@@ -943,7 +943,7 @@ with tab4:
         st.code(log_text, language="bash")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (업데이트!) ---
+# --- Tab 5: 분석 아카이브 ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -1013,6 +1013,7 @@ with tab5:
 
         df_others = df_archive[df_archive['category'] == '타인분석'].copy()
         if not df_others.empty:
+            df_others = df_others.sort_values(by='date', ascending=False).reset_index(drop=True) # 💡 날짜순(최신순) 정렬 적용
             st.markdown("### 📋 스크랩 목록")
             selected_other = st.dataframe(df_others[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
             
@@ -1179,7 +1180,7 @@ with tab5:
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                         st.rerun()
 
-    # 💡 Tab 5-B: 나의 관점 렌더링 영역 (업데이트!)
+    # 💡 Tab 5-B: 나의 관점 렌더링 영역
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
@@ -1187,6 +1188,7 @@ with tab5:
         df_myview = df_archive[df_archive['category'] == '나의관점'].copy()
         
         if not df_myview.empty:
+            df_myview = df_myview.sort_values(by='date', ascending=False).reset_index(drop=True) # 💡 날짜순(최신순) 정렬 적용
             selected_myview = st.dataframe(df_myview[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
             
             selected_rows_myview = selected_myview.get('selection', {}).get('rows', [])
