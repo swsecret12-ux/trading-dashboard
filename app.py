@@ -56,7 +56,7 @@ def upload_image_to_supabase(img_file, prefix="img"):
         return None
 
 # ==========================================
-# --- 3. 데이터 로드 함수 ---
+# --- 3. 데이터 로드 함수 (목차 템플릿 포함) ---
 # ==========================================
 def load_trade_data():
     res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
@@ -73,8 +73,47 @@ def load_archive_data():
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
 
 def load_theory_db():
+    # 💡 영우님이 계획하신 완벽한 커리큘럼을 기본 뼈대로 내장합니다.
+    liquidity_text = """**■ 1. 유동성(Liquidity)의 기본 개념**
+* **트레이딩에서의 유동성:** 대기 중인 미체결 주문, 특히 개미들의 **'손절 물량(Stop Loss)'**이 뭉쳐있는 구간.
+* **스마트 머니(세력)의 목표:** 세력이 대량 매수를 하려면 누군가 대량으로 팔아주어야 함. 따라서 개미들의 손절 물량이 쏟아지는 곳으로 가격을 밀어 유동성을 흡수(매집)한 뒤 방향을 틈. (유동성은 차트를 움직이는 연료!)
+
+**■ 2. 유동성 구간 찾기 & 작도법**
+* **위치:** 99%의 트레이더들이 손절을 거는 직전 **전고점(Swing High)과 전저점(Swing Low)**.
+* **작도:** 트레이딩뷰 **'자석 모드(Magnet)'**를 켜고 전고/전저점 캔들 꼬리 끝에 Shift 키를 누른 채 정확한 수평선을 작도.
+
+**■ 3. 🎯 진입 트리거 (핵심)**
+* 가격이 선을 돌파한 후, 반드시 **'봉 마감'**을 지켜보아야 함. (미리 예측 진입 금지)
+* 꼬리(Wick)만 길게 남기고 캔들의 몸통(Body)이 선 안쪽으로 다시 올라와서 마감했을 때(스윕 확인) 즉시 진입.
+* *(주의: 캔들 몸통 자체가 유동성 선 밖에서 마감해버리면 추세가 강하게 밀리는 것이므로 진입 포기)*
+
+**■ 4. 리스크 관리 (SL / TP)**
+* **손절(SL):** 유동성을 찌르고 돌아온 캔들의 **'꼬리 끝점'**. (매우 직관적이고 짧은 손절 라인)
+* **익절(TP):** 반대편에 있는 다음 주요 유동성 구간 (다음 전고점 또는 전저점)."""
+
+    db_dict = {
+        "1. 기본 이론 규칙": {
+            "유동성 스윕 (Liquidity Sweep)": {"id": "default", "content": liquidity_text, "images": []},
+            "추세선과 채널 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
+            "오더블록 (Order Block) (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
+            "FVG (Fair Value Gap) (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []}
+        },
+        "2. 차트 패턴": {
+            "차트 패턴의 개요 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
+            "컵앤 핸들 패턴 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
+            "다이아몬드 패턴 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
+            "아담앤 이브 패턴 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []}
+        },
+        "3. 거짓 돌파 (트랩)": {
+            "거짓 돌파에 대한 모든 것 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []}
+        },
+        "4. 심화 (하모닉 패턴)": {
+            "하모닉 패턴 심층 자료 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []}
+        }
+    }
+
+    # 클라우드 DB(Supabase)에서 영우님이 실제로 추가/수정한 데이터를 가져와서 기본 뼈대에 덮어씌웁니다.
     res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS)
-    db_dict = {}
     if res.status_code == 200 and res.json():
         for row in res.json():
             cat, title = row['category'], row['title']
@@ -84,8 +123,6 @@ def load_theory_db():
                 "content": row.get('content', ''), 
                 "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []
             }
-    else:
-        db_dict = {"기본 카테고리": {"환영합니다!": {"id": None, "content": "새로운 이론을 추가해 보세요.", "images": []}}}
     return db_dict
 
 # ==========================================
@@ -291,42 +328,19 @@ with tab2:
                 st.warning("⚠️ 차트 이미지 업로드와 나의 관점 텍스트를 모두 입력해 주세요.")
 
 # ==============================
-# --- 💡 Tab 3: 기본 이론 & DB (유동성 스윕 하드코딩 추가) ---
+# --- 💡 Tab 3: 기본 이론 & DB (목차 및 내용 연동) ---
 # ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
     
-    # 💡 영우님이 요청하신 AI 정리본을 최상단에 영구 박제해 둡니다!
-    with st.expander("🔥 [기본 셋업 #1] 유동성 스윕 (Liquidity Sweep) - AI 정리본", expanded=True):
-        st.markdown("""
-        **■ 1. 유동성(Liquidity)의 기본 개념**
-        * **트레이딩에서의 유동성:** 대기 중인 미체결 주문, 특히 개미들의 **'손절 물량(Stop Loss)'**이 뭉쳐있는 구간.
-        * **스마트 머니(세력)의 목표:** 세력이 대량 매수를 하려면 누군가 대량으로 팔아주어야 함. 따라서 개미들의 손절 물량이 쏟아지는 곳으로 가격을 밀어 유동성을 흡수(매집)한 뒤 방향을 틈. (유동성은 차트를 움직이는 연료!)
-
-        **■ 2. 유동성 구간 찾기 & 작도법**
-        * **위치:** 99%의 트레이더들이 손절을 거는 직전 **전고점(Swing High)과 전저점(Swing Low)**.
-        * **작도:** 트레이딩뷰 **'자석 모드(Magnet)'**를 켜고 전고/전저점 캔들 꼬리 끝에 Shift 키를 누른 채 정확한 수평선을 작도.
-
-        **■ 3. 🎯 진입 트리거 (핵심)**
-        * 가격이 선을 돌파한 후, 반드시 **'봉 마감'**을 지켜보아야 함. (미리 예측 진입 금지)
-        * 꼬리(Wick)만 길게 남기고 캔들의 몸통(Body)이 선 안쪽으로 다시 올라와서 마감했을 때(스윕 확인) 즉시 진입.
-        * *(주의: 캔들 몸통 자체가 유동성 선 밖에서 마감해버리면 추세가 강하게 밀리는 것이므로 진입 포기)*
-
-        **■ 4. 리스크 관리 (SL / TP)**
-        * **손절(SL):** 유동성을 찌르고 돌아온 캔들의 **'꼬리 끝점'**. (매우 직관적이고 짧은 손절 라인)
-        * **익절(TP):** 반대편에 있는 다음 주요 유동성 구간 (다음 전고점 또는 전저점).
-        """)
-        st.info("💡 팁: 영상 속 훌륭한 예시 차트를 발견하셨다면 캡처하신 뒤, 아래의 '새로운 이론 등록하기'를 통해 이미지와 함께 나만의 DB로 복사해서 저장해 두세요!")
-
-    st.divider()
-    
-    # 아래부터는 기존의 동적 DB 로드 로직입니다.
     theory_db = load_theory_db()
     col_l, col_r = st.columns([3, 7], gap="large")
 
     with col_l:
         st.subheader("📑 목차")
         cats = list(theory_db.keys())
+        # 카테고리 정렬 (1, 2, 3 순서대로 나오게)
+        cats.sort()
         sel_cat = st.selectbox("카테고리 선택", cats + ["➕ 새 카테고리 추가"])
 
         if sel_cat == "➕ 새 카테고리 추가":
@@ -337,10 +351,11 @@ with tab3:
             sel_title = st.radio("세부 이론 선택", titles) if titles else None
 
         st.divider()
-        with st.expander("📝 새로운 이론 등록하기", expanded=False):
+        with st.expander("📝 새로운 이론 등록/덮어쓰기", expanded=False):
             with st.form("add_th_form", clear_on_submit=True):
+                st.caption("기존에 있는 목차와 똑같은 '카테고리'와 '이론 제목'을 입력하면 내용이 클라우드에 영구 저장(덮어쓰기) 됩니다.")
                 target_cat = sel_cat if sel_cat != "➕ 새 카테고리 추가" else new_cat_name
-                th_title = st.text_input("이론 제목")
+                th_title = st.text_input("이론 제목 (목차 이름과 동일하게 입력)")
                 th_cont = st.text_area("상세 내용", height=200)
                 th_imgs = st.file_uploader("참고 차트 업로드 (선택)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
                 if st.form_submit_button("☁️ 클라우드 저장", type="primary"):
@@ -372,18 +387,23 @@ with tab3:
                     if u: st.markdown(render_crisp_image_html(u), unsafe_allow_html=True)
 
             st.write("")
-            with st.expander("⚙️ 이 내용 수정 / 삭제하기", expanded=False):
-                with st.form(f"ed_th_{data['id']}"):
-                    ed_cont = st.text_area("내용 수정", value=data['content'], height=250)
-                    c_s, c_d = st.columns([7, 3])
-                    if c_s.form_submit_button("📝 수정 내용 저장", type="primary", use_container_width=True):
-                        update_db("theory_db", "id", data['id'], {"content": ed_cont})
-                        st.rerun()
-                    if c_d.form_submit_button("🗑️ 이 이론 삭제", use_container_width=True):
-                        delete_db("theory_db", "id", data['id'])
-                        st.rerun()
+            
+            # 💡 기본 템플릿(id가 'default'인 경우)은 수정/삭제 창 대신 안내 문구를 띄웁니다.
+            if data['id'] != "default":
+                with st.expander("⚙️ 이 내용 수정 / 삭제하기", expanded=False):
+                    with st.form(f"ed_th_{data['id']}"):
+                        ed_cont = st.text_area("내용 수정", value=data['content'], height=250)
+                        c_s, c_d = st.columns([7, 3])
+                        if c_s.form_submit_button("📝 수정 내용 저장", type="primary", use_container_width=True):
+                            update_db("theory_db", "id", data['id'], {"content": ed_cont})
+                            st.rerun()
+                        if c_d.form_submit_button("🗑️ 이 이론 삭제", use_container_width=True):
+                            delete_db("theory_db", "id", data['id'])
+                            st.rerun()
+            else:
+                st.info("💡 위 내용은 시스템에 내장된 '기본 뼈대(예정본)'입니다. 좌측 하단의 '새로운 이론 등록'을 통해 같은 이름으로 내용을 저장하시면 클라우드 DB에 영구 기록되어 차트 첨부 및 자유로운 수정이 가능해집니다!")
         else:
-            st.info("👈 왼쪽 목차에서 이론을 선택하시거나, 하단의 '새로운 이론 등록하기'를 통해 나만의 매매 기준을 추가해보세요!")
+            st.info("👈 왼쪽 목차에서 이론을 선택하시거나, 하단의 '새로운 이론 등록/덮어쓰기'를 통해 나만의 매매 기준을 채워나가 보세요!")
 
 # ==============================
 # --- Tab 4: 🤖 자동매매 컨트롤 센터 (사령실 디자인) ---
