@@ -56,7 +56,7 @@ def upload_image_to_supabase(img_file, prefix="img"):
         return None
 
 # ==========================================
-# --- 3. 데이터 로드 함수 (목차 템플릿 포함) ---
+# --- 3. 데이터 로드 함수 (목차 템플릿 + 학습 내용 포함) ---
 # ==========================================
 def load_trade_data():
     res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
@@ -73,7 +73,7 @@ def load_archive_data():
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
 
 def load_theory_db():
-    # 💡 영우님이 계획하신 완벽한 커리큘럼을 기본 뼈대로 내장합니다.
+    # 💡 1. 유동성 스윕 (기존 내용)
     liquidity_text = """**■ 1. 유동성(Liquidity)의 기본 개념**
 * **트레이딩에서의 유동성:** 대기 중인 미체결 주문, 특히 개미들의 **'손절 물량(Stop Loss)'**이 뭉쳐있는 구간.
 * **스마트 머니(세력)의 목표:** 세력이 대량 매수를 하려면 누군가 대량으로 팔아주어야 함. 따라서 개미들의 손절 물량이 쏟아지는 곳으로 가격을 밀어 유동성을 흡수(매집)한 뒤 방향을 틈. (유동성은 차트를 움직이는 연료!)
@@ -91,10 +91,32 @@ def load_theory_db():
 * **손절(SL):** 유동성을 찌르고 돌아온 캔들의 **'꼬리 끝점'**. (매우 직관적이고 짧은 손절 라인)
 * **익절(TP):** 반대편에 있는 다음 주요 유동성 구간 (다음 전고점 또는 전저점)."""
 
+    # 💡 2. 추세선과 채널 (신규 업데이트)
+    channel_text = """**■ 1. 추세선/채널의 진짜 의미 (세력의 관점)**
+* **일반적인 함정:** 초보자들은 채널을 '가격이 지켜주는 든든한 방벽'으로 맹신함.
+* **세력의 의도:** 세력은 개미들을 채널 안에 가두어 심리적 안정감을 준 뒤, 채널 상/하단에 매수/매도(손절) 주문이 잔뜩 쌓이기를 기다림. (기울어진 유동성)
+* **사냥의 순간 (Fake Out):** 세력은 고의로 채널을 깨부수어(이탈시켜) 개미들의 손절 물량과 돌파 매매 물량을 한 번에 흡수(매집)한 후 원래 방향으로 강하게 되돌림.
+
+**■ 2. 🎯 매매 셋업 A: 채널 이탈 (Fake Out 역이용)**
+* **조건:** 캔들이 뚜렷한 채널의 상/하단을 강하게 돌파(이탈)함.
+* **진입 트리거 (핵심):** 돌파했던 캔들이 다음 캔들(또는 꼬리를 달고) **다시 채널 내부로 들어와서 '봉 마감'**을 할 때 진입. (세력의 유동성 사냥이 끝났다는 강력한 신호)
+* **손절(SL):** 채널을 이탈하며 찌른 **'가장 깊은 꼬리의 끝점'** (매우 타이트하고 객관적인 손절).
+
+**■ 3. 🎯 매매 셋업 B: 채널 유지 (리테스트 방어)**
+* **조건:** 캔들이 채널 선에 닿았을 때.
+* **진입 트리거:** 채널 선을 뚫고 나갔던 캔들이, 몸통은 선 안쪽에 두고 **'꼬리만 채널 선을 찌르고 마감'** 했을 때 진입.
+* **손절(SL):** 그 꼬리의 끝점.
+
+**■ 4. 💰 무적의 리스크 관리 (반익반본)**
+* **1차 익절:** 진입 후 목표한 수익 구간(예: 채널의 반대편, 또는 손익비 1:2 지점 등)에 도달하면 **반드시 물량의 1/2(절반)을 익절**하여 수익을 챙김.
+* **본절 로스 (핵심):** 절반 익절과 동시에, 나머지 절반 물량의 손절(SL) 라인을 **나의 '진입 평단가'**로 끌어올림.
+* **결과:** 이후 차트가 내 예상대로 흘러가면 추가 수익 극대화, 만약 갑자기 추세가 꺾여 폭락하더라도 나머지 물량은 본전에서 컷트되므로 **절대 잃지 않는 무적의 포지션** 완성."""
+
+    # 💡 3. 전체 커리큘럼 뼈대 조립
     db_dict = {
         "1. 기본 이론 규칙": {
             "유동성 스윕 (Liquidity Sweep)": {"id": "default", "content": liquidity_text, "images": []},
-            "추세선과 채널 (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
+            "추세선과 채널 (Trendline & Channel)": {"id": "default", "content": channel_text, "images": []},
             "오더블록 (Order Block) (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []},
             "FVG (Fair Value Gap) (예정)": {"id": "default", "content": "강의 학습 후 업데이트될 예정입니다.", "images": []}
         },
@@ -328,7 +350,7 @@ with tab2:
                 st.warning("⚠️ 차트 이미지 업로드와 나의 관점 텍스트를 모두 입력해 주세요.")
 
 # ==============================
-# --- 💡 Tab 3: 기본 이론 & DB (목차 및 내용 연동) ---
+# --- Tab 3: 기본 이론 & DB ---
 # ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
@@ -388,7 +410,6 @@ with tab3:
 
             st.write("")
             
-            # 💡 기본 템플릿(id가 'default'인 경우)은 수정/삭제 창 대신 안내 문구를 띄웁니다.
             if data['id'] != "default":
                 with st.expander("⚙️ 이 내용 수정 / 삭제하기", expanded=False):
                     with st.form(f"ed_th_{data['id']}"):
@@ -500,7 +521,7 @@ with tab5:
                 ai_advice_mapping = {}
                 if arch_imgs_detail:
                     st.divider()
-                    st.markdown("### 🤖 세부 차트 AI 조언 요청")
+                    st.markdown("### 🤖 세부 차트 AI 조 조언 요청")
                     chart_names_for_ai = [f"{img_file.name}" for img_file in arch_imgs_detail]
                     selected_charts_for_ai = st.multiselect("AI 조언을 받을 차트(들)를 선택하세요.", chart_names_for_ai, default=chart_names_for_ai)
                 
