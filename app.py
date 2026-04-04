@@ -124,7 +124,7 @@ def load_theory_db():
 **■ 3. 오더블록 작도 방법 (캔들 감싸기)**
 * **상승 오더블록 (Bullish OB):** 롱(매수) 진입을 노릴 때 찾습니다.
     * 추세를 상승으로 반전시킨 강력한 상승 캔들(양봉)의 **'직전에 나타난 하락 캔들(음봉)'**을 찾습니다.
-    * 이 음봉의 **꼬리 끝부터 몸통 끝까지** 사각형 박스로 감싸 그립니다.
+    * 이 음봉의 **꼬리 끝부터 몸통 끝까지**를 사각형 박스로 감싸 그립니다.
 * **하락 오더블록 (Bearish OB):** 숏(매도) 진입을 노릴 때 찾습니다.
     * 추세를 하락으로 반전시킨 강력한 하락 캔들(음봉)의 **'직전에 나타난 상승 캔들(양봉)'**을 찾습니다.
     * 이 양봉의 **꼬리 끝부터 몸통 끝까지**를 사각형 박스로 감싸 그립니다.
@@ -579,9 +579,41 @@ def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_per
 # --- 화면 구성 시작 ---
 # ==========================================
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
-st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
-st.markdown("""<style>div[data-testid="stInfo"] p { font-size: 1.1rem; } div[data-testid="stError"] p { font-size: 1.1rem; }</style>""", unsafe_allow_html=True)
+# 💡 스마트폰 등 모바일 환경 화면 비율 최적화 CSS 적용
+st.markdown("""
+<style>
+/* 기본 메시지 폰트 사이즈 조정 */
+div[data-testid="stInfo"] p { font-size: 1.1rem; } 
+div[data-testid="stError"] p { font-size: 1.1rem; }
+
+/* 스마트폰 미디어 쿼리 (화면 너비 768px 이하일 때 발동) */
+@media (max-width: 768px) {
+    /* 메인 컨테이너 패딩(여백)을 확 줄여서 모바일 화면을 넓게 씁니다. */
+    .block-container {
+        padding-top: 2rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        padding-bottom: 2rem !important;
+    }
+    
+    /* 제목 및 본문 폰트 크기를 모바일에 맞게 축소하여 줄바꿈 방지 */
+    h1 { font-size: 1.8rem !important; }
+    h2 { font-size: 1.5rem !important; }
+    h3 { font-size: 1.2rem !important; }
+    p, span, div { font-size: 1rem !important; }
+    
+    /* 상단 탭(Tab) 메뉴 크기 조정 (가로 스크롤 시 부드럽게) */
+    button[data-baseweb="tab"] {
+        font-size: 0.9rem !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
 # Session State 초기화 (Tab 2 AI 파이프라인용)
 if "ai_analysis_done" not in st.session_state:
@@ -599,7 +631,7 @@ with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
     if not df_trade.empty:
-        df_trade = df_trade.sort_values(by='date', ascending=False).reset_index(drop=True) # 💡 날짜순(최신순) 정렬 적용
+        df_trade = df_trade.sort_values(by='date', ascending=False).reset_index(drop=True)
     
     with st.expander("➕ 새로운 매매 기록 추가하기", expanded=False):
         uploaded_images = st.file_uploader("차트 캡처 업로드", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="trade_uploader")
@@ -661,7 +693,7 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- Tab 2: 내 관점 분석 (파이프라인 적용 완료) ---
+# --- Tab 2: 내 관점 분석 (파이프라인 적용) ---
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백")
@@ -700,7 +732,6 @@ with tab2:
                         """
                         analysis_result = ask_gemini_dynamic(analysis_prompt, img_to_analyze)
                         
-                        # 분석 결과를 Session State에 저장
                         st.session_state.ai_analysis_done = True
                         st.session_state.ai_result = analysis_result
                         st.session_state.ai_view_text = user_view
@@ -714,7 +745,6 @@ with tab2:
             else:
                 st.warning("⚠️ 차트 이미지 업로드와 나의 관점 텍스트를 모두 입력해 주세요.")
 
-    # 💡 AI 분석이 완료되었을 때만 나타나는 결과 및 저장 폼 영역
     if st.session_state.ai_analysis_done:
         st.success("✅ AI 분석 완료!")
         st.subheader("🤖 AI 멘토의 피드백")
@@ -1013,7 +1043,7 @@ with tab5:
 
         df_others = df_archive[df_archive['category'] == '타인분석'].copy()
         if not df_others.empty:
-            df_others = df_others.sort_values(by='date', ascending=False).reset_index(drop=True) # 💡 날짜순(최신순) 정렬 적용
+            df_others = df_others.sort_values(by='date', ascending=False).reset_index(drop=True)
             st.markdown("### 📋 스크랩 목록")
             selected_other = st.dataframe(df_others[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
             
@@ -1180,7 +1210,6 @@ with tab5:
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                         st.rerun()
 
-    # 💡 Tab 5-B: 나의 관점 렌더링 영역
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
@@ -1188,7 +1217,7 @@ with tab5:
         df_myview = df_archive[df_archive['category'] == '나의관점'].copy()
         
         if not df_myview.empty:
-            df_myview = df_myview.sort_values(by='date', ascending=False).reset_index(drop=True) # 💡 날짜순(최신순) 정렬 적용
+            df_myview = df_myview.sort_values(by='date', ascending=False).reset_index(drop=True)
             selected_myview = st.dataframe(df_myview[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
             
             selected_rows_myview = selected_myview.get('selection', {}).get('rows', [])
