@@ -47,7 +47,7 @@ def upload_image_to_supabase(img_file, prefix="img"):
         file_bytes = img_file.getvalue()
         
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
-        img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": img_file.type}
+        img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": getattr(img_file, 'type', 'image/png')}
         
         res = requests.post(upload_url, headers=img_headers, data=file_bytes)
         if res.status_code == 200:
@@ -300,7 +300,7 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
     * 목적: 전체적인 시장의 큰 추세(상승장인지 하락장인지)와 거대한 매물대를 파악합니다.
     * 작도: 가장 큼직하고 뚜렷한 추세선, 거대한 오더블록, 강력한 지지/저항선 등 굵직한 구조물을 그려둡니다.
 * **[2단계] 중위 타임프레임 (4시간봉 4H / 1시간봉 1H) - "나무들이 모인 구역 파악"**
-    * 목적: 상위 타임프레임에서 그어둔 큰 틀 안에서, 현재 가격이 어디쯤 위치해 있는지 파악합니다.
+    * 목적: 상위 타임프레임에서 그어둔 큰 틀 안에서, 현재 가격이 어디쯤 위치해 파악합니다.
     * 작도: 현재 형성되고 있는 채널이나, 가까운 유동성(전고/전저점), 중기적인 FVG 등을 확인하여 내가 매매할 '작전 반경'을 설정합니다.
 * **[3단계] 하위 타임프레임 (15분봉 15m / 5분봉 5m) - "정밀 타격(Entry) 지점 포착"**
     * 목적: 상위와 중위 타임프레임의 분석을 바탕으로, 리스크(손절)를 최소화할 수 있는 정확한 진입 타이밍을 잡습니다.
@@ -583,6 +583,15 @@ st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템
 
 st.markdown("""<style>div[data-testid="stInfo"] p { font-size: 1.1rem; } div[data-testid="stError"] p { font-size: 1.1rem; }</style>""", unsafe_allow_html=True)
 
+# Session State 초기화 (Tab 2 AI 파이프라인용)
+if "ai_analysis_done" not in st.session_state:
+    st.session_state.ai_analysis_done = False
+    st.session_state.ai_result = ""
+    st.session_state.ai_view_text = ""
+    st.session_state.ai_img_bytes = None
+    st.session_state.ai_img_name = ""
+    st.session_state.ai_img_type = ""
+
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브"])
 
 # --- Tab 1: 매매 기록 보관지 ---
@@ -650,11 +659,11 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- Tab 2: 내 관점 분석 ---
+# --- Tab 2: 내 관점 분석 (업데이트!) ---
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백")
-    st.info("차트 스크린샷을 업로드하고 현재 관점을 입력하시면, AI가 '유동성 스윕(Liquidity Sweep)' 등 기본 이론을 바탕으로 정밀 분석해 드립니다.")
+    st.info("차트 스크린샷을 업로드하고 현재 관점을 입력하시면, AI가 정밀 분석 후 '나의 관점(Watchlist)'으로 보낼 수 있습니다.")
     
     col1, col2 = st.columns([1, 1])
     
@@ -689,14 +698,70 @@ with tab2:
                         """
                         analysis_result = ask_gemini_dynamic(analysis_prompt, img_to_analyze)
                         
-                        st.success("✅ AI 분석 완료!")
-                        st.subheader("🤖 AI 멘토의 피드백")
-                        st.write(analysis_result)
+                        # 분석 결과를 Session State에 저장
+                        st.session_state.ai_analysis_done = True
+                        st.session_state.ai_result = analysis_result
+                        st.session_state.ai_view_text = user_view
+                        st.session_state.ai_img_bytes = view_uploaded_file.getvalue()
+                        st.session_state.ai_img_name = view_uploaded_file.name
+                        st.session_state.ai_img_type = view_uploaded_file.type
+                        st.rerun()
                         
                     except Exception as e:
                         st.error(f"분석 중 오류가 발생했습니다: {e}")
             else:
                 st.warning("⚠️ 차트 이미지 업로드와 나의 관점 텍스트를 모두 입력해 주세요.")
+
+    # 💡 AI 분석이 완료되었을 때만 나타나는 결과 및 저장 폼 영역
+    if st.session_state.ai_analysis_done:
+        st.success("✅ AI 분석 완료!")
+        st.subheader("🤖 AI 멘토의 피드백")
+        st.write(st.session_state.ai_result)
+        
+        st.divider()
+        with st.expander("💾 이 관점을 '나의 관점(Watchlist)'에 저장하기", expanded=True):
+            st.info("AI의 검증 결과가 마음에 드시나요? 종목명만 입력하시면 Tab 5의 관점 아카이브로 영구 저장됩니다.")
+            with st.form("save_watchlist_form"):
+                col_w1, col_w2 = st.columns(2)
+                with col_w1:
+                    w_ticker = st.text_input("종목명 (예: BTCUSDT)").upper()
+                with col_w2:
+                    w_date = st.date_input("저장 날짜", datetime.today())
+                
+                if st.form_submit_button("🚀 나의 관점(Watchlist)에 저장", type="primary", use_container_width=True):
+                    if not w_ticker:
+                        st.error("종목명을 입력해주세요!")
+                    else:
+                        with st.spinner("클라우드에 안전하게 보관 중입니다..."):
+                            # 바이너리 데이터를 업로드용 객체로 변환하기 위한 헬퍼 클래스
+                            class DummyFile:
+                                def __init__(self, b, n, t):
+                                    self.b = b
+                                    self.name = n
+                                    self.type = t
+                                def getvalue(self):
+                                    return self.b
+                                    
+                            dummy_img = DummyFile(st.session_state.ai_img_bytes, st.session_state.ai_img_name, st.session_state.ai_img_type)
+                            img_url = upload_image_to_supabase(dummy_img, "watchlist")
+                            
+                            insert_data = {
+                                "date": w_date.strftime("%Y-%m-%d"), 
+                                "ticker": w_ticker, 
+                                "category": "나의관점", # 카테고리를 '나의관점'으로 지정
+                                "source_view": st.session_state.ai_view_text,
+                                "chart_image_paths": img_url if img_url else "", 
+                                "detail_image_paths": "", 
+                                "memo": st.session_state.ai_result, # AI 피드백을 메모로 저장
+                                "ai_advice_mapping": "{}",
+                                "ocr_text_mapping": "{}"
+                            }
+                            insert_db("analysis_archive", insert_data)
+                            
+                            # 저장 완료 후 상태 초기화
+                            st.session_state.ai_analysis_done = False
+                            st.success("✅ Watchlist에 성공적으로 저장되었습니다! [📁 분석 자료 아카이브] 탭에서 확인하세요.")
+                            st.rerun()
 
 # ==============================
 # --- Tab 3: 기본 이론 & DB ---
@@ -878,7 +943,7 @@ with tab4:
         st.code(log_text, language="bash")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 ---
+# --- Tab 5: 분석 아카이브 (업데이트!) ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -1114,5 +1179,36 @@ with tab5:
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                         st.rerun()
 
+    # 💡 Tab 5-B: 나의 관점 렌더링 영역 (업데이트!)
     with sub_tab_b:
-        st.write("나의 관점(Watchlist) 탭 역시 위와 동일한 구조로 작동합니다.")
+        st.markdown("### 👀 나의 관점 (Watchlist)")
+        st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
+        
+        df_myview = df_archive[df_archive['category'] == '나의관점'].copy()
+        
+        if not df_myview.empty:
+            selected_myview = st.dataframe(df_myview[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
+            
+            selected_rows_myview = selected_myview.get('selection', {}).get('rows', [])
+            if selected_rows_myview:
+                st.divider()
+                my_data = df_myview.iloc[selected_rows_myview[0]]
+                my_id = my_data['id']
+                
+                col_title, col_del = st.columns([8.5, 1.5])
+                with col_title:
+                    st.markdown(f"## 🎯 {my_data['date']} | {my_data['ticker']} 관점")
+                with col_del:
+                    if st.button("🗑️ 삭제하기", type="primary", use_container_width=True, key=f"del_my_{my_id}"):
+                        delete_db("analysis_archive", "id", my_id)
+                        st.rerun()
+                
+                col_img, col_txt = st.columns([6, 4], gap="large")
+                with col_img:
+                    if my_data.get('chart_image_paths'):
+                        st.markdown(render_crisp_image_html(my_data['chart_image_paths']), unsafe_allow_html=True)
+                with col_txt:
+                    st.info(f"**💡 나의 셋업 관점:**\n\n{my_data['source_view']}")
+                    st.success(f"**🤖 AI 멘토의 검증 피드백:**\n\n{my_data['memo']}")
+        else:
+            st.info("아직 저장된 관점이 없습니다. '🔎 AI 차트 & 관점 분석' 탭에서 분석 후 S급 셋업을 저장해 보세요!")
