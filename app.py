@@ -499,7 +499,7 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 각 차트별로 지정된 특정 티커(종목명)를 프롬프트에 주입!
+        # 💡 각 차트별로 지정된 특정 티커(종목명)를 프롬프트에 주입하여 명확하게 분석하도록 유도!
         prompt = f"이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
         return ask_gemini_dynamic(prompt, img) 
     except Exception as e:
@@ -613,6 +613,7 @@ if "ai_analysis_done" not in st.session_state:
     st.session_state.ai_view_text = ""
     st.session_state.ai_img_files = [] 
 
+# 💡 첨부파일 일괄 초기화(리셋)를 위한 키
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0 
 
@@ -685,7 +686,7 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- Tab 2: 내 관점 분석 (다중 이미지 지원) ---
+# --- Tab 2: 내 관점 분석 ---
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백")
@@ -1047,6 +1048,7 @@ with tab5:
                             if arch_imgs_detail:
                                 for img_file in arch_imgs_detail:
                                     group, sub = get_file_group_info(img_file.name)
+                                    # 💡 수정 포인트: URL을 디테일 차트도 고유하게!
                                     url = upload_image_to_supabase(img_file, f"arch_detail_{group}_{sub}")
                                     if url:
                                         detail_urls.append(url)
@@ -1056,7 +1058,8 @@ with tab5:
                                             if not specific_ticker: specific_ticker = batch_ticker.strip()
                                             if not specific_ticker: specific_ticker = arch_ticker1.strip()
                                             
-                                            ai_advice_final_mapping[group] = get_real_ai_advice(url, specific_ticker)
+                                            # 💡 핵심 수정: 그룹+서브 번호로 키를 완전 분리! (덮어쓰기 방지)
+                                            ai_advice_final_mapping[f"{group}_{sub}"] = get_real_ai_advice(url, specific_ticker)
                                             time.sleep(3) 
 
                             insert_data = {
@@ -1137,6 +1140,9 @@ with tab5:
                 rendered_details = set()
                 total_blogs = len(valid_blogs)
 
+                # 하위 호환성을 위한 세트 (과거 데이터 중복 표시 방지)
+                shown_legacy_advice = set()
+
                 if valid_blogs:
                     for idx, path in enumerate(valid_blogs):
                         current_blog_idx = idx + 1
@@ -1164,7 +1170,22 @@ with tab5:
                                 with c_det:
                                     for mdp in matched_detail_paths: st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
                                 with c_txt:
-                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
+                                    # 💡 핵심 수정: 각 세부 차트별로 저장된 AI 조언을 각각 띄워줍니다!
+                                    for mdp in matched_detail_paths:
+                                        fname = mdp.split('/')[-1]
+                                        if '_detail_' in fname:
+                                            parts = fname.split('_detail_')[1].split('_')
+                                            g = parts[0]
+                                            s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+                                            k = f"{g}_{s}"
+                                            
+                                            if k in ai_advice_mapping and ai_advice_mapping[k]:
+                                                st.success(f"🤖 **차트 {g}-{s} AI 분석**\n\n{ai_advice_mapping[k]}")
+                                            # 하위 호환성 (옛날 방식 데이터)
+                                            elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
+                                                st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
+                                                shown_legacy_advice.add(g)
+
                                     display_txt = ocr_mapping.get(num, "").strip()
                                     if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
                                     else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
@@ -1184,7 +1205,22 @@ with tab5:
                                     if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 데이터 보기", key=f"open_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = True
                                         st.rerun()
-                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
+                                    
+                                    # 💡 핵심 수정: 숨김 모드일 때도 각 차트별 조언 출력!
+                                    for mdp in matched_detail_paths:
+                                        fname = mdp.split('/')[-1]
+                                        if '_detail_' in fname:
+                                            parts = fname.split('_detail_')[1].split('_')
+                                            g = parts[0]
+                                            s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+                                            k = f"{g}_{s}"
+                                            
+                                            if k in ai_advice_mapping and ai_advice_mapping[k]:
+                                                st.success(f"🤖 **차트 {g}-{s} AI 분석**\n\n{ai_advice_mapping[k]}")
+                                            elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
+                                                st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
+                                                shown_legacy_advice.add(g)
+
                                     display_txt = ocr_mapping.get(num, "").strip()
                                     if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
                                     else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
@@ -1202,6 +1238,7 @@ with tab5:
                                 st.markdown(badge_html, unsafe_allow_html=True)
                                 st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                             with c_txt:
+                                # 여기는 세부 차트가 없는 원본 캡처 단독인 경우 (기존 유지)
                                 if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                 display_txt = ocr_mapping.get(num, "").strip()
                                 if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
@@ -1227,7 +1264,20 @@ with tab5:
                         c_u_img, c_u_txt = st.columns([7.5, 2.5], gap="medium")
                         with c_u_img: st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
                         with c_u_txt:
-                            if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 조언**\n\n{ai_advice_mapping[num]}")
+                            # 💡 핵심 수정: 기타 세부 차트들도 개별 출력!
+                            fname = path.split('/')[-1]
+                            if '_detail_' in fname:
+                                parts = fname.split('_detail_')[1].split('_')
+                                g = parts[0]
+                                s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+                                k = f"{g}_{s}"
+                                
+                                if k in ai_advice_mapping and ai_advice_mapping[k]:
+                                    st.success(f"🤖 **차트 {g}-{s} 분석**\n\n{ai_advice_mapping[k]}")
+                                elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
+                                    st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
+                                    shown_legacy_advice.add(g)
+
                             display_txt = ocr_mapping.get(num, "").strip()
                             if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
                             else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
