@@ -455,7 +455,6 @@ def ask_gemini_dynamic(prompt, imgs):
             
         last_error = ""
         
-        # 💡 리스트 형태가 아니면 리스트로 묶어줍니다 (다중 이미지 처리를 위해)
         if not isinstance(imgs, list):
             imgs = [imgs]
             
@@ -500,7 +499,8 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        prompt = f"이 차트 이미지를 바탕으로 {ticker} 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
+        # 💡 각 차트별로 지정된 특정 티커(종목명)를 프롬프트에 주입!
+        prompt = f"이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
         return ask_gemini_dynamic(prompt, img) 
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
@@ -523,37 +523,31 @@ def get_file_group_info(filename):
 # --- 5. 🚀 생존 매매 봇 핵심 함수 ---
 # ==========================================
 def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_percent, reason, risk_limit_percent):
-    """지정한 리스크 기반으로 수량을 계산하고 진입과 동시에 스탑로스를 거는 함수"""
     try:
         exchange = ccxt.bitget({
             'apiKey': api_key,
             'secret': secret_key,
             'password': passphrase,
             'enableRateLimit': True,
-            'options': {'defaultType': 'swap'} # 선물 거래 기준
+            'options': {'defaultType': 'swap'} 
         })
         
-        # 1. 현재가 및 잔고 조회
         ticker = exchange.fetch_ticker(symbol)
         current_price = ticker['last']
         balance = exchange.fetch_balance()
         total_usdt = balance['USDT']['free']
         
-        # 2. 리스크 한도에 따른 안전 수량 계산
         max_loss_usdt = total_usdt * (risk_limit_percent / 100.0)
         loss_per_coin = current_price * (sl_percent / 100.0)
-        amount = round(max_loss_usdt / loss_per_coin, 3) # 최소 주문단위에 맞춰 반올림
+        amount = round(max_loss_usdt / loss_per_coin, 3) 
         
         if amount <= 0:
             return False, f"❌ 진입 가능 수량이 0입니다. (잔고: {round(total_usdt, 2)} USDT)"
 
-        # 3. 손절가 계산
         stop_loss_price = current_price * (1 - sl_percent/100.0) if side == 'buy' else current_price * (1 + sl_percent/100.0)
 
-        # 4. 포지션 진입 (시장가)
         entry_order = exchange.create_order(symbol, 'market', side, amount)
 
-        # 5. 스탑로스 설정 (reduceOnly 속성으로 포지션 종료 전용)
         sl_side = 'sell' if side == 'buy' else 'buy'
         sl_params = {
             'stopPrice': stop_loss_price,
@@ -562,7 +556,6 @@ def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_per
         }
         sl_order = exchange.create_order(symbol, 'market', sl_side, amount, params=sl_params)
 
-        # 6. Tab 1 매매 기록 보관지로 데이터 자동 전송
         insert_data = {
             "date": datetime.today().strftime("%Y-%m-%d"),
             "ticker": symbol.split('/')[0],
@@ -618,10 +611,10 @@ if "ai_analysis_done" not in st.session_state:
     st.session_state.ai_analysis_done = False
     st.session_state.ai_result = ""
     st.session_state.ai_view_text = ""
-    st.session_state.ai_img_files = [] # 💡 멀티 이미지를 담을 리스트
+    st.session_state.ai_img_files = [] 
 
 if "uploader_key" not in st.session_state:
-    st.session_state.uploader_key = 0 # 💡 일괄 삭제(리셋)를 위한 키
+    st.session_state.uploader_key = 0 
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브"])
 
@@ -701,7 +694,6 @@ with tab2:
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        # 💡 여러 장 업로드 가능하도록 변경!
         view_uploaded_files = st.file_uploader("📷 차트 이미지 업로드 (여러 장 드래그 가능)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="view_uploader")
         if view_uploaded_files:
             for img in view_uploaded_files:
@@ -716,7 +708,6 @@ with tab2:
             elif view_uploaded_files and user_view:
                 with st.spinner('AI가 업로드된 모든 차트를 묶어서 종합 분석 중입니다... 🤖'):
                     try:
-                        # 여러 장의 이미지를 순회하며 리스트로 만듦
                         img_objs = [Image.open(f) for f in view_uploaded_files]
                         
                         analysis_prompt = f"""
@@ -735,7 +726,6 @@ with tab2:
                         """
                         analysis_result = ask_gemini_dynamic(analysis_prompt, img_objs)
                         
-                        # 파일 정보들을 리스트로 묶어서 Session State에 저장
                         st.session_state.ai_analysis_done = True
                         st.session_state.ai_result = analysis_result
                         st.session_state.ai_view_text = user_view
@@ -776,7 +766,6 @@ with tab2:
                                 def getvalue(self):
                                     return self.b
                             
-                            # 여러 장의 이미지를 각각 업로드 후 | 기호로 묶음
                             saved_urls = []
                             for file_data in st.session_state.ai_img_files:
                                 dummy_img = DummyFile(file_data['bytes'], file_data['name'], file_data['type'])
@@ -800,7 +789,7 @@ with tab2:
                             insert_db("analysis_archive", insert_data)
                             
                             st.session_state.ai_analysis_done = False
-                            st.session_state.ai_img_files = [] # 초기화
+                            st.session_state.ai_img_files = [] 
                             st.success("✅ Watchlist에 성공적으로 저장되었습니다! [📁 분석 자료 아카이브] 탭에서 확인하세요.")
                             st.rerun()
 
@@ -984,7 +973,7 @@ with tab4:
         st.code(log_text, language="bash")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 ---
+# --- Tab 5: 분석 아카이브 (업데이트 핵심) ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -993,37 +982,52 @@ with tab5:
     
     with sub_tab_a:
         with st.expander("➕ 새로운 스크랩 추가하기", expanded=False):
-            # 💡 일괄 삭제 버튼 추가 영역
-            col_reset1, col_reset2 = st.columns([8, 2])
-            with col_reset2:
-                if st.button("🗑️ 첨부 사진 일괄 삭제", help="업로드된 모든 사진을 한 번에 초기화합니다."):
-                    st.session_state.uploader_key += 1 # 키 값을 변경시켜 업로더를 완전히 리셋시킴
+            # 💡 1. 첨부 초기화 버튼을 가장 위쪽 눈에 띄는 곳으로 이동!
+            col_header, col_reset = st.columns([8, 2])
+            with col_header:
+                st.markdown("### 📝 새 분석 스크랩 작성")
+            with col_reset:
+                if st.button("🗑️ 첨부 일괄 삭제", use_container_width=True, help="업로드된 사진을 모두 지웁니다."):
+                    st.session_state.uploader_key += 1
                     st.rerun()
 
+            st.markdown("---")
+            # 💡 2. 폼 바깥에서 파일을 먼저 받습니다 (그래야 동적 렌더링 가능)
             col_up1, col_up2 = st.columns(2)
             with col_up1:
-                st.markdown("### 🖼️ 1. 포스팅 원본 (블로그/글 캡처)")
-                # 키 값에 uploader_key를 붙여 리셋이 가능하게 함
+                st.markdown("#### 🖼️ 1. 포스팅 원본 (글 캡처)")
                 arch_imgs_blog = st.file_uploader("인사이트 내용 캡처 (AI가 자동으로 텍스트 추출)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key=f"arch_imgs_blog_{st.session_state.uploader_key}", label_visibility="collapsed")
             with col_up2:
-                st.markdown("### 🔍 2. 세부 고해상도 차트")
+                st.markdown("#### 🔍 2. 세부 고해상도 차트")
                 arch_imgs_detail = st.file_uploader("고해상도 차트 (AI가 차트를 분석합니다)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key=f"arch_imgs_detail_{st.session_state.uploader_key}", label_visibility="collapsed")
             
             with st.form("archive_form_others", clear_on_submit=True):
                 col1, col2, col3 = st.columns(3)
                 with col1: arch_date1 = st.date_input("스크랩 날짜", datetime.today())
-                with col2: arch_ticker1 = st.text_input("종목명 (예: ETH)").upper()
-                with col3: arch_source1 = st.text_input("출처 (예: 쉽알남 유튜브)")
+                # 💡 3. 다중 티커 입력 안내로 변경
+                with col2: arch_ticker1 = st.text_input("관련 종목명 (예: BTC, NDX, 테더도미)").upper()
+                with col3: arch_source1 = st.text_input("출처/제목 (예: 쉽알남 오전 시황)")
                 
-                ai_advice_mapping = {}
+                ticker_mapping_input = {}
+                selected_charts_for_ai = []
+                
+                # 💡 4. 세부 차트별 종목 입력 (일괄/개별) 로직 구현
                 if arch_imgs_detail:
                     st.divider()
-                    st.markdown("### 🤖 세부 차트 AI 조언 요청")
-                    chart_names_for_ai = [f"{img_file.name}" for img_file in arch_imgs_detail]
-                    selected_charts_for_ai = st.multiselect("AI 조언을 받을 차트(들)를 선택하세요.", chart_names_for_ai, default=chart_names_for_ai)
+                    st.markdown("### 🤖 세부 차트별 AI 분석 설정")
+                    st.caption("여러 장의 차트를 올리셨군요! 각 차트가 어떤 종목인지 알려주면 AI가 훨씬 정확하게 분석합니다.")
+                    
+                    batch_ticker = st.text_input("💡 [일괄 적용] 모든 차트에 적용할 기본 종목명 (비워두면 위의 '관련 종목명' 사용)", placeholder="예: BTCUSDT")
+                    
+                    st.markdown("**📌 개별 차트 종목 지정 (위 일괄 적용과 다를 경우에만 개별 수정하세요)**")
+                    cols = st.columns(3)
+                    for idx, img in enumerate(arch_imgs_detail):
+                        selected_charts_for_ai.append(img.name)
+                        with cols[idx % 3]:
+                            ticker_mapping_input[img.name] = st.text_input(f"차트 {idx+1} ({img.name[:8]}...)", key=f"t_{idx}")
                 
                 if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
-                    if not arch_ticker1: st.error("종목명을 입력해주세요!")
+                    if not arch_ticker1: st.error("관련 종목명을 최소 1개 이상 입력해주세요!")
                     else:
                         with st.spinner("무료 AI(Gemini)가 최적의 모델을 찾아 분석 중입니다... 여러 장을 올리면 시간이 조금 걸립니다! 🤖"):
                             blog_urls, detail_urls = [], []
@@ -1038,7 +1042,7 @@ with tab5:
                                     if url:
                                         blog_urls.append(url)
                                         ocr_final_mapping[group] = get_real_ocr_text(url)
-                                        time.sleep(4) 
+                                        time.sleep(3) 
                             
                             if arch_imgs_detail:
                                 for img_file in arch_imgs_detail:
@@ -1047,8 +1051,13 @@ with tab5:
                                     if url:
                                         detail_urls.append(url)
                                         if img_file.name in selected_charts_for_ai:
-                                            ai_advice_final_mapping[group] = get_real_ai_advice(url, arch_ticker1)
-                                            time.sleep(4) 
+                                            # 💡 5. 개별 종목명 결정 후 프롬프트에 주입!
+                                            specific_ticker = ticker_mapping_input.get(img_file.name, "").strip()
+                                            if not specific_ticker: specific_ticker = batch_ticker.strip()
+                                            if not specific_ticker: specific_ticker = arch_ticker1.strip()
+                                            
+                                            ai_advice_final_mapping[group] = get_real_ai_advice(url, specific_ticker)
+                                            time.sleep(3) 
 
                             insert_data = {
                                 "date": date_str, "ticker": arch_ticker1, "category": "타인분석", "source_view": arch_source1,
@@ -1057,7 +1066,7 @@ with tab5:
                                 "ocr_text_mapping": json.dumps(ocr_final_mapping, ensure_ascii=False)
                             }
                             insert_db("analysis_archive", insert_data)
-                            st.session_state.uploader_key += 1 # 업로드 성공 후 파일창 초기화
+                            st.session_state.uploader_key += 1
                         st.success("무료 AI 분석 및 클라우드 저장 완료!")
                         st.rerun()
 
@@ -1076,7 +1085,7 @@ with tab5:
                 col_title, col_del = st.columns([8.5, 1.5])
                 with col_title:
                     st.markdown(f"## 📚 {arch_data['date']} | {arch_data['ticker']} 분석 스크랩")
-                    st.markdown(f"**출처:** {arch_data['source_view']}")
+                    st.markdown(f"**출처/제목:** {arch_data['source_view']}")
                 with col_del:
                     if st.button("🗑️ 이 스크랩 삭제하기", type="primary", use_container_width=True):
                         delete_db("analysis_archive", "id", arch_id_current)
@@ -1087,7 +1096,7 @@ with tab5:
                         c1, c2, c3 = st.columns(3)
                         with c1: new_date = st.date_input("날짜", value=pd.to_datetime(arch_data['date']).date())
                         with c2: new_ticker = st.text_input("종목명", value=arch_data['ticker'])
-                        with c3: new_source = st.text_input("출처_관점", value=arch_data['source_view'])
+                        with c3: new_source = st.text_input("출처/제목", value=arch_data['source_view'])
                         if st.form_submit_button("정보 업데이트", use_container_width=True):
                             update_db("analysis_archive", "id", arch_id_current, {"date": new_date.strftime("%Y-%m-%d"), "ticker": new_ticker.upper(), "source_view": new_source})
                             st.rerun()
@@ -1155,7 +1164,7 @@ with tab5:
                                 with c_det:
                                     for mdp in matched_detail_paths: st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
                                 with c_txt:
-                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 AI 분석**\n\n{ai_advice_mapping[num]}")
+                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                     display_txt = ocr_mapping.get(num, "").strip()
                                     if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
                                     else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
@@ -1175,7 +1184,7 @@ with tab5:
                                     if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 데이터 보기", key=f"open_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = True
                                         st.rerun()
-                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 AI 분석**\n\n{ai_advice_mapping[num]}")
+                                    if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                     display_txt = ocr_mapping.get(num, "").strip()
                                     if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
                                     else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
@@ -1193,7 +1202,7 @@ with tab5:
                                 st.markdown(badge_html, unsafe_allow_html=True)
                                 st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                             with c_txt:
-                                if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 AI 분석**\n\n{ai_advice_mapping[num]}")
+                                if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                 display_txt = ocr_mapping.get(num, "").strip()
                                 if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
                                 else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
@@ -1218,7 +1227,7 @@ with tab5:
                         c_u_img, c_u_txt = st.columns([7.5, 2.5], gap="medium")
                         with c_u_img: st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
                         with c_u_txt:
-                            if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **{num}번 차트 조언**\n\n{ai_advice_mapping[num]}")
+                            if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 조언**\n\n{ai_advice_mapping[num]}")
                             display_txt = ocr_mapping.get(num, "").strip()
                             if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
                             else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
@@ -1230,7 +1239,6 @@ with tab5:
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                         st.rerun()
 
-    # 💡 Tab 5-B: 나의 관점 렌더링 영역 (다중 이미지 지원)
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
@@ -1257,7 +1265,6 @@ with tab5:
                 
                 col_img, col_txt = st.columns([6, 4], gap="large")
                 with col_img:
-                    # 💡 여러 장의 이미지가 | 로 구분되어 있을 경우 모두 렌더링하도록 수정
                     if my_data.get('chart_image_paths'):
                         urls = my_data['chart_image_paths'].split('|')
                         for u in urls:
