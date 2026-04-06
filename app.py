@@ -435,9 +435,9 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
     return db_dict
 
 # ==========================================
-# --- 4. 🚀 무료 AI(Gemini) 무한 좀비 추적 시스템 ---
+# --- 4. 🚀 무료 AI(Gemini) 무한 좀비 추적 시스템 (멀티 이미지 지원) ---
 # ==========================================
-def ask_gemini_dynamic(prompt, img):
+def ask_gemini_dynamic(prompt, imgs):
     try:
         available_models = []
         for m in genai.list_models():
@@ -455,10 +455,16 @@ def ask_gemini_dynamic(prompt, img):
             
         last_error = ""
         
+        # 💡 리스트 형태가 아니면 리스트로 묶어줍니다 (다중 이미지 처리를 위해)
+        if not isinstance(imgs, list):
+            imgs = [imgs]
+            
+        payload = [prompt] + imgs
+        
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
-                response = model.generate_content([prompt, img])
+                response = model.generate_content(payload)
                 return response.text
             except Exception as e:
                 last_error = str(e)
@@ -580,30 +586,22 @@ def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_per
 # ==========================================
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
-# 💡 스마트폰 등 모바일 환경 화면 비율 최적화 CSS 적용
+# 모바일 최적화 CSS
 st.markdown("""
 <style>
-/* 기본 메시지 폰트 사이즈 조정 */
 div[data-testid="stInfo"] p { font-size: 1.1rem; } 
 div[data-testid="stError"] p { font-size: 1.1rem; }
-
-/* 스마트폰 미디어 쿼리 (화면 너비 768px 이하일 때 발동) */
 @media (max-width: 768px) {
-    /* 메인 컨테이너 패딩(여백)을 확 줄여서 모바일 화면을 넓게 씁니다. */
     .block-container {
         padding-top: 2rem !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
         padding-bottom: 2rem !important;
     }
-    
-    /* 제목 및 본문 폰트 크기를 모바일에 맞게 축소하여 줄바꿈 방지 */
     h1 { font-size: 1.8rem !important; }
     h2 { font-size: 1.5rem !important; }
     h3 { font-size: 1.2rem !important; }
     p, span, div { font-size: 1rem !important; }
-    
-    /* 상단 탭(Tab) 메뉴 크기 조정 (가로 스크롤 시 부드럽게) */
     button[data-baseweb="tab"] {
         font-size: 0.9rem !important;
         padding-left: 10px !important;
@@ -615,14 +613,15 @@ div[data-testid="stError"] p { font-size: 1.1rem; }
 
 st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
-# Session State 초기화 (Tab 2 AI 파이프라인용)
+# Session State 초기화
 if "ai_analysis_done" not in st.session_state:
     st.session_state.ai_analysis_done = False
     st.session_state.ai_result = ""
     st.session_state.ai_view_text = ""
-    st.session_state.ai_img_bytes = None
-    st.session_state.ai_img_name = ""
-    st.session_state.ai_img_type = ""
+    st.session_state.ai_img_files = [] # 💡 멀티 이미지를 담을 리스트
+
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0 # 💡 일괄 삭제(리셋)를 위한 키
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브"])
 
@@ -693,7 +692,7 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- Tab 2: 내 관점 분석 (파이프라인 적용) ---
+# --- Tab 2: 내 관점 분석 (다중 이미지 지원) ---
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백")
@@ -702,9 +701,11 @@ with tab2:
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        view_uploaded_file = st.file_uploader("📷 차트 이미지 업로드", type=["png", "jpg", "jpeg"], key="view_uploader")
-        if view_uploaded_file is not None:
-            st.image(view_uploaded_file, caption="업로드된 차트", use_container_width=True)
+        # 💡 여러 장 업로드 가능하도록 변경!
+        view_uploaded_files = st.file_uploader("📷 차트 이미지 업로드 (여러 장 드래그 가능)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="view_uploader")
+        if view_uploaded_files:
+            for img in view_uploaded_files:
+                st.image(img, caption=img.name, use_container_width=True)
             
     with col2:
         user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=150)
@@ -712,17 +713,19 @@ with tab2:
         if st.button("🚀 AI 관점 분석 요청", type="primary", use_container_width=True):
             if "GEMINI_API_KEY" not in st.secrets:
                 st.error("Gemini API 키가 설정되지 않았습니다.")
-            elif view_uploaded_file is not None and user_view:
-                with st.spinner('AI가 유동성 스윕 여부와 셋업을 정밀 분석 중입니다... 🤖'):
+            elif view_uploaded_files and user_view:
+                with st.spinner('AI가 업로드된 모든 차트를 묶어서 종합 분석 중입니다... 🤖'):
                     try:
-                        img_to_analyze = Image.open(view_uploaded_file)
+                        # 여러 장의 이미지를 순회하며 리스트로 만듦
+                        img_objs = [Image.open(f) for f in view_uploaded_files]
+                        
                         analysis_prompt = f"""
                         당신은 월스트리트 출신의 전문 트레이더이자 나의 트레이딩 멘토입니다. 
-                        내가 작성한 [나의 관점]과 첨부된 차트 이미지를 분석해주세요.
+                        내가 첨부한 여러 장의 차트 이미지(멀티 타임프레임)와 아래의 [나의 관점]을 종합적으로 검토해 주세요.
                         
                         [나의 관점]: {user_view}
 
-                        특히 '유동성 스윕(Liquidity Sweep)' 이론을 바탕으로 아래 항목을 정밀하게 분석해 주세요.
+                        특히 아래 항목을 정밀하게 분석해 주세요.
                         1. 레벨 식별: 차트상 주요 전고점/전저점 등 유동성이 몰려있는 구간 파악
                         2. 스윕 판독: 캔들이 꼬리(Wick)로만 유동성을 찌르고 몸통(Body)은 안착했는지 여부
                         3. 셋업 검증: 현재 진입하기 적합한 기준을 충족했는지 (아니면 관망해야 하는지)
@@ -730,20 +733,20 @@ with tab2:
 
                         가독성 좋고 자연스러운 한국어로 출력해주세요.
                         """
-                        analysis_result = ask_gemini_dynamic(analysis_prompt, img_to_analyze)
+                        analysis_result = ask_gemini_dynamic(analysis_prompt, img_objs)
                         
+                        # 파일 정보들을 리스트로 묶어서 Session State에 저장
                         st.session_state.ai_analysis_done = True
                         st.session_state.ai_result = analysis_result
                         st.session_state.ai_view_text = user_view
-                        st.session_state.ai_img_bytes = view_uploaded_file.getvalue()
-                        st.session_state.ai_img_name = view_uploaded_file.name
-                        st.session_state.ai_img_type = view_uploaded_file.type
+                        st.session_state.ai_img_files = [{"bytes": f.getvalue(), "name": f.name, "type": f.type} for f in view_uploaded_files]
+                        
                         st.rerun()
                         
                     except Exception as e:
                         st.error(f"분석 중 오류가 발생했습니다: {e}")
             else:
-                st.warning("⚠️ 차트 이미지 업로드와 나의 관점 텍스트를 모두 입력해 주세요.")
+                st.warning("⚠️ 차트 이미지를 1장 이상 업로드하고 나의 관점 텍스트를 모두 입력해 주세요.")
 
     if st.session_state.ai_analysis_done:
         st.success("✅ AI 분석 완료!")
@@ -752,7 +755,7 @@ with tab2:
         
         st.divider()
         with st.expander("💾 이 관점을 '나의 관점(Watchlist)'에 저장하기", expanded=True):
-            st.info("AI의 검증 결과가 마음에 드시나요? 종목명만 입력하시면 Tab 5의 관점 아카이브로 영구 저장됩니다.")
+            st.info("종목명만 입력하시면 Tab 5의 관점 아카이브로 여러 장의 차트와 피드백이 영구 저장됩니다.")
             with st.form("save_watchlist_form"):
                 col_w1, col_w2 = st.columns(2)
                 with col_w1:
@@ -772,16 +775,23 @@ with tab2:
                                     self.type = t
                                 def getvalue(self):
                                     return self.b
+                            
+                            # 여러 장의 이미지를 각각 업로드 후 | 기호로 묶음
+                            saved_urls = []
+                            for file_data in st.session_state.ai_img_files:
+                                dummy_img = DummyFile(file_data['bytes'], file_data['name'], file_data['type'])
+                                img_url = upload_image_to_supabase(dummy_img, "watchlist")
+                                if img_url:
+                                    saved_urls.append(img_url)
                                     
-                            dummy_img = DummyFile(st.session_state.ai_img_bytes, st.session_state.ai_img_name, st.session_state.ai_img_type)
-                            img_url = upload_image_to_supabase(dummy_img, "watchlist")
+                            final_urls_str = "|".join(saved_urls)
                             
                             insert_data = {
                                 "date": w_date.strftime("%Y-%m-%d"), 
                                 "ticker": w_ticker, 
                                 "category": "나의관점", 
                                 "source_view": st.session_state.ai_view_text,
-                                "chart_image_paths": img_url if img_url else "", 
+                                "chart_image_paths": final_urls_str, 
                                 "detail_image_paths": "", 
                                 "memo": st.session_state.ai_result, 
                                 "ai_advice_mapping": "{}",
@@ -790,6 +800,7 @@ with tab2:
                             insert_db("analysis_archive", insert_data)
                             
                             st.session_state.ai_analysis_done = False
+                            st.session_state.ai_img_files = [] # 초기화
                             st.success("✅ Watchlist에 성공적으로 저장되었습니다! [📁 분석 자료 아카이브] 탭에서 확인하세요.")
                             st.rerun()
 
@@ -982,13 +993,21 @@ with tab5:
     
     with sub_tab_a:
         with st.expander("➕ 새로운 스크랩 추가하기", expanded=False):
+            # 💡 일괄 삭제 버튼 추가 영역
+            col_reset1, col_reset2 = st.columns([8, 2])
+            with col_reset2:
+                if st.button("🗑️ 첨부 사진 일괄 삭제", help="업로드된 모든 사진을 한 번에 초기화합니다."):
+                    st.session_state.uploader_key += 1 # 키 값을 변경시켜 업로더를 완전히 리셋시킴
+                    st.rerun()
+
             col_up1, col_up2 = st.columns(2)
             with col_up1:
                 st.markdown("### 🖼️ 1. 포스팅 원본 (블로그/글 캡처)")
-                arch_imgs_blog = st.file_uploader("인사이트 내용 캡처 (AI가 자동으로 텍스트 추출)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="arch_imgs_blog", label_visibility="collapsed")
+                # 키 값에 uploader_key를 붙여 리셋이 가능하게 함
+                arch_imgs_blog = st.file_uploader("인사이트 내용 캡처 (AI가 자동으로 텍스트 추출)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key=f"arch_imgs_blog_{st.session_state.uploader_key}", label_visibility="collapsed")
             with col_up2:
                 st.markdown("### 🔍 2. 세부 고해상도 차트")
-                arch_imgs_detail = st.file_uploader("고해상도 차트 (AI가 차트를 분석합니다)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="arch_imgs_detail", label_visibility="collapsed")
+                arch_imgs_detail = st.file_uploader("고해상도 차트 (AI가 차트를 분석합니다)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key=f"arch_imgs_detail_{st.session_state.uploader_key}", label_visibility="collapsed")
             
             with st.form("archive_form_others", clear_on_submit=True):
                 col1, col2, col3 = st.columns(3)
@@ -1038,6 +1057,7 @@ with tab5:
                                 "ocr_text_mapping": json.dumps(ocr_final_mapping, ensure_ascii=False)
                             }
                             insert_db("analysis_archive", insert_data)
+                            st.session_state.uploader_key += 1 # 업로드 성공 후 파일창 초기화
                         st.success("무료 AI 분석 및 클라우드 저장 완료!")
                         st.rerun()
 
@@ -1210,6 +1230,7 @@ with tab5:
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                         st.rerun()
 
+    # 💡 Tab 5-B: 나의 관점 렌더링 영역 (다중 이미지 지원)
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
@@ -1236,8 +1257,11 @@ with tab5:
                 
                 col_img, col_txt = st.columns([6, 4], gap="large")
                 with col_img:
+                    # 💡 여러 장의 이미지가 | 로 구분되어 있을 경우 모두 렌더링하도록 수정
                     if my_data.get('chart_image_paths'):
-                        st.markdown(render_crisp_image_html(my_data['chart_image_paths']), unsafe_allow_html=True)
+                        urls = my_data['chart_image_paths'].split('|')
+                        for u in urls:
+                            if u: st.markdown(render_crisp_image_html(u), unsafe_allow_html=True)
                 with col_txt:
                     st.info(f"**💡 나의 셋업 관점:**\n\n{my_data['source_view']}")
                     st.success(f"**🤖 AI 멘토의 검증 피드백:**\n\n{my_data['memo']}")
