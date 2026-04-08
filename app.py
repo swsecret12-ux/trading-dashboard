@@ -514,7 +514,6 @@ def render_blog_image_html(url):
     return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 70vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
 
 def render_crisp_image_html(url):
-    # 💡 이미지가 왼쪽 정렬되도록(flex-start) 조정하여 공간 활용
     return f'<div style="width: 100%; display: flex; justify-content: flex-start; margin-bottom: 10px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; image-rendering: crisp-edges; border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" /></div>'
 
 def get_file_group_info(filename):
@@ -979,7 +978,7 @@ with tab4:
         st.code(log_text, language="bash")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (레이아웃 최적화) ---
+# --- Tab 5: 분석 아카이브 ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -1154,7 +1153,6 @@ with tab5:
                             show_blog = st.session_state[state_key]
                             num = group
                             
-                            # 💡 1. 숨김/표시 전환 레이아웃
                             if show_blog:
                                 st.markdown("---")
                                 col_blog_view, _ = st.columns([4, 6])
@@ -1178,7 +1176,6 @@ with tab5:
                                 
                                 st.markdown("#### 🔍 세부 차트 분석")
                                 for mdp in matched_detail_paths:
-                                    # 💡 2. 차트(왼쪽 65%) 와 AI 조언(오른쪽 35%) 1:1 매칭
                                     c_chart, c_ai = st.columns([6.5, 3.5], gap="medium")
                                     with c_chart:
                                         st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
@@ -1204,7 +1201,6 @@ with tab5:
                                         st.rerun()
                                 
                                 for mdp in matched_detail_paths:
-                                    # 💡 숨김 모드일 때도 1:1 매칭 레이아웃 유지
                                     c_chart, c_ai = st.columns([6.5, 3.5], gap="medium")
                                     with c_chart:
                                         st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
@@ -1221,7 +1217,6 @@ with tab5:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
                         else:
-                            # 세부 차트가 없는 경우 (블로그 원본만 있을 때)
                             st.markdown("---")
                             c_blog, c_ocr = st.columns([5.0, 5.0], gap="medium")
                             num = group
@@ -1246,7 +1241,6 @@ with tab5:
                 if unrendered_details:
                     st.markdown("### 📎 기타 세부 차트")
                     for path in unrendered_details:
-                        # 💡 예외적인 기타 차트도 1:1 레이아웃 적용
                         c_u_img, c_u_txt = st.columns([6.5, 3.5], gap="medium")
                         with c_u_img: st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
                         with c_u_txt:
@@ -1262,7 +1256,6 @@ with tab5:
                                     st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                     shown_legacy_advice.add(g)
 
-    # 💡 Tab 5-B: 나의 관점 렌더링 영역
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
@@ -1287,7 +1280,6 @@ with tab5:
                         delete_db("analysis_archive", "id", my_id)
                         st.rerun()
                 
-                # 💡 나의 관점 탭 역시 65:35 비율로 넓고 시원하게!
                 col_img, col_txt = st.columns([6.5, 3.5], gap="large")
                 with col_img:
                     if my_data.get('chart_image_paths'):
