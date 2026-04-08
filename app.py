@@ -113,7 +113,7 @@ def load_theory_db():
 
     orderblock_text = """**■ 1. 오더블록(Order Block)이란?**
 * 세력(스마트 머니)이 시장을 장악하고 추세를 반전시키기 전에 만들어지는 **'세력의 발자국'**입니다. 이 구간에는 엄청난 주문이 뭉쳐있거나, 세력의 미체결 주문이 남아있을 가능성이 매우 높습니다.
-* 단, 모든 오더블록이 의미가 있는 것은 아닙니다. 반드시 **'유동성 스윕'과 연계**해서 생각해야 강력한 무기가 됩니다.
+* 단, 모든 오더블록이 의미가 있는 것은 아닙니다. 반드시 **'유동성 스윕'과 연계**해서 생각해야 강력 무기가 됩니다.
 
 **■ 2. 오더블록의 성립 조건 (진짜 오더블록 찾기)**
 오더블록이라고 해서 무조건 선을 긋는 것이 아닙니다. 다음 세 가지 조건을 만족해야 **'가치가 있는(진짜) 오더블록'**으로 취급합니다.
@@ -499,8 +499,14 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 각 차트별로 지정된 특정 티커(종목명)를 프롬프트에 주입하여 명확하게 분석하도록 유도!
-        prompt = f"이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. (단, 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 작성해줘.)"
+        # 💡 핵심 수정 사항: AI가 가장 먼저 차트의 '종목'과 '타임프레임'을 스스로 파악해서 출력하도록 지시어를 강력하게 수정했습니다!
+        prompt = f"""
+        이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. 
+        
+        **가장 먼저, 이미지(차트 좌측 상단 등)에 나타난 차트의 '종목명(티커)'과 '타임프레임(몇 시간/분/일 봉인지)'을 확실하게 파악해서 첫 문장에 명시해줘.** (만약 이미지에 정보가 없거나 잘려서 알 수 없는 경우에만 '타임프레임 파악 불가'라고 기재할 것.)
+        
+        그 다음 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 분석 내용을 작성해줘.
+        """
         return ask_gemini_dynamic(prompt, img) 
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
@@ -579,7 +585,6 @@ def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_per
 # ==========================================
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
-# 모바일 최적화 CSS
 st.markdown("""
 <style>
 div[data-testid="stInfo"] p { font-size: 1.1rem; } 
@@ -606,14 +611,12 @@ div[data-testid="stError"] p { font-size: 1.1rem; }
 
 st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
-# Session State 초기화
 if "ai_analysis_done" not in st.session_state:
     st.session_state.ai_analysis_done = False
     st.session_state.ai_result = ""
     st.session_state.ai_view_text = ""
     st.session_state.ai_img_files = [] 
 
-# 💡 첨부파일 일괄 초기화(리셋)를 위한 키
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0 
 
@@ -711,13 +714,16 @@ with tab2:
                     try:
                         img_objs = [Image.open(f) for f in view_uploaded_files]
                         
+                        # 💡 핵심 수정 사항: 여기 프롬프트에도 티커와 타임프레임 파악 지시 추가!
                         analysis_prompt = f"""
                         당신은 월스트리트 출신의 전문 트레이더이자 나의 트레이딩 멘토입니다. 
-                        내가 첨부한 여러 장의 차트 이미지(멀티 타임프레임)와 아래의 [나의 관점]을 종합적으로 검토해 주세요.
+                        내가 첨부한 차트 이미지(멀티 타임프레임)와 아래의 [나의 관점]을 종합적으로 검토해 주세요.
                         
                         [나의 관점]: {user_view}
 
-                        특히 아래 항목을 정밀하게 분석해 주세요.
+                        **먼저 분석을 시작하기 전에, 가장 최우선으로 첨부된 차트 이미지 상단이나 텍스트를 보고 1) 어떤 종목(티커)인지 2) 몇 시간(분) 봉(타임프레임)인지 파악해서 첫 줄에 명확히 명시해 주세요.** (이미지에서 알 수 없는 경우 '타임프레임 파악 불가'로 기재)
+
+                        그 다음, 아래 항목을 정밀하게 분석해 주세요.
                         1. 레벨 식별: 차트상 주요 전고점/전저점 등 유동성이 몰려있는 구간 파악
                         2. 스윕 판독: 캔들이 꼬리(Wick)로만 유동성을 찌르고 몸통(Body)은 안착했는지 여부
                         3. 셋업 검증: 현재 진입하기 적합한 기준을 충족했는지 (아니면 관망해야 하는지)
@@ -974,7 +980,7 @@ with tab4:
         st.code(log_text, language="bash")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (업데이트 핵심) ---
+# --- Tab 5: 분석 아카이브 ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -983,7 +989,6 @@ with tab5:
     
     with sub_tab_a:
         with st.expander("➕ 새로운 스크랩 추가하기", expanded=False):
-            # 💡 1. 첨부 초기화 버튼을 가장 위쪽 눈에 띄는 곳으로 이동!
             col_header, col_reset = st.columns([8, 2])
             with col_header:
                 st.markdown("### 📝 새 분석 스크랩 작성")
@@ -993,7 +998,6 @@ with tab5:
                     st.rerun()
 
             st.markdown("---")
-            # 💡 2. 폼 바깥에서 파일을 먼저 받습니다 (그래야 동적 렌더링 가능)
             col_up1, col_up2 = st.columns(2)
             with col_up1:
                 st.markdown("#### 🖼️ 1. 포스팅 원본 (글 캡처)")
@@ -1005,14 +1009,12 @@ with tab5:
             with st.form("archive_form_others", clear_on_submit=True):
                 col1, col2, col3 = st.columns(3)
                 with col1: arch_date1 = st.date_input("스크랩 날짜", datetime.today())
-                # 💡 3. 다중 티커 입력 안내로 변경
                 with col2: arch_ticker1 = st.text_input("관련 종목명 (예: BTC, NDX, 테더도미)").upper()
                 with col3: arch_source1 = st.text_input("출처/제목 (예: 쉽알남 오전 시황)")
                 
                 ticker_mapping_input = {}
                 selected_charts_for_ai = []
                 
-                # 💡 4. 세부 차트별 종목 입력 (일괄/개별) 로직 구현
                 if arch_imgs_detail:
                     st.divider()
                     st.markdown("### 🤖 세부 차트별 AI 분석 설정")
@@ -1048,17 +1050,14 @@ with tab5:
                             if arch_imgs_detail:
                                 for img_file in arch_imgs_detail:
                                     group, sub = get_file_group_info(img_file.name)
-                                    # 💡 수정 포인트: URL을 디테일 차트도 고유하게!
                                     url = upload_image_to_supabase(img_file, f"arch_detail_{group}_{sub}")
                                     if url:
                                         detail_urls.append(url)
                                         if img_file.name in selected_charts_for_ai:
-                                            # 💡 5. 개별 종목명 결정 후 프롬프트에 주입!
                                             specific_ticker = ticker_mapping_input.get(img_file.name, "").strip()
                                             if not specific_ticker: specific_ticker = batch_ticker.strip()
                                             if not specific_ticker: specific_ticker = arch_ticker1.strip()
                                             
-                                            # 💡 핵심 수정: 그룹+서브 번호로 키를 완전 분리! (덮어쓰기 방지)
                                             ai_advice_final_mapping[f"{group}_{sub}"] = get_real_ai_advice(url, specific_ticker)
                                             time.sleep(3) 
 
@@ -1140,7 +1139,6 @@ with tab5:
                 rendered_details = set()
                 total_blogs = len(valid_blogs)
 
-                # 하위 호환성을 위한 세트 (과거 데이터 중복 표시 방지)
                 shown_legacy_advice = set()
 
                 if valid_blogs:
@@ -1170,7 +1168,6 @@ with tab5:
                                 with c_det:
                                     for mdp in matched_detail_paths: st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
                                 with c_txt:
-                                    # 💡 핵심 수정: 각 세부 차트별로 저장된 AI 조언을 각각 띄워줍니다!
                                     for mdp in matched_detail_paths:
                                         fname = mdp.split('/')[-1]
                                         if '_detail_' in fname:
@@ -1181,7 +1178,6 @@ with tab5:
                                             
                                             if k in ai_advice_mapping and ai_advice_mapping[k]:
                                                 st.success(f"🤖 **차트 {g}-{s} AI 분석**\n\n{ai_advice_mapping[k]}")
-                                            # 하위 호환성 (옛날 방식 데이터)
                                             elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
@@ -1206,7 +1202,6 @@ with tab5:
                                         st.session_state[state_key] = True
                                         st.rerun()
                                     
-                                    # 💡 핵심 수정: 숨김 모드일 때도 각 차트별 조언 출력!
                                     for mdp in matched_detail_paths:
                                         fname = mdp.split('/')[-1]
                                         if '_detail_' in fname:
@@ -1238,7 +1233,6 @@ with tab5:
                                 st.markdown(badge_html, unsafe_allow_html=True)
                                 st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                             with c_txt:
-                                # 여기는 세부 차트가 없는 원본 캡처 단독인 경우 (기존 유지)
                                 if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
                                 display_txt = ocr_mapping.get(num, "").strip()
                                 if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
@@ -1264,7 +1258,6 @@ with tab5:
                         c_u_img, c_u_txt = st.columns([7.5, 2.5], gap="medium")
                         with c_u_img: st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
                         with c_u_txt:
-                            # 💡 핵심 수정: 기타 세부 차트들도 개별 출력!
                             fname = path.split('/')[-1]
                             if '_detail_' in fname:
                                 parts = fname.split('_detail_')[1].split('_')
