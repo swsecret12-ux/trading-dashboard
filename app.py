@@ -113,7 +113,7 @@ def load_theory_db():
 
     orderblock_text = """**■ 1. 오더블록(Order Block)이란?**
 * 세력(스마트 머니)이 시장을 장악하고 추세를 반전시키기 전에 만들어지는 **'세력의 발자국'**입니다. 이 구간에는 엄청난 주문이 뭉쳐있거나, 세력의 미체결 주문이 남아있을 가능성이 매우 높습니다.
-* 단, 모든 오더블록이 의미가 있는 것은 아닙니다. 반드시 **'유동성 스윕'과 연계**해서 생각해야 강력 무기가 됩니다.
+* 단, 모든 오더블록이 의미가 있는 것은 아닙니다. 반드시 **'유동성 스윕'과 연계**해서 생각해야 강력한 무기가 됩니다.
 
 **■ 2. 오더블록의 성립 조건 (진짜 오더블록 찾기)**
 오더블록이라고 해서 무조건 선을 긋는 것이 아닙니다. 다음 세 가지 조건을 만족해야 **'가치가 있는(진짜) 오더블록'**으로 취급합니다.
@@ -499,7 +499,6 @@ def get_real_ai_advice(image_url, ticker):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 핵심 수정 사항: AI가 가장 먼저 차트의 '종목'과 '타임프레임'을 스스로 파악해서 출력하도록 지시어를 강력하게 수정했습니다!
         prompt = f"""
         이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. 
         
@@ -512,10 +511,11 @@ def get_real_ai_advice(image_url, ticker):
         return f"이미지 다운로드 실패: {e}"
 
 def render_blog_image_html(url):
-    return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
+    return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 70vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
 
 def render_crisp_image_html(url):
-    return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 10px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; image-rendering: crisp-edges; border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" /></div>'
+    # 💡 이미지가 왼쪽 정렬되도록(flex-start) 조정하여 공간 활용
+    return f'<div style="width: 100%; display: flex; justify-content: flex-start; margin-bottom: 10px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; image-rendering: crisp-edges; border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" /></div>'
 
 def get_file_group_info(filename):
     name_without_ext = os.path.splitext(filename)[0]
@@ -714,7 +714,6 @@ with tab2:
                     try:
                         img_objs = [Image.open(f) for f in view_uploaded_files]
                         
-                        # 💡 핵심 수정 사항: 여기 프롬프트에도 티커와 타임프레임 파악 지시 추가!
                         analysis_prompt = f"""
                         당신은 월스트리트 출신의 전문 트레이더이자 나의 트레이딩 멘토입니다. 
                         내가 첨부한 차트 이미지(멀티 타임프레임)와 아래의 [나의 관점]을 종합적으로 검토해 주세요.
@@ -980,7 +979,7 @@ with tab4:
         st.code(log_text, language="bash")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 ---
+# --- Tab 5: 분석 아카이브 (레이아웃 최적화) ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -1112,7 +1111,6 @@ with tab5:
                         st.rerun()
 
                 st.divider()
-                st.markdown("### 📄 고해상도 차트 및 자동 AI 분석 결과")
                 
                 blog_path_str = arch_data.get("chart_image_paths", "")
                 detail_path_str = arch_data.get("detail_image_paths", "")
@@ -1138,7 +1136,6 @@ with tab5:
                 for group in detail_dict: detail_dict[group] = [x[1] for x in sorted(detail_dict[group])]
                 rendered_details = set()
                 total_blogs = len(valid_blogs)
-
                 shown_legacy_advice = set()
 
                 if valid_blogs:
@@ -1148,7 +1145,7 @@ with tab5:
                         group = filename.split('_blog_')[1].split('_')[0] if '_blog_' in filename else str(idx)
                         
                         matched_detail_paths = detail_dict.get(group, [])
-                        badge_html = f"""<div style='margin-bottom: 8px;'><span style="background-color:#f0f2f6; padding:6px 12px; border-radius:6px; color:#333; font-weight:bold; font-size:15px; border: 1px solid #ddd;">📷 [ {current_blog_idx} / {total_blogs} ]</span></div>"""
+                        badge_html = f"""<div style='margin-bottom: 8px;'><span style="background-color:#f0f2f6; padding:6px 12px; border-radius:6px; color:#333; font-weight:bold; font-size:15px; border: 1px solid #ddd;">📷 [ {current_blog_idx} / {total_blogs} ] 원본 데이터</span></div>"""
                         
                         if matched_detail_paths:
                             rendered_details.update(matched_detail_paths)
@@ -1157,105 +1154,100 @@ with tab5:
                             show_blog = st.session_state[state_key]
                             num = group
                             
+                            # 💡 1. 숨김/표시 전환 레이아웃
                             if show_blog:
-                                c_blog, c_det, c_txt = st.columns([3.0, 5.5, 1.5], gap="medium")
-                                with c_blog:
+                                st.markdown("---")
+                                col_blog_view, _ = st.columns([4, 6])
+                                with col_blog_view:
                                     st.markdown(badge_html, unsafe_allow_html=True)
+                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                     if st.button("❌ 원본 숨기기", key=f"close_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = False
                                         st.rerun()
-                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
-                                with c_det:
-                                    for mdp in matched_detail_paths: st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
-                                with c_txt:
-                                    for mdp in matched_detail_paths:
+                                        
+                                    display_txt = ocr_mapping.get(num, "").strip()
+                                    with st.expander("📄 본문 텍스트 (OCR)", expanded=False):
+                                        if display_txt: st.info(display_txt)
+                                        else: st.info("*(추출된 텍스트가 없습니다.)*")
+                                        with st.form(key=f"edit_ocr_open_{arch_id_current}_{num}"):
+                                            edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
+                                            if st.form_submit_button("저장", use_container_width=True):
+                                                ocr_mapping[num] = edited_ocr
+                                                update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
+                                                st.rerun()
+                                
+                                st.markdown("#### 🔍 세부 차트 분석")
+                                for mdp in matched_detail_paths:
+                                    # 💡 2. 차트(왼쪽 65%) 와 AI 조언(오른쪽 35%) 1:1 매칭
+                                    c_chart, c_ai = st.columns([6.5, 3.5], gap="medium")
+                                    with c_chart:
+                                        st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
+                                    with c_ai:
                                         fname = mdp.split('/')[-1]
                                         if '_detail_' in fname:
                                             parts = fname.split('_detail_')[1].split('_')
                                             g = parts[0]
                                             s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
                                             k = f"{g}_{s}"
-                                            
                                             if k in ai_advice_mapping and ai_advice_mapping[k]:
                                                 st.success(f"🤖 **차트 {g}-{s} AI 분석**\n\n{ai_advice_mapping[k]}")
                                             elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
 
-                                    display_txt = ocr_mapping.get(num, "").strip()
-                                    if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
-                                    else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
-                                    with st.expander("✏️ 텍스트 입력/교정", expanded=False):
-                                        with st.form(key=f"edit_ocr_open_{arch_id_current}_{num}"):
-                                            edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
-                                            if st.form_submit_button("클라우드 저장", use_container_width=True):
-                                                ocr_mapping[num] = edited_ocr
-                                                update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
-                                                st.rerun()
                             else:
-                                c_det, c_txt = st.columns([7.5, 2.5], gap="medium")
-                                with c_det:
-                                    for mdp in matched_detail_paths: st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
-                                with c_txt:
-                                    st.write("") 
+                                st.markdown("---")
+                                col_btn, _ = st.columns([2, 8])
+                                with col_btn:
                                     if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 데이터 보기", key=f"open_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = True
                                         st.rerun()
-                                    
-                                    for mdp in matched_detail_paths:
+                                
+                                for mdp in matched_detail_paths:
+                                    # 💡 숨김 모드일 때도 1:1 매칭 레이아웃 유지
+                                    c_chart, c_ai = st.columns([6.5, 3.5], gap="medium")
+                                    with c_chart:
+                                        st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
+                                    with c_ai:
                                         fname = mdp.split('/')[-1]
                                         if '_detail_' in fname:
                                             parts = fname.split('_detail_')[1].split('_')
                                             g = parts[0]
                                             s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
                                             k = f"{g}_{s}"
-                                            
                                             if k in ai_advice_mapping and ai_advice_mapping[k]:
                                                 st.success(f"🤖 **차트 {g}-{s} AI 분석**\n\n{ai_advice_mapping[k]}")
                                             elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
-
-                                    display_txt = ocr_mapping.get(num, "").strip()
-                                    if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
-                                    else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
-                                    with st.expander("✏️ 텍스트 입력/교정", expanded=False):
-                                        with st.form(key=f"edit_ocr_closed_{arch_id_current}_{num}"):
-                                            edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
-                                            if st.form_submit_button("클라우드 저장", use_container_width=True):
-                                                ocr_mapping[num] = edited_ocr
-                                                update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
-                                                st.rerun()
                         else:
-                            c_blog, c_txt = st.columns([8.5, 1.5], gap="small")
+                            # 세부 차트가 없는 경우 (블로그 원본만 있을 때)
+                            st.markdown("---")
+                            c_blog, c_ocr = st.columns([5.0, 5.0], gap="medium")
                             num = group
                             with c_blog:
                                 st.markdown(badge_html, unsafe_allow_html=True)
                                 st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
-                            with c_txt:
-                                if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[num]}")
+                            with c_ocr:
+                                if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **AI 분석**\n\n{ai_advice_mapping[num]}")
                                 display_txt = ocr_mapping.get(num, "").strip()
-                                if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
-                                else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
-                                with st.expander("✏️ 텍스트 입력/교정", expanded=False):
+                                with st.expander("📄 본문 텍스트 (OCR)", expanded=True):
+                                    if display_txt: st.info(display_txt)
+                                    else: st.info("*(추출된 텍스트가 없습니다.)*")
                                     with st.form(key=f"edit_ocr_alone_{arch_id_current}_{num}"):
                                         edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
-                                        if st.form_submit_button("클라우드 저장", use_container_width=True):
+                                        if st.form_submit_button("저장", use_container_width=True):
                                             ocr_mapping[num] = edited_ocr
                                             update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                             st.rerun()
-                    st.markdown("<hr style='margin: 10px 0px; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
                 else: st.info("저장된 포스팅 원본 이미지가 없습니다.")
                 
                 unrendered_details = [dp for dp in valid_details if dp not in rendered_details]
                 if unrendered_details:
                     st.markdown("### 📎 기타 세부 차트")
                     for path in unrendered_details:
-                        filename = path.split('/')[-1]
-                        group = filename.split('_detail_')[1].split('_')[0] if '_detail_' in filename else "기타"
-                        num = group
-                        
-                        c_u_img, c_u_txt = st.columns([7.5, 2.5], gap="medium")
+                        # 💡 예외적인 기타 차트도 1:1 레이아웃 적용
+                        c_u_img, c_u_txt = st.columns([6.5, 3.5], gap="medium")
                         with c_u_img: st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
                         with c_u_txt:
                             fname = path.split('/')[-1]
@@ -1264,24 +1256,13 @@ with tab5:
                                 g = parts[0]
                                 s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
                                 k = f"{g}_{s}"
-                                
                                 if k in ai_advice_mapping and ai_advice_mapping[k]:
-                                    st.success(f"🤖 **차트 {g}-{s} 분석**\n\n{ai_advice_mapping[k]}")
+                                    st.success(f"🤖 **차트 {g}-{s} 조언**\n\n{ai_advice_mapping[k]}")
                                 elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                     st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                     shown_legacy_advice.add(g)
 
-                            display_txt = ocr_mapping.get(num, "").strip()
-                            if display_txt: st.info(f"📄 **AI 텍스트 추출**\n\n{display_txt}")
-                            else: st.info(f"📄 **AI 텍스트 추출**\n\n*(추출된 텍스트가 없습니다.)*")
-                            with st.expander("✏️ 텍스트 입력/교정", expanded=False):
-                                with st.form(key=f"edit_ocr_other_{arch_id_current}_{num}"):
-                                    edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
-                                    if st.form_submit_button("클라우드 저장", use_container_width=True):
-                                        ocr_mapping[num] = edited_ocr
-                                        update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
-                                        st.rerun()
-
+    # 💡 Tab 5-B: 나의 관점 렌더링 영역
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
@@ -1306,7 +1287,8 @@ with tab5:
                         delete_db("analysis_archive", "id", my_id)
                         st.rerun()
                 
-                col_img, col_txt = st.columns([6, 4], gap="large")
+                # 💡 나의 관점 탭 역시 65:35 비율로 넓고 시원하게!
+                col_img, col_txt = st.columns([6.5, 3.5], gap="large")
                 with col_img:
                     if my_data.get('chart_image_paths'):
                         urls = my_data['chart_image_paths'].split('|')
