@@ -102,7 +102,7 @@ def load_theory_db():
 * **손절(SL):** 채널을 이탈하며 찌른 **'가장 깊은 꼬리의 끝점'** (매우 타이트하고 객관적인 손절).
 
 **■ 3. 🎯 매매 셋업 B: 채널 유지 (리테스트 방어)**
-* **조건:** 캔들이 채널 선에 닿았    을 때.
+* **조건:** 캔들이 채널 선에 닿았을 때.
 * **진입 트리거:** 채널 선을 뚫고 나갔던 캔들이, 몸통은 선 안쪽에 두고 **'꼬리만 채널 선을 찌르고 마감'** 했을 때 진입.
 * **손절(SL):** 그 꼬리의 끝점.
 
@@ -320,7 +320,7 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
 **■ 2. 핵심 원칙: "필요한 것만 남기고 다 지우자"**
 진짜 고수들의 차트는 놀라울 정도로 단순하고 깨끗합니다.
 
-* **지표 다이어트:** * 수 পক্ষের 보조 지표를 지우고, 가격(Price)과 거래량(Volume)이라는 가장 본질적인 데이터에만 집중하세요. (가격 자체가 모든 정보가 선반영된 궁극의 지표입니다.)
+* **지표 다이어트:** * 수많은 보조 지표를 지우고, 가격(Price)과 거래량(Volume)이라는 가장 본질적인 데이터에만 집중하세요. (가격 자체가 모든 정보가 선반영된 궁극의 지표입니다.)
 * **작도 다이어트:**
     * 과거의 모든 고점과 저점에 선을 긋지 마세요. 
     * 현재 가격의 움직임에 직접적인 영향을 미치는 **'가장 최근의, 가장 의미 있는 핵심 구조물(오더블록, FVG, 유동성 스윕 라인)'** 몇 개만 남기고 과감히 지워버려야 합니다.
@@ -978,7 +978,7 @@ with tab4:
         st.code(log_text, language="bash")
 
 # ==============================
-# --- Tab 5: 분석 아카이브 (OCR 레이아웃 완벽 패치!) ---
+# --- Tab 5: 분석 아카이브 ---
 # ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
@@ -1135,6 +1135,7 @@ with tab5:
                 for group in detail_dict: detail_dict[group] = [x[1] for x in sorted(detail_dict[group])]
                 rendered_details = set()
                 total_blogs = len(valid_blogs)
+
                 shown_legacy_advice = set()
 
                 if valid_blogs:
@@ -1155,13 +1156,13 @@ with tab5:
                             
                             if show_blog:
                                 st.markdown("---")
-                                col_blog_view, _ = st.columns([6.5, 3.5])
+                                col_blog_view, _ = st.columns([4, 6])
                                 with col_blog_view:
                                     st.markdown(badge_html, unsafe_allow_html=True)
+                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                     if st.button("❌ 원본 숨기기", key=f"close_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = False
                                         st.rerun()
-                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                 
                                 st.markdown("#### 🔍 세부 차트 분석")
                                 for idx_mdp, mdp in enumerate(matched_detail_paths):
@@ -1175,33 +1176,34 @@ with tab5:
                                             g = parts[0]
                                             s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
                                             k = f"{g}_{s}"
+                                            
                                             if k in ai_advice_mapping and ai_advice_mapping[k]:
                                                 st.success(f"🤖 **차트 {g}-{s} AI 분석**\n\n{ai_advice_mapping[k]}")
                                             elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
-                                                
-                                        # 💡 핵심 수정: 첫 번째 세부 차트의 AI 분석 바로 밑에 OCR 텍스트 부착!
-                                        if idx_mdp == 0:
-                                            display_txt = ocr_mapping.get(num, "").strip()
-                                            st.markdown("#### 📄 본문 텍스트 (OCR)")
-                                            if display_txt:
-                                                st.info(display_txt)
-                                            else:
-                                                st.info("*(추출된 텍스트가 없습니다.)*")
-                                            with st.expander("✏️ 텍스트 입력/교정", expanded=False):
-                                                with st.form(key=f"edit_ocr_open_{arch_id_current}_{num}"):
-                                                    edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
-                                                    if st.form_submit_button("저장", use_container_width=True):
-                                                        ocr_mapping[num] = edited_ocr
-                                                        update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
-                                                        st.rerun()
+
+                                        # 💡 핵심 수정: 모든 차트 옆에 OCR 본문 텍스트 출력!
+                                        display_txt = ocr_mapping.get(num, "").strip()
+                                        st.markdown("#### 📄 본문 텍스트 (OCR)")
+                                        if display_txt:
+                                            st.info(display_txt)
+                                        else:
+                                            st.info("*(추출된 텍스트가 없습니다.)*")
+                                        with st.expander("✏️ 텍스트 입력/교정", expanded=False):
+                                            # 고유 키를 위해 idx_mdp를 추가
+                                            with st.form(key=f"edit_ocr_open_{arch_id_current}_{num}_{idx_mdp}"):
+                                                edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
+                                                if st.form_submit_button("저장", use_container_width=True):
+                                                    ocr_mapping[num] = edited_ocr
+                                                    update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
+                                                    st.rerun()
 
                             else:
                                 st.markdown("---")
-                                col_btn, _ = st.columns([3, 7])
+                                col_btn, _ = st.columns([2, 8])
                                 with col_btn:
-                                    if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 이미지 보기", key=f"open_btn_{state_key}", use_container_width=True):
+                                    if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 데이터 보기", key=f"open_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = True
                                         st.rerun()
                                 
@@ -1216,46 +1218,41 @@ with tab5:
                                             g = parts[0]
                                             s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
                                             k = f"{g}_{s}"
+                                            
                                             if k in ai_advice_mapping and ai_advice_mapping[k]:
                                                 st.success(f"🤖 **차트 {g}-{s} AI 분석**\n\n{ai_advice_mapping[k]}")
                                             elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
-                                                
-                                        # 💡 핵심 수정: 숨김 모드일 때도 동일하게 OCR 텍스트 부착!
-                                        if idx_mdp == 0:
-                                            display_txt = ocr_mapping.get(num, "").strip()
-                                            st.markdown("#### 📄 본문 텍스트 (OCR)")
-                                            if display_txt:
-                                                st.info(display_txt)
-                                            else:
-                                                st.info("*(추출된 텍스트가 없습니다.)*")
-                                            with st.expander("✏️ 텍스트 입력/교정", expanded=False):
-                                                with st.form(key=f"edit_ocr_closed_{arch_id_current}_{num}"):
-                                                    edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
-                                                    if st.form_submit_button("저장", use_container_width=True):
-                                                        ocr_mapping[num] = edited_ocr
-                                                        update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
-                                                        st.rerun()
+
+                                        # 💡 핵심 수정: 숨김 모드일 때도 모든 차트 옆에 OCR 본문 텍스트 출력!
+                                        display_txt = ocr_mapping.get(num, "").strip()
+                                        st.markdown("#### 📄 본문 텍스트 (OCR)")
+                                        if display_txt:
+                                            st.info(display_txt)
+                                        else:
+                                            st.info("*(추출된 텍스트가 없습니다.)*")
+                                        with st.expander("✏️ 텍스트 입력/교정", expanded=False):
+                                            with st.form(key=f"edit_ocr_closed_{arch_id_current}_{num}_{idx_mdp}"):
+                                                edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
+                                                if st.form_submit_button("저장", use_container_width=True):
+                                                    ocr_mapping[num] = edited_ocr
+                                                    update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
+                                                    st.rerun()
                         else:
                             # 블로그 원본 이미지만 단독으로 있는 경우
                             st.markdown("---")
-                            c_blog, c_ocr = st.columns([6.5, 3.5], gap="medium")
+                            c_blog, c_ocr = st.columns([5.0, 5.0], gap="medium")
                             num = group
                             with c_blog:
                                 st.markdown(badge_html, unsafe_allow_html=True)
                                 st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                             with c_ocr:
-                                if num in ai_advice_mapping and ai_advice_mapping[num]: 
-                                    st.success(f"🤖 **AI 분석**\n\n{ai_advice_mapping[num]}")
-                                
-                                st.markdown("#### 📄 본문 텍스트 (OCR)")
+                                if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **AI 분석**\n\n{ai_advice_mapping[num]}")
                                 display_txt = ocr_mapping.get(num, "").strip()
-                                if display_txt:
-                                    st.info(display_txt)
-                                else:
-                                    st.info("*(추출된 텍스트가 없습니다.)*")
-                                with st.expander("✏️ 텍스트 입력/교정", expanded=False):
+                                with st.expander("📄 본문 텍스트 (OCR)", expanded=True):
+                                    if display_txt: st.info(display_txt)
+                                    else: st.info("*(추출된 텍스트가 없습니다.)*")
                                     with st.form(key=f"edit_ocr_alone_{arch_id_current}_{num}"):
                                         edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                         if st.form_submit_button("저장", use_container_width=True):
@@ -1267,7 +1264,7 @@ with tab5:
                 unrendered_details = [dp for dp in valid_details if dp not in rendered_details]
                 if unrendered_details:
                     st.markdown("### 📎 기타 세부 차트")
-                    for path in unrendered_details:
+                    for idx_unrendered, path in enumerate(unrendered_details):
                         c_u_img, c_u_txt = st.columns([6.5, 3.5], gap="medium")
                         with c_u_img: st.markdown(render_crisp_image_html(path), unsafe_allow_html=True)
                         with c_u_txt:
@@ -1277,13 +1274,14 @@ with tab5:
                                 g = parts[0]
                                 s = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
                                 k = f"{g}_{s}"
+                                
                                 if k in ai_advice_mapping and ai_advice_mapping[k]:
                                     st.success(f"🤖 **차트 {g}-{s} 조언**\n\n{ai_advice_mapping[k]}")
                                 elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                     st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                     shown_legacy_advice.add(g)
-                            
-                            # 기타 차트에 OCR이 매핑되어 있는 경우 출력        
+
+                            # 기타 차트에도 OCR 텍스트 개별 출력
                             display_txt = ocr_mapping.get(num, "").strip()
                             st.markdown("#### 📄 본문 텍스트 (OCR)")
                             if display_txt:
@@ -1291,7 +1289,7 @@ with tab5:
                             else:
                                 st.info("*(추출된 텍스트가 없습니다.)*")
                             with st.expander("✏️ 텍스트 입력/교정", expanded=False):
-                                with st.form(key=f"edit_ocr_other_{arch_id_current}_{num}_{uuid.uuid4().hex[:4]}"):
+                                with st.form(key=f"edit_ocr_other_{arch_id_current}_{num}_{idx_unrendered}"):
                                     edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                     if st.form_submit_button("저장", use_container_width=True):
                                         ocr_mapping[num] = edited_ocr
