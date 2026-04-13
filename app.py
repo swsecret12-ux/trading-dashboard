@@ -493,7 +493,8 @@ def get_real_ocr_text(image_url):
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
 
-def get_real_ai_advice(image_url, ticker):
+# 💡 핵심 수정: 차트 분석 시, 원작자의 텍스트(OCR)를 참고 자료로 받아서 방향성을 맞추도록 프롬프트 강화!
+def get_real_ai_advice(image_url, ticker, reference_text=""):
     if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
     try:
         res = requests.get(image_url)
@@ -503,9 +504,14 @@ def get_real_ai_advice(image_url, ticker):
         이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석과 트레이딩 조언을 3~4줄로 핵심만 요약해줘. 
         
         **가장 먼저, 이미지(차트 좌측 상단 등)에 나타난 차트의 '종목명(티커)'과 '타임프레임(몇 시간/분/일 봉인지)'을 확실하게 파악해서 첫 문장에 명시해줘.** (만약 이미지에 정보가 없거나 잘려서 알 수 없는 경우에만 '타임프레임 파악 불가'라고 기재할 것.)
-        
-        그 다음 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 분석 내용을 작성해줘.
         """
+        
+        # 원작자의 분석글(OCR)이 있을 경우 프롬프트에 주입하여 의견을 동기화시킴
+        if reference_text:
+            prompt += f"\n\n**[중요 지시사항: 원작자 관점 동기화]**\n아래는 이 차트와 함께 작성된 원작자의 본문(OCR) 내용입니다.\n```\n{reference_text}\n```\n너는 이 본문 내용의 방향성(롱/숏, 지지/저항, 목표가 등)을 '정답'이자 핵심 논리로 삼아, 차트 분석 시 이 관점을 적극적으로 지지하고 뒷받침하는 방향으로 분석해줘."
+            
+        prompt += "\n\n그 다음 전문 용어와 숫자가 많더라도 띄어쓰기와 맞춤법을 정확히 지켜서 가독성 좋고 자연스러운 한국어로 분석 내용을 작성해줘."
+        
         return ask_gemini_dynamic(prompt, img) 
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
@@ -1056,7 +1062,9 @@ with tab5:
                                             if not specific_ticker: specific_ticker = batch_ticker.strip()
                                             if not specific_ticker: specific_ticker = arch_ticker1.strip()
                                             
-                                            ai_advice_final_mapping[f"{group}_{sub}"] = get_real_ai_advice(url, specific_ticker)
+                                            # 💡 5강의 프롬프트 지시 (본문 동기화) 로직 활용
+                                            associated_text = ocr_final_mapping.get(group, "")
+                                            ai_advice_final_mapping[f"{group}_{sub}"] = get_real_ai_advice(url, specific_ticker, associated_text)
                                             time.sleep(3) 
 
                             insert_data = {
@@ -1135,7 +1143,6 @@ with tab5:
                 for group in detail_dict: detail_dict[group] = [x[1] for x in sorted(detail_dict[group])]
                 rendered_details = set()
                 total_blogs = len(valid_blogs)
-
                 shown_legacy_advice = set()
 
                 if valid_blogs:
@@ -1156,13 +1163,13 @@ with tab5:
                             
                             if show_blog:
                                 st.markdown("---")
-                                col_blog_view, _ = st.columns([4, 6])
+                                col_blog_view, _ = st.columns([6.5, 3.5])
                                 with col_blog_view:
                                     st.markdown(badge_html, unsafe_allow_html=True)
-                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                     if st.button("❌ 원본 숨기기", key=f"close_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = False
                                         st.rerun()
+                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                 
                                 st.markdown("#### 🔍 세부 차트 분석")
                                 for idx_mdp, mdp in enumerate(matched_detail_paths):
@@ -1183,7 +1190,7 @@ with tab5:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
 
-                                        # 💡 핵심 수정: 모든 차트 옆에 OCR 본문 텍스트 출력!
+                                        # 💡 핵심 로직: 모든 세부 차트 옆에 OCR 본문 텍스트 중복 출력!
                                         display_txt = ocr_mapping.get(num, "").strip()
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
@@ -1191,7 +1198,6 @@ with tab5:
                                         else:
                                             st.info("*(추출된 텍스트가 없습니다.)*")
                                         with st.expander("✏️ 텍스트 입력/교정", expanded=False):
-                                            # 고유 키를 위해 idx_mdp를 추가
                                             with st.form(key=f"edit_ocr_open_{arch_id_current}_{num}_{idx_mdp}"):
                                                 edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                                 if st.form_submit_button("저장", use_container_width=True):
@@ -1201,9 +1207,9 @@ with tab5:
 
                             else:
                                 st.markdown("---")
-                                col_btn, _ = st.columns([2, 8])
+                                col_btn, _ = st.columns([3, 7])
                                 with col_btn:
-                                    if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 데이터 보기", key=f"open_btn_{state_key}", use_container_width=True):
+                                    if st.button(f"🔍 [ {current_blog_idx} / {total_blogs} ] 원본 이미지 보기", key=f"open_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = True
                                         st.rerun()
                                 
@@ -1225,7 +1231,7 @@ with tab5:
                                                 st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                                 shown_legacy_advice.add(g)
 
-                                        # 💡 핵심 수정: 숨김 모드일 때도 모든 차트 옆에 OCR 본문 텍스트 출력!
+                                        # 💡 핵심 로직: 원본 이미지가 숨겨져 있어도 모든 세부 차트 옆에 OCR 출력!
                                         display_txt = ocr_mapping.get(num, "").strip()
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
@@ -1240,19 +1246,24 @@ with tab5:
                                                     update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                                     st.rerun()
                         else:
-                            # 블로그 원본 이미지만 단독으로 있는 경우
+                            # 블로그 캡처만 단독으로 있는 경우
                             st.markdown("---")
-                            c_blog, c_ocr = st.columns([5.0, 5.0], gap="medium")
+                            c_blog, c_ocr = st.columns([6.5, 3.5], gap="medium")
                             num = group
                             with c_blog:
                                 st.markdown(badge_html, unsafe_allow_html=True)
                                 st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                             with c_ocr:
-                                if num in ai_advice_mapping and ai_advice_mapping[num]: st.success(f"🤖 **AI 분석**\n\n{ai_advice_mapping[num]}")
+                                if num in ai_advice_mapping and ai_advice_mapping[num]: 
+                                    st.success(f"🤖 **AI 분석**\n\n{ai_advice_mapping[num]}")
+                                
+                                st.markdown("#### 📄 본문 텍스트 (OCR)")
                                 display_txt = ocr_mapping.get(num, "").strip()
-                                with st.expander("📄 본문 텍스트 (OCR)", expanded=True):
-                                    if display_txt: st.info(display_txt)
-                                    else: st.info("*(추출된 텍스트가 없습니다.)*")
+                                if display_txt:
+                                    st.info(display_txt)
+                                else:
+                                    st.info("*(추출된 텍스트가 없습니다.)*")
+                                with st.expander("✏️ 텍스트 입력/교정", expanded=False):
                                     with st.form(key=f"edit_ocr_alone_{arch_id_current}_{num}"):
                                         edited_ocr = st.text_area("내용 교정", value=display_txt, height=150)
                                         if st.form_submit_button("저장", use_container_width=True):
@@ -1281,7 +1292,7 @@ with tab5:
                                     st.success(f"🤖 **차트 AI 분석**\n\n{ai_advice_mapping[g]}")
                                     shown_legacy_advice.add(g)
 
-                            # 기타 차트에도 OCR 텍스트 개별 출력
+                            # 💡 핵심 로직: 기타 차트에도 OCR 텍스트 개별 출력!
                             display_txt = ocr_mapping.get(num, "").strip()
                             st.markdown("#### 📄 본문 텍스트 (OCR)")
                             if display_txt:
