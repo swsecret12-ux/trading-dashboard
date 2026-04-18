@@ -46,6 +46,9 @@ def upload_image_to_supabase(img_file, prefix="img"):
         file_name = f"{prefix}_{uuid.uuid4().hex[:8]}.{file_ext}"
         file_bytes = img_file.getvalue()
         
+        # 빈 파일 업로드 방지
+        if not file_bytes: return None
+            
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
         img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": getattr(img_file, 'type', 'image/png')}
         
@@ -73,13 +76,13 @@ def load_archive_data():
         return df
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
 
-# 💡 신규 추가: 아카이브 자료에서 전문가 스탠스를 끌어오는 함수
+# 💡 최근 아카이브 자료에서 전문가 스탠스를 끌어오는 함수 (검색 에러 방어 적용)
 def get_recent_archive_context(ticker_search):
     df = load_archive_data()
     if df.empty or not ticker_search: return ""
     
-    # 해당 종목(티커)이 포함된 최근 3개의 스크랩 자료 추출 (category가 타인분석인 것 우선)
-    recent_scraps = df[(df['ticker'].str.contains(ticker_search, case=False, na=False)) & (df['category'] == '타인분석')].head(3)
+    # 💡 regex=False 를 추가하여 괄호나 특수문자가 들어가도 에러 없이 안전하게 검색
+    recent_scraps = df[(df['ticker'].str.contains(ticker_search, case=False, na=False, regex=False)) & (df['category'] == '타인분석')].head(3)
     if recent_scraps.empty: return ""
     
     context = "[최근 아카이브 참조 데이터 (원작자/전문가 관점)]\n"
@@ -89,7 +92,6 @@ def get_recent_archive_context(ticker_search):
         try:
             ocr_map = json.loads(row['ocr_text_mapping']) if isinstance(row['ocr_text_mapping'], str) else row['ocr_text_mapping']
             if ocr_map and isinstance(ocr_map, dict) and len(ocr_map) > 0:
-                # 첫 번째 텍스트 블록의 일부를 발췌하여 맥락 제공
                 first_ocr = list(ocr_map.values())[0][:300] 
                 context += f"  원작자 본문 일부: {first_ocr}...\n"
         except:
@@ -458,10 +460,12 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
     return db_dict
 
 # ==========================================
-# --- 4. 🚀 무료 AI(Gemini) 무한 좀비 추적 시스템 (지표 JSON 추출 기능 탑재) ---
+# --- 4. 🚀 무료 AI(Gemini) 지표 JSON 추출 & 로직 ---
 # ==========================================
 def parse_ai_json(text):
-    """AI가 뱉어낸 응답에서 JSON 데이터(지표/점수 등)를 안전하게 파싱합니다."""
+    """💡 에러 방어: NaN 이나 빈 값이 들어와도 뻗지 않게 안전하게 처리"""
+    if not isinstance(text, str):
+        text = str(text) if text is not None else ""
     try:
         clean_text = text.strip()
         if "```json" in clean_text:
@@ -474,7 +478,6 @@ def parse_ai_json(text):
         else:
             raise Exception("Not a JSON")
     except:
-        # 하위 호환성 (과거에 JSON 없이 줄글로만 저장된 데이터 처리용)
         return {"trend": "-", "key_level": "-", "momentum": "-", "volume": "-", "s_score": 0, "analysis": text}
 
 def ask_gemini_dynamic(prompt, imgs):
@@ -561,7 +564,6 @@ def get_real_ai_advice(image_url, ticker, reference_text=""):
     except Exception as e:
         return f"이미지 다운로드 실패: {e}"
 
-# 💡 일관되고 깔끔한 메트릭 UI 렌더링을 위한 전용 함수
 def render_ai_advice_block(title, ai_text):
     ai_data = parse_ai_json(ai_text)
     
@@ -575,14 +577,16 @@ def render_ai_advice_block(title, ai_text):
     m3.metric("⚡ 모멘텀", ai_data.get('momentum', '-'))
     m4.metric("📊 거래량", ai_data.get('volume', '-'))
     
-    # 6강 S급 셋업 점수
+    # S급 셋업 점수 (음수 또는 4초과 방어)
     score = ai_data.get('s_score', 0)
-    try: score_val = int(score)
-    except: score_val = 0
+    try: 
+        score_val = int(score)
+        score_val = max(0, min(4, score_val))
+    except: 
+        score_val = 0
+        
     st.markdown(f"**🔥 S급 셋업 판독 점수: {score_val} / 4**")
-    st.progress(score_val / 4.0 if score_val <= 4 else 1.0)
-    
-    # AI 상세 분석
+    st.progress(score_val / 4.0)
     st.success(ai_data.get('analysis', ''))
 
 def render_blog_image_html(url):
@@ -659,7 +663,6 @@ def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_per
 # ==========================================
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
-# 모바일 최적화 및 메트릭 CSS 조정
 st.markdown("""
 <style>
 div[data-testid="stInfo"] p { font-size: 1.1rem; } 
@@ -788,7 +791,6 @@ with tab2:
                 st.image(img, caption=img.name, use_container_width=True)
             
     with col2:
-        # 💡 신규 추가: 종목명을 입력받아야 아카이브에서 검색 가능!
         ticker_input = st.text_input("분석할 티커 입력 (예: BTC, NDX)").upper()
         user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=100)
         
@@ -798,9 +800,15 @@ with tab2:
             elif view_uploaded_files and ticker_input:
                 with st.spinner('아카이브에서 관련 자료를 찾고 분석하는 중... 🤖'):
                     try:
-                        # 💡 핵심 로직: DB에서 종목명 기반으로 과거 스크랩(전문가 관점)을 불러와서 프롬프트에 주입!
                         archive_context = get_recent_archive_context(ticker_input)
-                        img_objs = [Image.open(f) for f in view_uploaded_files]
+                        
+                        # 💡 파일 업로더 버그(0 byte) 해결: 메모리에 먼저 올리고 AI와 DB에 동시에 던집니다.
+                        img_bytes_list = []
+                        img_objs = []
+                        for f in view_uploaded_files:
+                            b = f.getvalue()
+                            img_bytes_list.append({"bytes": b, "name": f.name, "type": getattr(f, 'type', 'image/png')})
+                            img_objs.append(Image.open(io.BytesIO(b)))
                         
                         analysis_prompt = f"""
                         당신은 월스트리트 출신의 전문 트레이더이자 나의 트레이딩 멘토입니다. 
@@ -833,7 +841,7 @@ with tab2:
                         st.session_state.ai_analysis_done = True
                         st.session_state.ai_result = analysis_result
                         st.session_state.ai_view_text = user_view
-                        st.session_state.ai_img_files = [{"bytes": f.getvalue(), "name": f.name, "type": f.type} for f in view_uploaded_files]
+                        st.session_state.ai_img_files = img_bytes_list
                         
                         st.rerun()
                         
@@ -852,7 +860,6 @@ with tab2:
             with st.form("save_watchlist_form"):
                 col_w1, col_w2 = st.columns(2)
                 with col_w1:
-                    # 💡 분석에 사용한 티커를 기본값으로 세팅!
                     w_ticker = st.text_input("종목명 (예: BTCUSDT)", value=ticker_input).upper()
                 with col_w2:
                     w_date = st.date_input("저장 날짜", datetime.today())
@@ -1124,7 +1131,7 @@ with tab5:
                     for idx, img in enumerate(arch_imgs_detail):
                         selected_charts_for_ai.append(img.name)
                         with cols[idx % 3]:
-                            ticker_mapping_input[img.name] = st.text_input(f"차트 {idx+1} ({img.name[:8]}...)", key=f"t_{idx}")
+                            ticker_mapping_input[img.name] = st.text_input(f"차트 {idx+1} ({img.name[:8]}...)", key=f"t_{st.session_state.uploader_key}_{idx}")
                 
                 if st.form_submit_button("☁️ 스크랩 & 무료 AI 분석 시작", use_container_width=True, type="primary"):
                     if not arch_ticker1: st.error("관련 종목명을 최소 1개 이상 입력해주세요!")
@@ -1135,7 +1142,7 @@ with tab5:
                             date_str = arch_date1.strftime("%Y-%m-%d")
                             
                             if arch_imgs_blog:
-                                arch_imgs_blog = sorted(arch_imgs_blog, key=lambda x: int(get_file_group_info(x.name)[0]) if get_file_group_info(x.name)[0].isdigit() else 9999)
+                                arch_imgs_blog = sorted(arch_imgs_blog, key=lambda x: int(get_file_group_info(x.name)[0]) if str(get_file_group_info(x.name)[0]).isdigit() else 9999)
                                 for img_file in arch_imgs_blog:
                                     group, sub = get_file_group_info(img_file.name)
                                     url = upload_image_to_supabase(img_file, f"arch_blog_{group}_{sub}")
@@ -1282,7 +1289,8 @@ with tab5:
                                                 render_ai_advice_block(f"🤖 차트 AI 분석", ai_advice_mapping[g])
                                                 shown_legacy_advice.add(g)
 
-                                        display_txt = ocr_mapping.get(num, "").strip()
+                                        raw_txt = ocr_mapping.get(num, "")
+                                        display_txt = str(raw_txt).strip() if pd.notna(raw_txt) else ""
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
                                             st.info(display_txt)
@@ -1322,7 +1330,8 @@ with tab5:
                                                 render_ai_advice_block(f"🤖 차트 AI 분석", ai_advice_mapping[g])
                                                 shown_legacy_advice.add(g)
 
-                                        display_txt = ocr_mapping.get(num, "").strip()
+                                        raw_txt = ocr_mapping.get(num, "")
+                                        display_txt = str(raw_txt).strip() if pd.notna(raw_txt) else ""
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
                                             st.info(display_txt)
@@ -1346,8 +1355,9 @@ with tab5:
                                 if num in ai_advice_mapping and ai_advice_mapping[num]: 
                                     render_ai_advice_block("🤖 AI 분석", ai_advice_mapping[num])
                                 
+                                raw_txt = ocr_mapping.get(num, "")
+                                display_txt = str(raw_txt).strip() if pd.notna(raw_txt) else ""
                                 st.markdown("#### 📄 본문 텍스트 (OCR)")
-                                display_txt = ocr_mapping.get(num, "").strip()
                                 if display_txt:
                                     st.info(display_txt)
                                 else:
@@ -1381,7 +1391,8 @@ with tab5:
                                     render_ai_advice_block("🤖 차트 AI 분석", ai_advice_mapping[g])
                                     shown_legacy_advice.add(g)
 
-                            display_txt = ocr_mapping.get(num, "").strip()
+                            raw_txt = ocr_mapping.get(num, "")
+                            display_txt = str(raw_txt).strip() if pd.notna(raw_txt) else ""
                             st.markdown("#### 📄 본문 텍스트 (OCR)")
                             if display_txt:
                                 st.info(display_txt)
@@ -1394,7 +1405,7 @@ with tab5:
                                         ocr_mapping[num] = edited_ocr
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                         st.rerun()
-w
+
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
