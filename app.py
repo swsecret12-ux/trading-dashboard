@@ -57,7 +57,7 @@ def upload_image_to_supabase(img_file, prefix="img"):
         return None
 
 # ==========================================
-# --- 3. 데이터 로드 함수 (목차 템플릿 + 학습 내용 포함) ---
+# --- 3. 데이터 로드 함수 및 아카이브 컨텍스트 추출 ---
 # ==========================================
 def load_trade_data():
     res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
@@ -72,6 +72,29 @@ def load_archive_data():
         if 'ocr_text_mapping' not in df.columns: df['ocr_text_mapping'] = "{}"
         return df
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
+
+# 💡 신규 추가: 아카이브 자료에서 전문가 스탠스를 끌어오는 함수
+def get_recent_archive_context(ticker_search):
+    df = load_archive_data()
+    if df.empty or not ticker_search: return ""
+    
+    # 해당 종목(티커)이 포함된 최근 3개의 스크랩 자료 추출 (category가 타인분석인 것 우선)
+    recent_scraps = df[(df['ticker'].str.contains(ticker_search, case=False, na=False)) & (df['category'] == '타인분석')].head(3)
+    if recent_scraps.empty: return ""
+    
+    context = "[최근 아카이브 참조 데이터 (원작자/전문가 관점)]\n"
+    for _, row in recent_scraps.iterrows():
+        context += f"- 날짜: {row['date']} | 출처: {row['source_view']}\n"
+        context += f"  내용 요약(AI메모): {row['memo']}\n"
+        try:
+            ocr_map = json.loads(row['ocr_text_mapping']) if isinstance(row['ocr_text_mapping'], str) else row['ocr_text_mapping']
+            if ocr_map and isinstance(ocr_map, dict) and len(ocr_map) > 0:
+                # 첫 번째 텍스트 블록의 일부를 발췌하여 맥락 제공
+                first_ocr = list(ocr_map.values())[0][:300] 
+                context += f"  원작자 본문 일부: {first_ocr}...\n"
+        except:
+            pass
+    return context
 
 def load_theory_db():
     liquidity_text = """**■ 1. 유동성(Liquidity)의 기본 개념**
@@ -516,7 +539,6 @@ def get_real_ai_advice(image_url, ticker, reference_text=""):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         
-        # 💡 핵심 로직: 지표(추세/레벨/모멘텀/거래량) 및 S급 점수를 JSON 포맷으로 무조건 반환하게 지시
         prompt = f"""
         이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석을 수행해.
         
@@ -643,7 +665,6 @@ st.markdown("""
 div[data-testid="stInfo"] p { font-size: 1.1rem; } 
 div[data-testid="stError"] p { font-size: 1.1rem; }
 
-/* 💡 메트릭 숫자가 좁은 공간에서 너무 커지지 않도록 세팅 */
 div[data-testid="stMetricValue"] {
     font-size: 1.2rem !important;
 }
@@ -752,11 +773,11 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- Tab 2: 내 관점 분석 ---
+# --- Tab 2: 내 관점 분석 (아카이브 지식 연동!) ---
 # ==============================
 with tab2:
-    st.header("🔍 AI 차트 분석 및 관점 피드백")
-    st.info("차트 스크린샷을 업로드하고 현재 관점을 입력하시면, AI가 정밀 분석 후 '나의 관점(Watchlist)'으로 보낼 수 있습니다.")
+    st.header("🔍 AI 차트 분석 및 관점 피드백 (아카이브 지식 연동)")
+    st.info("차트 스크린샷을 올리면, 아카이브(Tab 5)에 저장된 해당 종목의 최신 전문가 관점을 스스로 찾아내어 함께 분석합니다.")
     
     col1, col2 = st.columns([1, 1])
     
@@ -767,21 +788,34 @@ with tab2:
                 st.image(img, caption=img.name, use_container_width=True)
             
     with col2:
-        user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=150)
+        # 💡 신규 추가: 종목명을 입력받아야 아카이브에서 검색 가능!
+        ticker_input = st.text_input("분석할 티커 입력 (예: BTC, NDX)").upper()
+        user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=100)
         
-        if st.button("🚀 AI 관점 분석 요청", type="primary", use_container_width=True):
+        if st.button("🚀 아카이브 기반 AI 관점 분석 요청", type="primary", use_container_width=True):
             if "GEMINI_API_KEY" not in st.secrets:
                 st.error("Gemini API 키가 설정되지 않았습니다.")
-            elif view_uploaded_files and user_view:
-                with st.spinner('AI가 업로드된 모든 차트를 묶어서 종합 분석 중입니다... 🤖'):
+            elif view_uploaded_files and ticker_input:
+                with st.spinner('아카이브에서 관련 자료를 찾고 분석하는 중... 🤖'):
                     try:
+                        # 💡 핵심 로직: DB에서 종목명 기반으로 과거 스크랩(전문가 관점)을 불러와서 프롬프트에 주입!
+                        archive_context = get_recent_archive_context(ticker_input)
                         img_objs = [Image.open(f) for f in view_uploaded_files]
                         
                         analysis_prompt = f"""
                         당신은 월스트리트 출신의 전문 트레이더이자 나의 트레이딩 멘토입니다. 
                         내가 첨부한 차트 이미지(멀티 타임프레임)와 아래의 [나의 관점]을 종합적으로 검토해 주세요.
                         
+                        [종목]: {ticker_input}
                         [나의 관점]: {user_view}
+                        
+                        {archive_context}
+                        
+                        **[중요 분석 지침]**
+                        1. **아카이브 동기화**: 위 [최근 아카이브 참조 데이터]가 있다면, 거기에 기록된 원작자의 최신 포지션(롱/숏)과 근거를 최우선으로 참고하세요.
+                        2. **언급 시점 대조**: 원작자가 근거를 제시한 '시간'과 '가격 레벨'이 현재 차트에서 어떻게 구현되고 있는지 팩트 체크하세요.
+                        3. **가장 먼저**, 첨부된 차트 이미지 상단이나 텍스트를 보고 1) 어떤 종목(티커)인지 2) 몇 시간(분) 봉(타임프레임)인지 파악해서 분석의 첫 문장에 명확히 명시해 주세요. (이미지에서 알 수 없는 경우 '타임프레임 파악 불가'로 기재)
+                        4. **분석 결과 필수 포함**: analysis 항목에는 반드시 "아카이브에 기록된 원작자가 O시에 말한 OOO 근거에 따르면 현재는 OOO한 상태입니다"라는 식으로 언급 시점과 근거를 명시해서 현재 나의 관점을 검증해야 합니다.
 
                         반드시 아래의 JSON 형식으로만 답변을 출력해. 마크다운(` ```json ` 등)이나 다른 인사말은 절대 포함하지 마. 오직 중괄호 {{ }} 만 출력해.
                         
@@ -791,7 +825,7 @@ with tab2:
                           "momentum": "모멘텀 상태 15자 이내 요약",
                           "volume": "거래량 상태 10자 이내 요약",
                           "s_score": "0~4 사이의 정수 (유동성, 오더블록, 지지저항, 패턴 중첩 개수)",
-                          "analysis": "1) 가장 먼저 종목명과 타임프레임을 명시할 것. 2) 차트의 기술적 분석과 조언, 팩트폭행을 3~4줄로 핵심만 자연스러운 한국어로 요약할 것."
+                          "analysis": "1) 종목/타임프레임 명시. 2) 아카이브 근거 기반 팩트폭행 및 조언 3~4줄."
                         }}
                         """
                         analysis_result = ask_gemini_dynamic(analysis_prompt, img_objs)
@@ -806,20 +840,20 @@ with tab2:
                     except Exception as e:
                         st.error(f"분석 중 오류가 발생했습니다: {e}")
             else:
-                st.warning("⚠️ 차트 이미지를 1장 이상 업로드하고 나의 관점 텍스트를 모두 입력해 주세요.")
+                st.warning("⚠️ 차트 이미지를 1장 이상 업로드하고 '분석할 티커'를 반드시 입력해 주세요.")
 
     if st.session_state.ai_analysis_done:
-        st.success("✅ AI 분석 완료!")
-        # 💡 지표 렌더링 블록 적용
-        render_ai_advice_block("🤖 AI 멘토의 피드백", st.session_state.ai_result)
+        st.success("✅ 아카이브 연동 AI 분석 완료!")
+        render_ai_advice_block("🤖 AI 멘토의 정밀 피드백", st.session_state.ai_result)
         
         st.divider()
         with st.expander("💾 이 관점을 '나의 관점(Watchlist)'에 저장하기", expanded=True):
-            st.info("종목명만 입력하시면 Tab 5의 관점 아카이브로 여러 장의 차트와 피드백이 영구 저장됩니다.")
+            st.info("종목명만 확인하시면 Tab 5의 관점 아카이브로 여러 장의 차트와 피드백이 영구 저장됩니다.")
             with st.form("save_watchlist_form"):
                 col_w1, col_w2 = st.columns(2)
                 with col_w1:
-                    w_ticker = st.text_input("종목명 (예: BTCUSDT)").upper()
+                    # 💡 분석에 사용한 티커를 기본값으로 세팅!
+                    w_ticker = st.text_input("종목명 (예: BTCUSDT)", value=ticker_input).upper()
                 with col_w2:
                     w_date = st.date_input("저장 날짜", datetime.today())
                 
@@ -1221,13 +1255,13 @@ with tab5:
                             
                             if show_blog:
                                 st.markdown("---")
-                                col_blog_view, _ = st.columns([6.5, 3.5])
+                                col_blog_view, _ = st.columns([4, 6])
                                 with col_blog_view:
                                     st.markdown(badge_html, unsafe_allow_html=True)
+                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                     if st.button("❌ 원본 숨기기", key=f"close_btn_{state_key}", use_container_width=True):
                                         st.session_state[state_key] = False
                                         st.rerun()
-                                    st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                                 
                                 st.markdown("#### 🔍 세부 차트 분석")
                                 for idx_mdp, mdp in enumerate(matched_detail_paths):
@@ -1248,7 +1282,6 @@ with tab5:
                                                 render_ai_advice_block(f"🤖 차트 AI 분석", ai_advice_mapping[g])
                                                 shown_legacy_advice.add(g)
 
-                                        # 💡 핵심: 모든 차트 옆에 OCR 본문 텍스트 중복 출력!
                                         display_txt = ocr_mapping.get(num, "").strip()
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
@@ -1289,7 +1322,6 @@ with tab5:
                                                 render_ai_advice_block(f"🤖 차트 AI 분석", ai_advice_mapping[g])
                                                 shown_legacy_advice.add(g)
 
-                                        # 💡 핵심: 숨김 모드일 때도 모든 차트 옆에 OCR 본문 텍스트 중복 출력!
                                         display_txt = ocr_mapping.get(num, "").strip()
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
@@ -1304,7 +1336,6 @@ with tab5:
                                                     update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                                     st.rerun()
                         else:
-                            # 블로그 원본 이미지만 단독으로 있는 경우
                             st.markdown("---")
                             c_blog, c_ocr = st.columns([6.5, 3.5], gap="medium")
                             num = group
@@ -1345,12 +1376,11 @@ with tab5:
                                 k = f"{g}_{s}"
                                 
                                 if k in ai_advice_mapping and ai_advice_mapping[k]:
-                                    render_ai_advice_block(f"🤖 차트 {g}-{s} 분석", ai_advice_mapping[k])
+                                    render_ai_advice_block(f"🤖 차트 {g}-{s} 조언", ai_advice_mapping[k])
                                 elif g in ai_advice_mapping and ai_advice_mapping[g] and g not in shown_legacy_advice:
                                     render_ai_advice_block("🤖 차트 AI 분석", ai_advice_mapping[g])
                                     shown_legacy_advice.add(g)
 
-                            # 기타 차트에도 OCR 텍스트 개별 출력
                             display_txt = ocr_mapping.get(num, "").strip()
                             st.markdown("#### 📄 본문 텍스트 (OCR)")
                             if display_txt:
@@ -1364,7 +1394,7 @@ with tab5:
                                         ocr_mapping[num] = edited_ocr
                                         update_db("analysis_archive", "id", arch_id_current, {"ocr_text_mapping": json.dumps(ocr_mapping, ensure_ascii=False)})
                                         st.rerun()
-
+w
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
         st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
