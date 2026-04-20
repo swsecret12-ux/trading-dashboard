@@ -312,7 +312,7 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
 * **익절 (TP):** * 세력이 유동성을 충분히 모았으므로, 최소한 **박스권(구조물)의 상단(반대편 끝)**까지는 무난하게 도달할 확률이 높습니다. 이를 1차 익절(반익반본) 목표로 삼습니다."""
 
     top_down_text = """**■ 1. 핵심 철학: "숲을 보고, 나무를 봐라"**
-* **초보자들의 흔한 실수:** 5분봉 등 작은 시간대(나무)만 보고 당장 눈앞에 나타난 패턴이나 상승/하락 신호에 급하게 매매를 진입합니다. 이는 마치 숲 전체가 불타고 있는데, 내 앞의 나무 한 그루가 멀쩡해 보인다고 그곳에 집을 짓는 것과 같습니다.
+* **초보자들의 흔한 실수:** 5분봉 등 작은 시간대(나무)만 보고 당장 눈앞에 나타난 패턴이나 상승/하락 신호에 급하게 매매를 진입합니다. 이는 마치 숲 전체가 불타고 있는데, 내 앞의 나무 한 정루가 멀쩡해 보인다고 그곳에 집을 짓는 것과 같습니다.
 * **탑다운 분석 (Top-Down Analysis):** 반드시 가장 큰 시간대(일봉, 4시간봉 등)에서 전체적인 시장의 방향과 큼직한 구조물을 파악한 뒤, 점차 작은 시간대로 내려오며 정밀한 진입 타점을 잡는 방법입니다.
 
 **■ 2. 멀티 타임프레임 (Multi-Timeframe) 분석 단계**
@@ -471,6 +471,7 @@ def get_gemini_keys():
     return list(set(keys))
 
 def parse_ai_json(text):
+    """💡 에러 방어: NaN 이나 빈 값이 들어와도 뻗지 않게 안전하게 처리"""
     if not isinstance(text, str):
         text = str(text) if text is not None else ""
     try:
@@ -485,34 +486,50 @@ def parse_ai_json(text):
         else:
             raise Exception("Not a JSON")
     except:
+        # 하위 호환성 (과거에 JSON 없이 줄글로만 저장된 데이터 처리 및 macro_news 필드 방어)
         return {"trend": "-", "key_level": "-", "momentum": "-", "volume": "-", "s_score": 0, "macro_news": "-", "analysis": text}
 
 def ask_gemini_dynamic(prompt, imgs):
     keys = get_gemini_keys()
     if not keys: return "Gemini API 키가 설정되지 않았습니다."
     
-    # 💡 기존의 list_models() 조회 과정 싹 생략 (1회당 2~3초 속도 절약)
-    models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro"]
-    last_error = ""
     if not isinstance(imgs, list): imgs = [imgs]
     payload = [prompt] + imgs
     
+    last_error = ""
     # 💡 키 1번 시도 -> 할당량(Quota) 걸리면 2번 키로 자동 교체 -> 3번 키...
+    # 추가로 404 에러(해당 지역/키에서 지원하지 않는 모델) 방지를 위해 내부에서 동적으로 사용 가능 모델을 스캔합니다.
     for key in keys:
         genai.configure(api_key=key)
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(payload)
-                return response.text
-            except Exception as e:
-                last_error = str(e)
-                if "429" in last_error or "quota" in last_error.lower():
-                    break # 현재 키 한도 초과 -> 다음 API 키로 넘어감!
-                elif "404" in last_error or "not found" in last_error.lower():
-                    continue # 모델 오류면 다음 모델 시도
-                else:
-                    break # 기타 알 수 없는 에러도 일단 키 교체 시도
+        try:
+            available_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            flash_models = [m for m in available_models if '1.5-flash' in m.lower()]
+            pro_models = [m for m in available_models if '1.5-pro' in m.lower()]
+            
+            # fallback
+            if not flash_models: flash_models = [m for m in available_models if 'flash' in m.lower()]
+            if not pro_models: pro_models = [m for m in available_models if 'pro' in m.lower()]
+            
+            models_to_try = flash_models + pro_models
+            if not models_to_try: models_to_try = available_models
+            
+            for model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(payload)
+                    return response.text
+                except Exception as e:
+                    last_error = str(e)
+                    if "429" in last_error or "quota" in last_error.lower():
+                        break # 현재 키 한도 초과 -> 다음 API 키로 넘어감!
+                    elif "404" in last_error or "not found" in last_error.lower():
+                        continue # 모델을 못 찾으면 해당 키의 다른 모델 시도
+                    else:
+                        break # 기타 알 수 없는 에러도 일단 키 교체 시도
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
     return f"모든 API 키 한도 소진 또는 오류 발생.\n에러: {last_error}"
 
 def get_real_ocr_text(image_url):
@@ -562,6 +579,12 @@ def render_ai_advice_block(title, ai_text):
     
     st.markdown(f"#### {title}")
     
+    # 💡 1. 매크로/뉴스 체크 블록 최상단 배치 및 시인성 극대화 (붉은색 경고창)
+    macro_news = ai_data.get('macro_news', '')
+    if macro_news and macro_news not in ["-", "특이 동향 없음", "없음"]:
+        st.error(f"🚨 **[급변동/이슈 감지]** {macro_news}")
+        
+    # 2. 지표 대시보드 2x2 배치
     m1, m2 = st.columns(2)
     m1.metric("📈 추세 (Trend)", ai_data.get('trend', '-'))
     m2.metric("🎯 중요 레벨", ai_data.get('key_level', '-'))
@@ -569,6 +592,7 @@ def render_ai_advice_block(title, ai_text):
     m3.metric("⚡ 모멘텀", ai_data.get('momentum', '-'))
     m4.metric("📊 거래량", ai_data.get('volume', '-'))
     
+    # 3. S급 셋업 점수 (음수 또는 4초과 방어)
     score = ai_data.get('s_score', 0)
     try: 
         score_val = int(score)
@@ -579,10 +603,7 @@ def render_ai_advice_block(title, ai_text):
     st.markdown(f"**🔥 S급 셋업 판독 점수: {score_val} / 4**")
     st.progress(score_val / 4.0)
     
-    macro_news = ai_data.get('macro_news', '')
-    if macro_news and macro_news not in ["-", "특이 동향 없음", "없음"]:
-        st.warning(f"📰 **매크로/뉴스 이슈 체크:** {macro_news}")
-        
+    # 4. 분석 결과
     st.success(ai_data.get('analysis', ''))
 
 def render_blog_image_html(url):
@@ -791,8 +812,9 @@ with tab2:
         user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=100)
         
         if st.button("🚀 아카이브 기반 AI 관점 분석 요청", type="primary", use_container_width=True):
-            if "GEMINI_API_KEY" not in st.secrets:
-                st.error("Gemini API 키가 설정되지 않았습니다.")
+            keys = get_gemini_keys()
+            if not keys:
+                st.error("Gemini API 키가 설정되지 않았습니다. (Settings -> Secrets에 추가해주세요)")
             elif view_uploaded_files and ticker_input:
                 with st.spinner('아카이브에서 관련 자료를 찾고 분석하는 중... 🤖'):
                     try:
@@ -1145,7 +1167,6 @@ with tab5:
                                     if url:
                                         blog_urls.append(url)
                                         ocr_final_mapping[group] = get_real_ocr_text(url)
-                                        # 💡 빠른 속도를 위해 대기시간 1.5초로 최적화
                                         time.sleep(1.5) 
                             
                             if arch_imgs_detail:
@@ -1161,7 +1182,6 @@ with tab5:
                                             
                                             associated_text = ocr_final_mapping.get(group, "")
                                             ai_advice_final_mapping[f"{group}_{sub}"] = get_real_ai_advice(url, specific_ticker, associated_text)
-                                            # 💡 빠른 속도를 위해 대기시간 1.5초로 최적화
                                             time.sleep(1.5) 
 
                             insert_data = {
