@@ -13,7 +13,7 @@ from PIL import Image
 import google.generativeai as genai
 
 # ==========================================
-# --- 1. 클라우드 및 무료 AI(Gemini) 세팅 ---
+# --- 1. 클라우드 및 AI 세팅 ---
 # ==========================================
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
@@ -24,7 +24,7 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
-# 구글 Gemini AI 키 세팅
+# 기본 키 1개 셋업 (아래 로테이션 시스템에서 다중 키로 관리됨)
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
@@ -46,7 +46,6 @@ def upload_image_to_supabase(img_file, prefix="img"):
         file_name = f"{prefix}_{uuid.uuid4().hex[:8]}.{file_ext}"
         file_bytes = img_file.getvalue()
         
-        # 빈 파일 업로드 방지
         if not file_bytes: return None
             
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
@@ -76,12 +75,10 @@ def load_archive_data():
         return df
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
 
-# 💡 최근 아카이브 자료에서 전문가 스탠스를 끌어오는 함수 (검색 에러 방어 적용)
 def get_recent_archive_context(ticker_search):
     df = load_archive_data()
     if df.empty or not ticker_search: return ""
     
-    # 💡 regex=False 를 추가하여 괄호나 특수문자가 들어가도 에러 없이 안전하게 검색
     recent_scraps = df[(df['ticker'].str.contains(ticker_search, case=False, na=False, regex=False)) & (df['category'] == '타인분석')].head(3)
     if recent_scraps.empty: return ""
     
@@ -460,10 +457,20 @@ Fake out은 따라잡기 힘들지만, Trap은 완벽한 진입 찬스를 제공
     return db_dict
 
 # ==========================================
-# --- 4. 🚀 무료 AI(Gemini) 지표 JSON 추출 & 로직 ---
+# --- 4. 🚀 무료 AI(Gemini) 속도 최적화 & 멀티 키 로테이션 시스템 ---
 # ==========================================
+
+# 💡 무료 티어 한도(429 에러) 방어를 위해 다중 API 키를 로테이션합니다.
+def get_gemini_keys():
+    keys = []
+    if "GEMINI_API_KEY" in st.secrets:
+        keys.append(st.secrets["GEMINI_API_KEY"])
+    for k in st.secrets:
+        if k.startswith("GEMINI_API_KEY_") and st.secrets[k]:
+            keys.append(st.secrets[k])
+    return list(set(keys))
+
 def parse_ai_json(text):
-    """💡 에러 방어: NaN 이나 빈 값이 들어와도 뻗지 않게 안전하게 처리"""
     if not isinstance(text, str):
         text = str(text) if text is not None else ""
     try:
@@ -478,31 +485,21 @@ def parse_ai_json(text):
         else:
             raise Exception("Not a JSON")
     except:
-        return {"trend": "-", "key_level": "-", "momentum": "-", "volume": "-", "s_score": 0, "analysis": text}
+        return {"trend": "-", "key_level": "-", "momentum": "-", "volume": "-", "s_score": 0, "macro_news": "-", "analysis": text}
 
 def ask_gemini_dynamic(prompt, imgs):
-    try:
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                name = m.name.replace('models/', '')
-                if '2.5' not in name and 'exp' not in name and 'thinking' not in name:
-                    available_models.append(name)
-        
-        flash_models = [m for m in available_models if 'flash' in m.lower()]
-        pro_models = [m for m in available_models if 'pro' in m.lower()]
-        
-        models_to_try = flash_models + pro_models
-        if not models_to_try:
-            models_to_try = available_models
-            
-        last_error = ""
-        
-        if not isinstance(imgs, list):
-            imgs = [imgs]
-            
-        payload = [prompt] + imgs
-        
+    keys = get_gemini_keys()
+    if not keys: return "Gemini API 키가 설정되지 않았습니다."
+    
+    # 💡 기존의 list_models() 조회 과정 싹 생략 (1회당 2~3초 속도 절약)
+    models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro"]
+    last_error = ""
+    if not isinstance(imgs, list): imgs = [imgs]
+    payload = [prompt] + imgs
+    
+    # 💡 키 1번 시도 -> 할당량(Quota) 걸리면 2번 키로 자동 교체 -> 3번 키...
+    for key in keys:
+        genai.configure(api_key=key)
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
@@ -510,19 +507,15 @@ def ask_gemini_dynamic(prompt, imgs):
                 return response.text
             except Exception as e:
                 last_error = str(e)
-                if "429" in last_error or "quota" in last_error.lower() or "404" in last_error or "not found" in last_error.lower():
-                    time.sleep(1) 
-                    continue
+                if "429" in last_error or "quota" in last_error.lower():
+                    break # 현재 키 한도 초과 -> 다음 API 키로 넘어감!
+                elif "404" in last_error or "not found" in last_error.lower():
+                    continue # 모델 오류면 다음 모델 시도
                 else:
-                    break 
-                
-        return f"모든 모델 시도 실패. 일일 한도가 모두 소진되었거나 알 수 없는 접속 오류입니다.\n마지막 에러: {last_error}"
-        
-    except Exception as e:
-        return f"AI 시스템 초기화 실패: {e}"
+                    break # 기타 알 수 없는 에러도 일단 키 교체 시도
+    return f"모든 API 키 한도 소진 또는 오류 발생.\n에러: {last_error}"
 
 def get_real_ocr_text(image_url):
-    if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
     try:
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
@@ -537,7 +530,6 @@ def get_real_ocr_text(image_url):
         return f"이미지 다운로드 실패: {e}"
 
 def get_real_ai_advice(image_url, ticker, reference_text=""):
-    if "GEMINI_API_KEY" not in st.secrets: return "Gemini API 키가 설정되지 않았습니다."
     try:
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
@@ -553,6 +545,7 @@ def get_real_ai_advice(image_url, ticker, reference_text=""):
           "momentum": "RSI/MACD 등 모멘텀 상태 15자 이내 요약",
           "volume": "돌파 시 거래량 등 상태 10자 이내 요약",
           "s_score": "0에서 4 사이의 정수 숫자 (유동성 스윕, 오더블록, 패턴, 지지저항 중첩 개수 점수)",
+          "macro_news": "차트상 급등/급락이 관찰될 경우, 해당 시점에 연관될 수 있는 매크로 이슈나 뉴스(나스닥 지수 연동성, 경제지표 발표 등)를 추론하여 1~2줄로 요약. 평범한 흐름이면 '특이 동향 없음' 기재.",
           "analysis": "1) 가장 먼저 종목명과 타임프레임을 명시할 것. 2) 차트의 기술적 분석과 조언을 3~4줄로 핵심만 자연스러운 한국어로 요약할 것."
         }}
         """
@@ -569,7 +562,6 @@ def render_ai_advice_block(title, ai_text):
     
     st.markdown(f"#### {title}")
     
-    # 지표 대시보드 2x2 배치
     m1, m2 = st.columns(2)
     m1.metric("📈 추세 (Trend)", ai_data.get('trend', '-'))
     m2.metric("🎯 중요 레벨", ai_data.get('key_level', '-'))
@@ -577,7 +569,6 @@ def render_ai_advice_block(title, ai_text):
     m3.metric("⚡ 모멘텀", ai_data.get('momentum', '-'))
     m4.metric("📊 거래량", ai_data.get('volume', '-'))
     
-    # S급 셋업 점수 (음수 또는 4초과 방어)
     score = ai_data.get('s_score', 0)
     try: 
         score_val = int(score)
@@ -587,6 +578,11 @@ def render_ai_advice_block(title, ai_text):
         
     st.markdown(f"**🔥 S급 셋업 판독 점수: {score_val} / 4**")
     st.progress(score_val / 4.0)
+    
+    macro_news = ai_data.get('macro_news', '')
+    if macro_news and macro_news not in ["-", "특이 동향 없음", "없음"]:
+        st.warning(f"📰 **매크로/뉴스 이슈 체크:** {macro_news}")
+        
     st.success(ai_data.get('analysis', ''))
 
 def render_blog_image_html(url):
@@ -776,7 +772,7 @@ with tab1:
                         st.rerun()
 
 # ==============================
-# --- Tab 2: 내 관점 분석 (아카이브 지식 연동!) ---
+# --- Tab 2: 내 관점 분석 (아카이브 연동 & 매크로 뉴스) ---
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백 (아카이브 지식 연동)")
@@ -802,7 +798,6 @@ with tab2:
                     try:
                         archive_context = get_recent_archive_context(ticker_input)
                         
-                        # 💡 파일 업로더 버그(0 byte) 해결: 메모리에 먼저 올리고 AI와 DB에 동시에 던집니다.
                         img_bytes_list = []
                         img_objs = []
                         for f in view_uploaded_files:
@@ -833,6 +828,7 @@ with tab2:
                           "momentum": "모멘텀 상태 15자 이내 요약",
                           "volume": "거래량 상태 10자 이내 요약",
                           "s_score": "0~4 사이의 정수 (유동성, 오더블록, 지지저항, 패턴 중첩 개수)",
+                          "macro_news": "차트상 급등/급락이 관찰될 경우, 연관될 수 있는 매크로 이슈(나스닥 커플링, 경제지표 발표, 뉴스 등)를 추론하여 1~2줄로 요약. 특이 흐름이 없으면 '특이 동향 없음' 기재.",
                           "analysis": "1) 종목/타임프레임 명시. 2) 아카이브 근거 기반 팩트폭행 및 조언 3~4줄."
                         }}
                         """
@@ -1149,7 +1145,8 @@ with tab5:
                                     if url:
                                         blog_urls.append(url)
                                         ocr_final_mapping[group] = get_real_ocr_text(url)
-                                        time.sleep(3) 
+                                        # 💡 빠른 속도를 위해 대기시간 1.5초로 최적화
+                                        time.sleep(1.5) 
                             
                             if arch_imgs_detail:
                                 for img_file in arch_imgs_detail:
@@ -1164,7 +1161,8 @@ with tab5:
                                             
                                             associated_text = ocr_final_mapping.get(group, "")
                                             ai_advice_final_mapping[f"{group}_{sub}"] = get_real_ai_advice(url, specific_ticker, associated_text)
-                                            time.sleep(3) 
+                                            # 💡 빠른 속도를 위해 대기시간 1.5초로 최적화
+                                            time.sleep(1.5) 
 
                             insert_data = {
                                 "date": date_str, "ticker": arch_ticker1, "category": "타인분석", "source_view": arch_source1,
@@ -1289,8 +1287,7 @@ with tab5:
                                                 render_ai_advice_block(f"🤖 차트 AI 분석", ai_advice_mapping[g])
                                                 shown_legacy_advice.add(g)
 
-                                        raw_txt = ocr_mapping.get(num, "")
-                                        display_txt = str(raw_txt).strip() if pd.notna(raw_txt) else ""
+                                        display_txt = ocr_mapping.get(num, "").strip()
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
                                             st.info(display_txt)
@@ -1330,8 +1327,7 @@ with tab5:
                                                 render_ai_advice_block(f"🤖 차트 AI 분석", ai_advice_mapping[g])
                                                 shown_legacy_advice.add(g)
 
-                                        raw_txt = ocr_mapping.get(num, "")
-                                        display_txt = str(raw_txt).strip() if pd.notna(raw_txt) else ""
+                                        display_txt = ocr_mapping.get(num, "").strip()
                                         st.markdown("#### 📄 본문 텍스트 (OCR)")
                                         if display_txt:
                                             st.info(display_txt)
