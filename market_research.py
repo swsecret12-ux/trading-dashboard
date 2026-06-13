@@ -140,20 +140,27 @@ def fetch_financial_data(ticker_symbol):
             except:
                 return "-"
 
-        # 💡 3개년 (12분기) 실적 데이터 및 디자인 포맷팅 (미국장 기준 날짜 오류 수정)
+        # 💡 3개년 (12분기) 실적 데이터 및 디자인 포맷팅 (미국장 기준 날짜 오류 수정 완료)
         earnings_html = ""
         try:
-            edts = ticker.get_earnings_dates(limit=12)
+            try:
+                edts = ticker.get_earnings_dates(limit=12)
+            except Exception:
+                edts = ticker.earnings_dates
+                if edts is not None: edts = edts.head(12)
+                
             if edts is not None and not edts.empty:
                 edts = edts.reset_index()
                 
-                # 💡 UTC 시간을 미국 동부 표준시(US/Eastern)로 변환하여 날짜가 하루 밀리는 현상 해결
-                if edts['Earnings Date'].dt.tz is not None:
-                    edts['Earnings Date'] = edts['Earnings Date'].dt.tz_convert('US/Eastern')
-                else:
-                    edts['Earnings Date'] = edts['Earnings Date'].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+                date_col = 'Earnings Date' if 'Earnings Date' in edts.columns else edts.columns[0]
                 
-                edts['Date'] = edts['Earnings Date'].dt.strftime('%Y-%m-%d')
+                # 💡 UTC 시간을 미국 동부 표준시(US/Eastern)로 변환하여 날짜가 하루 밀리는 현상 해결
+                if edts[date_col].dt.tz is not None:
+                    edts[date_col] = edts[date_col].dt.tz_convert('US/Eastern')
+                else:
+                    edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+                
+                edts['Date'] = edts[date_col].dt.strftime('%Y-%m-%d')
                 
                 edts_table = """
                 <table class='ma-table' style='text-align:center;'>
@@ -162,8 +169,8 @@ def fetch_financial_data(ticker_symbol):
                   </tr>
                 """
                 for _, row in edts.iterrows():
-                    eps_est = row['EPS Estimate']
-                    eps_rep = row['Reported EPS']
+                    eps_est = row.get('EPS Estimate', None)
+                    eps_rep = row.get('Reported EPS', None)
                     
                     est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
                     rep_str = f"{eps_rep:.2f}" if pd.notna(eps_rep) else "-"
@@ -177,22 +184,24 @@ def fetch_financial_data(ticker_symbol):
                         surprise_html = f"<span style='color:{scolor}; font-weight:bold;'>{ssign}{surp_pct:.1f}% {stxt}</span>"
                         
                     price_chg_html = get_earnings_price_change(row['Date'])
-                    
                     edts_table += f"<tr><td><b>{row['Date']}</b></td><td>{est_str}</td><td>{rep_str}</td><td>{surprise_html}</td><td>{price_chg_html}</td></tr>"
                 edts_table += "</table>"
                 earnings_html = edts_table
             else:
-                earnings_html = "<p>최근 실적 데이터가 없습니다.</p>"
-        except:
-            earnings_html = "<p>실적 데이터를 불러올 수 없습니다.</p>"
+                earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다. (제공사 데이터 없음)</p>"
+        except Exception as e:
+            earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
-        # 뉴스
-        news = ticker.news
-        yh_news = "\n".join([f"- {n.get('title','')}" for n in news[:3]]) if news else ""
+        # 뉴스 데이터 방어
+        try:
+            news = ticker.news
+            yh_news = "\n".join([f"- {n.get('title','')}" for n in news[:3]]) if news else ""
+        except:
+            yh_news = "야후 뉴스 제공 오류"
+            
         inv_news = fetch_investing_news(ticker_symbol)
         raw_news = f"[Yahoo News]\n{yh_news}\n\n[Global Web News]\n{inv_news}"
 
-        # 💡 HTML 뷰 구성
         ma_html = f"""
         <table class="ma-table">
           <tr style='background-color:#f1f5f9;'><th>지표 (EMA 기준)</th><th>상태 / 가격</th><th>발생일</th></tr>
@@ -226,12 +235,10 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     from api_utils import ask_gemini_dynamic
     today_str = datetime.today().strftime('%Y-%m-%d')
     
-    # 💡 AI 리포트 분량 및 깊이 3배 강화 프롬프트! (아마존, 매크로 등 팩트 기반)
     prompt = f"""
-    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 미사여구(예: ~할 것으로 보입니다, 마법 같은 등)와 감정적인 표현은 철저히 배제하고, 오직 데이터와 팩트 기반의 건조한(Dry) 문체로 보고서를 작성하세요.
+    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 미사여구를 철저히 배제하고, 오직 데이터와 팩트 기반의 건조한(Dry) 문체로 보고서를 작성하세요.
     
-    **[중요 지시사항]: 일반적인 요약을 넘어, 실제 기관 투자자들이 중요하게 보는 거시경제(매크로) 흐름, 밸류체인 파급력, 향후 가이던스 등을 포함하여 분량을 기존보다 3배 이상 길고 심층적으로 작성하십시오. 단순 숫자 나열은 절대 금지합니다.**
-    
+    **[중요 지시사항]: 실제 기관 투자자들이 중요하게 보는 거시경제(매크로) 흐름, 밸류체인 파급력, 향후 가이던스 등을 포함하여 분량을 기존보다 3배 이상 길고 심층적으로 작성하십시오.**
     보고서 작성 기준일: {today_str}
 
     [분석 대상 데이터]
@@ -241,17 +248,10 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     - SaveTicker 등 외부 수집 뉴스: {saveticker_text}
     - 유저 메모: {user_input}
     
-    [작성 목차 및 필수 포함 내용]
+    [작성 목차]
     1. 🏢 시장 위치 및 밸류체인 심층 분석
-       - 이 종목이 글로벌 {sector} 섹터 내에서 시가총액 기준으로 어느 정도 위치에 있는지 평가.
-       - 단순히 회사를 소개하는 것을 넘어, 주요 경쟁사 및 연계된 공급망(밸류체인) 주식들과의 커플링/디커플링 동향을 심층 분석.
-    2. 🌍 매크로 동향 및 핵심 뉴스 팩트체크 (가장 중요)
-       - 제공된 뉴스(특히 대형 기업과의 파트너십, M&A, 신제품 발표 등)가 펀더멘털과 향후 매출에 미치는 실제 파급력을 분석. (예: 협업 뉴스가 있다면 그 이유와 향후 수익 기여도 전망 등).
-       - 현재 금리 인상/인하 기조나 섹터 전반의 매크로 환경이 해당 종목의 투심에 미치는 영향을 구체적으로 서술.
+    2. 🌍 매크로 동향 및 핵심 뉴스 팩트체크 (가장 중요: 파트너십, 이슈 등 상세 서술)
     3. 💰 실적(Earnings) 및 모멘텀 종합 의견
-       - 최근 3개년 실적 상회/하회 트렌드가 시장에 어떤 시그널을 주었는지 분석.
-       - 다음 가이던스에 대한 월가 기관들의 시각과 우려/기대감을 추론하여 기재.
-    4. 💡 기관 트레이딩 결론 (Actionable Insight)
-       - 펀더멘털, 매크로, 뉴스 모멘텀을 모두 종합하여, 현재 포지션 진입(신규 Long/Short/관망)에 대한 구체적이고 냉철한 조언. 리스크 관리 측면도 반드시 포함.
+    4. 💡 기관 트레이딩 결론 (Actionable Insight: 리스크 관리 포함 구체적 롱/숏/관망 의견)
     """
     return ask_gemini_dynamic(prompt, [])
