@@ -1,10 +1,17 @@
 import yfinance as yf
+import requests
 from api_utils import ask_gemini_dynamic
 
 def fetch_financial_data(ticker_symbol):
     """야후 파이낸스를 통해 종목의 시총, 기간별 변동성, 최신 뉴스를 긁어옵니다."""
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        # 💡 야후 파이낸스의 봇 차단(IP 블락)을 우회하기 위해 사람(크롬 브라우저)처럼 위장합니다!
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+        
+        ticker = yf.Ticker(ticker_symbol, session=session)
         
         # 1. 시가총액 포맷팅 (야후 파이낸스 JSON 파싱 에러 완벽 방어)
         mcap_str = "데이터 없음"
@@ -19,7 +26,7 @@ def fetch_financial_data(ticker_symbol):
 
         # 2. 기간별 변동성(수익률) 계산 로직
         hist = ticker.history(period="1y")
-        if hist.empty: return {"error": "차트 데이터를 불러올 수 없는 종목입니다. 티커명을 확인해주세요."}
+        if hist.empty: return {"error": f"[{ticker_symbol}] 차트 데이터를 불러올 수 없습니다. 야후 파이낸스 서버 차단이거나 잘못된 티커입니다."}
             
         current_price = hist['Close'].iloc[-1]
         
