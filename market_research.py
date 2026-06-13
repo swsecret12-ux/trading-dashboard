@@ -9,8 +9,8 @@ import xml.etree.ElementTree as ET
 def fetch_investing_news(ticker):
     """구글 뉴스 RSS를 우회하여 최신 글로벌 기사(Investing, 파트너십 등)를 긁어옵니다."""
     try:
-        # 💡 "Partnership" 등 핵심 호재를 잡아내도록 검색어 강화
-        query = urllib.parse.quote(f"{ticker} stock OR partnership OR earnings")
+        # 💡 검색어 범용성 확대 (더 많은 글로벌 핵심 뉴스를 잡아오도록 수정)
+        query = urllib.parse.quote(f"{ticker} stock OR news")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
@@ -140,7 +140,7 @@ def fetch_financial_data(ticker_symbol):
             except:
                 return "-"
 
-        # 💡 3개년 (12분기) 실적 데이터 및 디자인 포맷팅 (미국장 기준 날짜 오류 수정 완료)
+        # 💡 3개년 (12분기) 실적 데이터 및 디자인 포맷팅
         earnings_html = ""
         try:
             try:
@@ -154,11 +154,11 @@ def fetch_financial_data(ticker_symbol):
                 
                 date_col = 'Earnings Date' if 'Earnings Date' in edts.columns else edts.columns[0]
                 
-                # 💡 UTC 시간을 미국 동부 표준시(US/Eastern)로 변환하여 날짜가 하루 밀리는 현상 해결
+                # 💡 안전하고 범용적인 타임존키(America/New_York) 적용
                 if edts[date_col].dt.tz is not None:
-                    edts[date_col] = edts[date_col].dt.tz_convert('US/Eastern')
+                    edts[date_col] = edts[date_col].dt.tz_convert('America/New_York')
                 else:
-                    edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+                    edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('America/New_York')
                 
                 edts['Date'] = edts[date_col].dt.strftime('%Y-%m-%d')
                 
@@ -192,10 +192,20 @@ def fetch_financial_data(ticker_symbol):
         except Exception as e:
             earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
-        # 뉴스 데이터 방어
+        # 💡 뉴스 데이터 방어 및 야후 API 구조 변경 완벽 대응
         try:
             news = ticker.news
-            yh_news = "\n".join([f"- {n.get('title','')}" for n in news[:3]]) if news else ""
+            yh_news_list = []
+            for n in news[:5]:
+                # 야후 파이낸스 API가 타이틀을 'content' 딕셔너리 안에 숨기는 패턴 처리
+                title = n.get('title', '')
+                if not title and 'content' in n:
+                    title = n['content'].get('title', '')
+                
+                if title:
+                    yh_news_list.append(f"- {title}")
+                    
+            yh_news = "\n".join(yh_news_list) if yh_news_list else "최근 야후 뉴스를 불러올 수 없습니다."
         except:
             yh_news = "야후 뉴스 제공 오류"
             
