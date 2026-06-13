@@ -451,18 +451,13 @@ with tab6:
             s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, BTC-USD)")
             s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
             
-            st.markdown("##### 📰 팩트체크용 SaveTicker 계정 연동 (선택)")
-            st.caption("계정을 입력해두면 파이썬이 브라우저로 위장 로그인하여 최신 뉴스를 자동으로 긁어옵니다.")
-            c_st1, c_st2 = st.columns(2)
-            st_id = c_st1.text_input("SaveTicker 아이디(이메일)", value=st.session_state.get('st_id', ''))
-            st_pw = c_st2.text_input("SaveTicker 비밀번호", type="password", value=st.session_state.get('st_pw', ''))
-            
             s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
             
             if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    st.session_state['st_id'] = st_id
-                    st.session_state['st_pw'] = st_pw
+                    # 💡 영우님의 SaveTicker 계정 하드코딩! (매번 입력할 필요 없음)
+                    st_id = "swsecret@naver.com"
+                    st_pw = "1!REre4423"
                     
                     with st.spinner("데이터 수집 및 크로스체크 분석 중... (최대 1~2분 소요)"):
                         fin_data = fetch_financial_data(s_ticker.strip())
