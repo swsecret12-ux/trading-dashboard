@@ -13,9 +13,6 @@ from PIL import Image
 import google.generativeai as genai
 import streamlit.components.v1 as components
 
-# ==========================================
-# --- 1. 클라우드 및 AI 세팅 ---
-# ==========================================
 URL = st.secrets.get("SUPABASE_URL", "")
 KEY = st.secrets.get("SUPABASE_KEY", "")
 HEADERS = {
@@ -28,9 +25,6 @@ HEADERS = {
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
-# ==========================================
-# --- 2. 클라우드 DB 통신 도우미 함수들 ---
-# ==========================================
 def insert_db(table, data):
     return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
 
@@ -58,9 +52,6 @@ def upload_image_to_supabase(img_file, prefix="img"):
     except Exception:
         return None
 
-# ==========================================
-# --- 3. 데이터 로드 함수 및 아카이브 컨텍스트 추출 ---
-# ==========================================
 def load_trade_data():
     res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
     if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
@@ -100,8 +91,11 @@ def load_sector_data():
     if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
-# 여기서부터 로컬 모듈 임포트 (오류 없게 안전하게 한 줄로 합침)
-from api_utils import get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, get_real_ai_advice, render_ai_advice_block, render_blog_image_html, render_crisp_image_html, get_file_group_info, execute_survival_trade, load_theory_db
+from api_utils import (
+    get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, 
+    get_real_ai_advice, render_ai_advice_block, render_blog_image_html, 
+    render_crisp_image_html, get_file_group_info, execute_survival_trade, load_theory_db
+)
 from market_research import fetch_financial_data, analyze_sector_with_ai, fetch_saveticker_news
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
@@ -135,16 +129,15 @@ div[data-testid="stMetricLabel"] {
     font-size: 1.3rem;
 }
 
-/* 💡 표(Table) 가독성 극대화 CSS */
 .ma-table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 15px;
-    font-size: 1.05rem; /* 글씨 크기 대폭 확대 */
+    font-size: 1.05rem;
 }
 .ma-table th, .ma-table td {
     border: 1px solid #cbd5e1;
-    padding: 12px 15px; /* 여백 확대 */
+    padding: 12px 15px;
     text-align: left;
 }
 .ma-table th {
@@ -193,7 +186,6 @@ if "uploader_key" not in st.session_state:
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
-# --- Tab 1: 매매 기록 보관지 ---
 with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
@@ -227,9 +219,9 @@ with tab1:
                 else:
                     profit_calc = ((entry_price - exit_price) / entry_price) * margin * leverage
             
-            auto_res = "무"
             if profit_calc > 0: auto_res = "승"
             elif profit_calc < 0: auto_res = "패"
+            else: auto_res = "무"
             
             st.info(f"**💡 자동 계산된 수익금:** `${profit_calc:,.2f}` &nbsp;&nbsp;|&nbsp;&nbsp; **ROE (수익률):** `{profit_calc/margin*100 if margin>0 else 0:,.2f}%`")
             
@@ -260,7 +252,7 @@ with tab1:
                     "position": position, 
                     "result": result, 
                     "rr_ratio": rr_ratio, 
-                    "profit": round(profit_calc, 2),
+                    "profit": round(profit_calc, 2), 
                     "chart_image_paths": "|".join(saved_urls), 
                     "entry_basis": detailed_entry, 
                     "exit_basis": detailed_exit
@@ -300,9 +292,6 @@ with tab1:
                         update_db("trade_history", "id", trade_id, {"entry_basis": e_entry, "exit_basis": e_exit})
                         st.rerun()
 
-# ==============================
-# --- Tab 2: 내 관점 분석 ---
-# ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백 (아카이브 지식 연동)")
     st.info("차트 스크린샷을 올리면, 아카이브(Tab 5)에 저장된 해당 종목의 최신 전문가 관점을 스스로 찾아내어 함께 분석합니다.")
@@ -347,10 +336,10 @@ with tab2:
                         **[중요 분석 지침]**
                         1. **아카이브 동기화**: 위 [최근 아카이브 참조 데이터]가 있다면, 거기에 기록된 원작자의 최신 포지션(롱/숏)과 근거를 최우선으로 참고하세요.
                         2. **언급 시점 대조**: 원작자가 근거를 제시한 '시간'과 '가격 레벨'이 현재 차트에서 어떻게 구현되고 있는지 팩트 체크하세요.
-                        3. **가장 먼저**, 첨부된 차트 이미지 상단이나 텍스트를 보고 1) 어떤 종목(티커)인지 2) 몇 시간(분) 봉(타임프레임)인지 파악해서 분석의 첫 문장에 명확히 명시해 주세요. (이미지에서 알 수 없는 경우 '타임프레임 파악 불가'로 기재)
+                        3. **가장 먼저**, 첨부된 차트 이미지 상단이나 텍스트를 보고 1) 어떤 종목(티커)인지 2) 몇 시간(분) 봉(타임프레임)인지 파악해서 분석의 첫 문장에 명확히 명시해 주세요.
                         4. **분석 결과 필수 포함**: analysis 항목에는 반드시 "아카이브에 기록된 원작자가 O시에 말한 OOO 근거에 따르면 현재는 OOO한 상태입니다"라는 식으로 언급 시점과 근거를 명시해서 현재 나의 관점을 검증해야 합니다.
 
-                        반드시 아래의 JSON 형식으로만 답변을 출력해. 마크다운(` ```json ` 등)이나 다른 인사말은 절대 포함하지 마. 오직 중괄호 {{ }} 만 출력해.
+                        반드시 아래의 JSON 형식으로만 답변을 출력해. 마크다운이나 다른 인사말은 절대 포함하지 마. 오직 중괄호 {{ }} 만 출력해.
                         
                         {{
                           "trend": "상승 / 하락 / 횡보 등 10자 이내 요약",
@@ -430,9 +419,6 @@ with tab2:
                             st.success("✅ Watchlist에 성공적으로 저장되었습니다! [📁 분석 자료 아카이브] 탭에서 확인하세요.")
                             st.rerun()
 
-# ==============================
-# --- Tab 3: 기본 이론 & DB ---
-# ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
     
@@ -506,9 +492,6 @@ with tab3:
         else:
             st.info("👈 왼쪽 목차에서 이론을 선택하시거나, 하단의 '새로운 이론 등록/덮어쓰기'를 통해 나만의 매매 기준을 채워나가 보세요!")
 
-# ==============================
-# --- Tab 4: 🤖 자동매매 컨트롤 센터 ---
-# ==============================
 with tab4:
     st.header("🤖 자동매매 사령실 (컨트롤 패널)")
     st.caption("비트겟(Bitget) API 연동 반자동 생존 매매 및 트레이딩뷰 Webhook 시스템")
@@ -609,9 +592,6 @@ with tab4:
 [System] 생존 매매 모듈 활성화 완료..."""
         st.code(log_text, language="bash")
 
-# ==============================
-# --- Tab 5: 분석 자료 아카이브 ---
-# ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
     df_archive = load_archive_data()
@@ -707,7 +687,6 @@ with tab5:
         if not df_others.empty:
             df_others = df_others.sort_values(by='date', ascending=False).reset_index(drop=True)
             st.markdown("### 📋 스크랩 목록")
-            # 💡 DataFrame을 한 번만 호출하여 StreamlitDuplicateElementId 방지
             selected_other = st.dataframe(df_others[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
             
             selected_rows_other = selected_other.get('selection', {}).get('rows', [])
@@ -933,15 +912,13 @@ with tab5:
 
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
-        st.caption("Tab 2(AI 차트 & 관점 분석)에서 분석하고 저장한 S급 셋업 후보들이 이곳에 모입니다.")
-        
         df_myview = df_archive[df_archive['category'] == '나의관점'].copy()
         
         if not df_myview.empty:
-            # 💡 DataFrame을 한 번만 호출하여 StreamlitDuplicateElementId 방지
-            sel_my = st.dataframe(df_myview[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
+            df_myview = df_myview.sort_values(by='date', ascending=False).reset_index(drop=True)
+            selected_myview = st.dataframe(df_myview[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
             
-            selected_rows_myview = sel_my.get('selection', {}).get('rows', [])
+            selected_rows_myview = selected_myview.get('selection', {}).get('rows', [])
             if selected_rows_myview:
                 st.divider()
                 my_data = df_myview.iloc[selected_rows_myview[0]]
@@ -967,9 +944,6 @@ with tab5:
         else:
             st.info("아직 저장된 관점이 없습니다. '🔎 AI 차트 & 관점 분석' 탭에서 분석 후 S급 셋업을 저장해 보세요!")
 
-# ==============================
-# --- Tab 6: 🏢 섹터 & 주도주 리서치 맵 ---
-# ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
@@ -984,7 +958,6 @@ with tab6:
             
             if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    # 영우님의 SaveTicker 계정 하드코딩
                     st_id = "swsecret@naver.com"
                     st_pw = "1!REre4423"
                     
@@ -996,7 +969,6 @@ with tab6:
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
-                            # 💡 좌측 패널 HTML 구성 (실적표, 이평선, 모멘텀 포함)
                             left_column_html = f"""
                             <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
                             <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
@@ -1017,8 +989,9 @@ with tab6:
         filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
         if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
             
-        # 💡 메인 화면 목록 (EMA 표기 및 날짜 포함), DataFrame 중복 에러 해결 완료!
         disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1w"]
+        
+        # 💡 중복 렌더링 에러를 원천 차단하는 안전한 데이터프레임 호출
         df_selected = st.dataframe(
             df_sector[disp_cols],
             column_config={
@@ -1040,7 +1013,7 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 트레이딩뷰 위젯에 EMA(지수이동평균) 2개 확실히 탑재! (MAExp@tv-basicstudies 2번 추가)
+            # 💡 트레이딩뷰 위젯: "EMA@tv-basicstudies" 2개 기본 탑재 완료 (고급 세팅창 지원)
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -1052,7 +1025,7 @@ with tab6:
               "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
               "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
               "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-              "studies": ["MAExp@tv-basicstudies", "MAExp@tv-basicstudies"],
+              "studies": ["EMA@tv-basicstudies", "EMA@tv-basicstudies"],
               "container_id": "tradingview_{stock_data['ticker']}"
               }});
               </script>
