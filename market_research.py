@@ -6,35 +6,43 @@ from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
 
-def fetch_global_news(ticker):
-    """구글 뉴스 RSS를 통해 해당 종목의 전 세계 최신 핵심 기사를 긁어옵니다. (아마존 협업 등 강력한 호재 캐치)"""
+def fetch_investing_news(ticker):
+    """구글 뉴스 RSS를 우회하여 Investing.com의 최신 기사 3개를 긁어옵니다."""
     try:
-        # 검색어 강화: 파트너십, 실적, M&A 등
-        query = urllib.parse.quote(f"{ticker} stock news OR partnership OR earnings OR acquisition")
+        query = urllib.parse.quote(f"{ticker} stock site:investing.com")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
         news_items = []
-        for item in root.findall('.//item')[:5]:
+        for item in root.findall('.//item')[:3]:
             title = item.find('title').text
             pubDate = item.find('pubDate').text
             news_items.append(f"- {title} ({pubDate})")
-        return "\n".join(news_items) if news_items else "관련 글로벌 뉴스가 없습니다."
+        return "\n".join(news_items) if news_items else "관련 Investing.com 뉴스가 없습니다."
     except:
-        return "글로벌 뉴스 수집 실패"
+        return "Investing.com 뉴스 수집 실패"
 
 def fetch_saveticker_news(user_id, password):
-    if not user_id or not password: return "SaveTicker 계정 없음"
+    """SaveTicker 자동 로그인 및 최신 뉴스 크롤링"""
+    if not user_id or not password:
+        return "SaveTicker 계정 정보가 없습니다."
     try:
         session = requests.Session()
-        session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"})
-        session.post("https://www.saveticker.com/api/auth/callback/credentials", data={"email": user_id, "password": password}, timeout=10)
+        session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+        
+        login_url = "https://www.saveticker.com/api/auth/callback/credentials"
+        session.post(login_url, data={"email": user_id, "password": password}, timeout=10)
+        
         res = session.get("https://www.saveticker.com/news", timeout=10)
         soup = BeautifulSoup(res.text, 'html.parser')
         paragraphs = soup.find_all(['p', 'article'])
         text = "\n".join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 20])
-        return f"[SaveTicker 요약]\n{text[:2000]}" if text else "SaveTicker 본문 추출 실패"
-    except Exception as e: return f"SaveTicker 크롤링 에러: {str(e)}"
+        
+        if not text:
+            return "SaveTicker 뉴스 본문 추출 실패 (봇 차단됨)"
+        return f"[SaveTicker 요약]\n{text[:2500]}"
+    except Exception as e:
+        return f"SaveTicker 크롤링 에러: {str(e)}"
 
 def fetch_financial_data(ticker_symbol):
     try:
@@ -48,22 +56,17 @@ def fetch_financial_data(ticker_symbol):
         else: mcap_str = "데이터 없음"
 
         hist_1d = ticker.history(period="2y")
-        if hist_1d.empty: return {"error": "차트 데이터를 불러올 수 없습니다."}
+        if hist_1d.empty: return {"error": "일봉 차트 데이터를 불러올 수 없습니다."}
         
         current_price = float(hist_1d['Close'].iloc[-1])
         current_vol = int(hist_1d['Volume'].iloc[-1])
-        avg_vol_20d = int(hist_1d['Volume'].tail(20).mean())
         
-        # 거래량 증가율 판독
-        if current_vol > avg_vol_20d * 1.5: vol_status = f"🔥 급증 ({current_vol:,.0f}주)"
-        else: vol_status = f"평이 ({current_vol:,.0f}주)"
-
         def calc_return(days):
             if len(hist_1d) > days:
                 past = float(hist_1d['Close'].iloc[-(days+1)])
                 pct = round(((current_price - past)/past)*100, 2)
-                sign = "🟢 +" if pct > 0 else "🔴 "
-                return f"${past:.2f} ➔ ${current_price:.2f}<br><b>{sign}{pct}%</b>"
+                sign = "+" if pct > 0 else ""
+                return f"${past:.2f} ➔ ${current_price:.2f} ({sign}{pct}%)"
             return "-"
         
         vol_1d = calc_return(1)
@@ -84,7 +87,10 @@ def fetch_financial_data(ticker_symbol):
             
             df_1d_ma = hist_1d[['MA200_1D']].dropna().sort_index()
             df_4h_ma = hist_4h[['MA200_4H', 'Close']].dropna().sort_index()
-            merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
+            
+            merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward')
+            merged = merged.dropna()
+            
             merged['Prev_4H'] = merged['MA200_4H'].shift(1)
             merged['Prev_1D'] = merged['MA200_1D'].shift(1)
             
@@ -94,73 +100,70 @@ def fetch_financial_data(ticker_symbol):
             if not gc.empty or not dc.empty:
                 last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize(merged.index.tz)
                 last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize(merged.index.tz)
+                
                 latest_idx = max(last_gc, last_dc)
-                cross_type = "🟢 4H/1D 골든크로스" if latest_idx == last_gc else "🔴 4H/1D 데드크로스"
+                cross_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
                 cross_date = latest_idx.strftime('%Y-%m-%d %H:%M')
                 cross_price = f"${merged.loc[latest_idx, 'Close']:.2f}"
             else:
-                cross_type, cross_date, cross_price = "최근 1년 내 발생 안함", "-", "-"
+                cross_type, cross_date, cross_price = "크로스 없음", "-", "-"
+            
             curr_4h_ma200 = f"${merged['MA200_4H'].iloc[-1]:.2f}"
             curr_1d_ma200 = f"${merged['MA200_1D'].iloc[-1]:.2f}"
         else:
-            cross_type, cross_date, cross_price, curr_4h_ma200 = "-", "-", "-", "-"
+            cross_type, cross_date, cross_price = "4H 로드 불가", "-", "-"
+            curr_4h_ma200 = "-"
             curr_1d_ma200 = f"${hist_1d['MA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['MA200_1D'].iloc[-1]) else "-"
 
-        # 분기별 실적 파싱 (서프라이즈 계산 완벽 포맷팅)
         earnings_html = ""
-        next_earnings = "미정"
-        ai_earnings_data = [] # AI에게 넘겨줄 실적 요약
         try:
-            edts = ticker.get_earnings_dates(limit=10)
+            edts = ticker.get_earnings_dates(limit=5)
             if edts is not None and not edts.empty:
                 edts = edts.reset_index()
-                now = pd.Timestamp.now().tz_localize(edts['Earnings Date'].dt.tz)
-                
-                # 다음 실적 발표일 추출
-                future_edts = edts[edts['Earnings Date'] > now].sort_values('Earnings Date')
-                if not future_edts.empty: next_earnings = future_edts.iloc[0]['Earnings Date'].strftime('%Y년 %m월 %d일')
-                
-                # 과거 4분기 실적 추출
-                past_edts = edts[edts['Earnings Date'] <= now].sort_values('Earnings Date', ascending=False).head(4)
-                
-                edts_table = f"<p><b>🗓️ 다음 실적 발표 예정일:</b> <span style='color:#d97706; font-weight:bold;'>{next_earnings}</span></p>"
-                edts_table += "<table class='ma-table'><tr><th>분기 발표일</th><th>예상 EPS</th><th>실제 EPS</th><th>결과 (Surprise)</th></tr>"
-                
-                for _, row in past_edts.iterrows():
-                    date_str = row['Earnings Date'].strftime('%Y-%m-%d')
-                    eps_est = row['EPS Estimate']
-                    eps_rep = row['Reported EPS']
-                    
-                    if pd.notna(eps_est) and pd.notna(eps_rep) and eps_est != 0:
-                        surp_pct = ((eps_rep - eps_est) / abs(eps_est)) * 100
-                        if surp_pct > 0:
-                            res_str = f"<span style='color:green; font-weight:bold;'>🟢 +{surp_pct:.1f}% 상회</span>"
-                        else:
-                            res_str = f"<span style='color:red; font-weight:bold;'>🔴 {surp_pct:.1f}% 하회</span>"
-                        ai_earnings_data.append(f"[{date_str}] 예상 {eps_est} vs 실제 {eps_rep} ({surp_pct:.1f}%)")
-                    else:
-                        res_str = "-"
-                        
-                    eps_est_str = f"${eps_est:.2f}" if pd.notna(eps_est) else "-"
-                    eps_rep_str = f"${eps_rep:.2f}" if pd.notna(eps_rep) else "-"
-                        
-                    edts_table += f"<tr><td>{date_str}</td><td>{eps_est_str}</td><td>{eps_rep_str}</td><td>{res_str}</td></tr>"
+                edts['Date'] = edts['Earnings Date'].dt.strftime('%Y-%m-%d')
+                edts_table = "<table class='ma-table'><tr><th>발표일</th><th>예상 EPS</th><th>실제 EPS</th></tr>"
+                for _, row in edts.iterrows():
+                    eps_est = f"{row['EPS Estimate']}" if pd.notna(row['EPS Estimate']) else "-"
+                    eps_rep = f"{row['Reported EPS']}" if pd.notna(row['Reported EPS']) else "-"
+                    edts_table += f"<tr><td>{row['Date']}</td><td>{eps_est}</td><td>{eps_rep}</td></tr>"
                 edts_table += "</table>"
                 earnings_html = edts_table
             else:
                 earnings_html = "<p>최근 실적 데이터가 없습니다.</p>"
-        except Exception as e:
-            earnings_html = f"<p>실적 파싱 에러: {str(e)}</p>"
+        except:
+            earnings_html = "<p>실적 데이터를 불러올 수 없습니다.</p>"
 
-        # 글로벌 뉴스 (아마존 파트너십 등 탐지)
-        global_news = fetch_global_news(ticker_symbol)
+        news = ticker.news
+        yh_news = "\n".join([f"- {n.get('title','')}" for n in news[:3]]) if news else ""
+        inv_news = fetch_investing_news(ticker_symbol)
+        raw_news = f"[Yahoo News]\n{yh_news}\n\n[Investing.com News]\n{inv_news}"
+
+        ma_html = f"""
+        <table class="ma-table">
+          <tr><th>지표</th><th>상태/가격</th><th>발생일</th></tr>
+          <tr><td><b>최근 크로스</b></td><td>{cross_type}</td><td>{cross_date}</td></tr>
+          <tr><td><b>크로스 당시 주가</b></td><td>{cross_price}</td><td>-</td></tr>
+          <tr><td><b>현재 4H MA200</b></td><td>{curr_4h_ma200}</td><td>-</td></tr>
+          <tr><td><b>현재 1D MA200</b></td><td>{curr_1d_ma200}</td><td>-</td></tr>
+        </table>
+        """
+        
+        mom_html = f"""
+        <table class="ma-table">
+          <tr><th>기간</th><th>과거 ➔ 현재 (변동률)</th></tr>
+          <tr><td><b>1일</b></td><td>{vol_1d}</td></tr>
+          <tr><td><b>1주일</b></td><td>{vol_1w}</td></tr>
+          <tr><td><b>1개월</b></td><td>{vol_1m}</td></tr>
+          <tr><td><b>1분기</b></td><td>{vol_1q}</td></tr>
+          <tr><td><b>1년</b></td><td>{vol_1y}</td></tr>
+        </table>
+        """
 
         return {
-            "market_cap": mcap_str, "global_news": global_news, "earnings_html": earnings_html,
-            "earnings_raw": " | ".join(ai_earnings_data), "current_price": current_price, "vol_status": vol_status,
-            "vol_1d": vol_1d, "vol_1w": vol_1w, "vol_1m": vol_1m, "vol_1q": vol_1q, "vol_1y": vol_1y,
-            "cross_type": cross_type, "cross_date": cross_date, "cross_price": cross_price,
-            "curr_4h_ma200": curr_4h_ma200, "curr_1d_ma200": curr_1d_ma200
+            "market_cap": mcap_str, "raw_news": raw_news, "ma_html": ma_html, 
+            "momentum_html": mom_html, "earnings_html": earnings_html,
+            "current_price": current_price, "current_vol": current_vol,
+            "last_cross_type": cross_type, "last_cross_date": cross_date
         }
     except Exception as e:
         return {"error": str(e)}
@@ -169,30 +172,29 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     from api_utils import ask_gemini_dynamic
     today_str = datetime.today().strftime('%Y-%m-%d')
     
+    current_price = fin_data.get('current_price', 0.0)
+    current_vol = fin_data.get('current_vol', 0)
+    
     prompt = f"""
-    당신은 월스트리트의 최정상급 기관 애널리스트입니다. 아래 데이터를 바탕으로 직관적이고 팩트 위주의 리포트를 작성하세요.
+    당신은 월스트리트 기관 애널리스트입니다. 아래 데이터를 바탕으로 건조한(Dry) 문체로 리포트를 작성하세요.
     보고서 작성 기준일: {today_str}
 
     [분석 대상 데이터]
     - 종목명: {ticker} (섹터: {sector})
     - 시가총액: {fin_data.get('market_cap')}
-    - 현재가: ${fin_data.get('current_price', 0):.2f} / 거래량 동향: {fin_data.get('vol_status')}
-    - 최근 4분기 실적 성과(Surprise): {fin_data.get('earnings_raw')}
-    - 구글 뉴스(파트너십/M&A 등 핵심 팩트): {fin_data.get('global_news')}
-    - SaveTicker 수집 팩트: {saveticker_text}
+    - 최신 뉴스(Yahoo & Investing): {fin_data.get('raw_news')}
+    - SaveTicker 수집 뉴스: {saveticker_text}
     - 사용자 메모: {user_input}
     
     [작성 지침 - 반드시 아래 목차를 따를 것]
-    1. 💰 실적(Earnings) 종합 의견
-       - 최근 4분기 EPS 상회/하회 추이를 바탕으로 기업의 펀더멘털 건전성을 직관적으로 요약.
-    2. 📊 시장 위치 및 밸류체인(연관 주식)
-       - {sector} 섹터 내에서 시총 기준 현재 위치(예: 글로벌 1위, 도전자 등) 명시.
-       - 이 주식과 가격이 연동되는 주요 밸류체인 주식(경쟁사 또는 납품사) 2~3곳 언급.
-    3. 📰 핵심 이슈 및 팩트체크 (뉴스 기반)
-       - 구글 뉴스 및 수집된 뉴스에서 상승/하락을 유발한 '아마존 파트너십', 'M&A', '실적 발표' 등의 핵심 트리거 팩트 서술.
-    4. 💡 트레이딩 결론 (Actionable Insight)
-       - 실적, 모멘텀, 뉴스를 종합하여 현재 포지션 진입(Long/Short/관망)에 대한 기관급 조언.
+    1. 📊 시장 위치 및 밸류체인
+       - 해당 종목의 섹터 내 위치와 연관된 밸류체인(공급망/경쟁사) 주식들의 동향을 요약.
+    2. 📰 핵심 이슈 및 팩트체크 (날짜 매칭 필수)
+       - 뉴스의 '정확한 발표 일자'와 '주가 변동 일자'를 매칭하여 팩트 기반으로 서술. 
+       - "최근 급증했다" 같은 두리뭉실한 표현 절대 금지. "1일봉 차트 기준, O월 O일 파트너십 발표 직후 주가가 $O 수준으로 변동되었다"라고 명확히 서술할 것.
+    3. 💡 트레이딩 결론 (Actionable Insight)
+       - 1일봉(Daily) 관점에서 현재 포지션 진입에 대한 기계적이고 전문적인 조언.
        
-    🚨 주의사항: 좌측 대시보드에 이미 퍼센트(%)와 가격이 나오므로 본문에서 숫자를 앵무새처럼 나열하지 말고 '인사이트' 위주로 적으세요.
+    🚨 [경고]: 가격 변동률(%), 이평선 수치 등은 좌측에 표로 제공되므로 본문에 숫자를 중복 나열하지 마세요.
     """
     return ask_gemini_dynamic(prompt, [])
