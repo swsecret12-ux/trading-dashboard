@@ -6,4 +6,4 @@ Pillow
 Flask
 gunicorn
 ccxt
-yfinance==0.2.37
+yfinance
