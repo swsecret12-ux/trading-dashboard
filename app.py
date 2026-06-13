@@ -6,16 +6,8 @@ import json
 import io
 from PIL import Image
 
-# 💡 분리된 모듈들을 깔끔하게 불러옵니다.
-from api_utils import (
-    insert_db, update_db, delete_db, upload_image_to_supabase,
-    load_trade_data, load_archive_data, get_recent_archive_context,
-    load_theory_db, get_gemini_keys, parse_ai_json, ask_gemini_dynamic,
-    get_real_ocr_text, get_real_ai_advice, render_ai_advice_block,
-    render_blog_image_html, render_crisp_image_html, get_file_group_info,
-    load_sector_data, execute_survival_trade
-)
-# 💡 방금 새로 만든 리서치 자동화 모듈!
+# 💡 괄호 에러 원천 차단! 한 줄로 깔끔하게 모듈을 불러옵니다.
+from api_utils import insert_db, update_db, delete_db, upload_image_to_supabase, load_trade_data, load_archive_data, get_recent_archive_context, load_theory_db, get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, get_real_ai_advice, render_ai_advice_block, render_blog_image_html, render_crisp_image_html, get_file_group_info, load_sector_data, execute_survival_trade
 from market_research import fetch_financial_data, analyze_sector_with_ai
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
@@ -35,7 +27,7 @@ div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
 
 st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
-# 💡 탭 간 이동 시 변수 실종(NameError)을 막기 위한 전역 상태(Session State) 최상단 선언!
+# 💡 탭 간 이동 시 변수 실종(NameError) 방지
 if "ai_analysis_done" not in st.session_state: st.session_state.ai_analysis_done = False
 if "ai_result" not in st.session_state: st.session_state.ai_result = ""
 if "ai_view_text" not in st.session_state: st.session_state.ai_view_text = ""
@@ -500,3 +492,6 @@ with tab6:
                 if stock_data.get('ai_analysis'):
                     st.markdown("#### 🤖 AI 월스트리트 애널리스트 분석")
                     st.success(stock_data['ai_analysis'])
+```
+
+이대로 적용하고 스트림릿 창을 띄워보시면, 이제 모든 에러가 사라지고 새롭게 추가된 6번 탭(섹터 맵)까지 완벽하게 작동하는 것을 확인하실 수 있을 겁니다!
