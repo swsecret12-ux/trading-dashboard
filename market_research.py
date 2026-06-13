@@ -7,9 +7,10 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 def fetch_global_news(ticker):
-    """구글 뉴스 RSS를 통해 해당 종목의 전 세계 최신 핵심 기사 5개를 긁어옵니다. (아마존 협업 등 캐치)"""
+    """구글 뉴스 RSS를 통해 해당 종목의 전 세계 최신 핵심 기사를 긁어옵니다. (아마존 협업 등 강력한 호재 캐치)"""
     try:
-        query = urllib.parse.quote(f"{ticker} stock news OR partnership OR earnings")
+        # 검색어 강화: 파트너십, 실적, M&A 등
+        query = urllib.parse.quote(f"{ticker} stock news OR partnership OR earnings OR acquisition")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
@@ -40,14 +41,12 @@ def fetch_financial_data(ticker_symbol):
         ticker = yf.Ticker(ticker_symbol)
         info = ticker.info
         
-        # 1. 시가총액
         market_cap = info.get('marketCap', 0)
         if market_cap > 1e12: mcap_str = f"{market_cap / 1e12:.2f}T (조 달러)"
         elif market_cap > 1e9: mcap_str = f"{market_cap / 1e9:.2f}B (십억 달러)"
         elif market_cap > 1e6: mcap_str = f"{market_cap / 1e6:.2f}M (백만 달러)"
         else: mcap_str = "데이터 없음"
 
-        # 2. 일봉 데이터 (과거 가격 및 변동성)
         hist_1d = ticker.history(period="2y")
         if hist_1d.empty: return {"error": "차트 데이터를 불러올 수 없습니다."}
         
@@ -63,7 +62,7 @@ def fetch_financial_data(ticker_symbol):
             if len(hist_1d) > days:
                 past = float(hist_1d['Close'].iloc[-(days+1)])
                 pct = round(((current_price - past)/past)*100, 2)
-                sign = "🔴" if pct < 0 else "🟢 +"
+                sign = "🟢 +" if pct > 0 else "🔴 "
                 return f"${past:.2f} ➔ ${current_price:.2f}<br><b>{sign}{pct}%</b>"
             return "-"
         
@@ -73,12 +72,13 @@ def fetch_financial_data(ticker_symbol):
         vol_1q = calc_return(60)
         vol_1y = calc_return(250)
 
-        # 3. 4H / 1D 이평선 크로스 계산
         hist_1d['MA200_1D'] = hist_1d['Close'].rolling(window=200).mean()
+        
         hist_1h = ticker.history(period="730d", interval="1h")
         if not hist_1h.empty:
             hist_4h = hist_1h.resample('4h').agg({'Close': 'last'}).dropna()
             hist_4h['MA200_4H'] = hist_4h['Close'].rolling(window=200).mean()
+            
             if hist_1d.index.tz is None: hist_1d.index = hist_1d.index.tz_localize('UTC')
             if hist_4h.index.tz is None: hist_4h.index = hist_4h.index.tz_localize('UTC')
             
@@ -106,9 +106,10 @@ def fetch_financial_data(ticker_symbol):
             cross_type, cross_date, cross_price, curr_4h_ma200 = "-", "-", "-", "-"
             curr_1d_ma200 = f"${hist_1d['MA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['MA200_1D'].iloc[-1]) else "-"
 
-        # 4. 실적 (Earnings) 직관적 포맷팅
+        # 분기별 실적 파싱 (서프라이즈 계산 완벽 포맷팅)
         earnings_html = ""
         next_earnings = "미정"
+        ai_earnings_data = [] # AI에게 넘겨줄 실적 요약
         try:
             edts = ticker.get_earnings_dates(limit=10)
             if edts is not None and not edts.empty:
@@ -125,7 +126,6 @@ def fetch_financial_data(ticker_symbol):
                 edts_table = f"<p><b>🗓️ 다음 실적 발표 예정일:</b> <span style='color:#d97706; font-weight:bold;'>{next_earnings}</span></p>"
                 edts_table += "<table class='ma-table'><tr><th>분기 발표일</th><th>예상 EPS</th><th>실제 EPS</th><th>결과 (Surprise)</th></tr>"
                 
-                ai_earnings_data = [] # AI에게 넘겨줄 실적 요약
                 for _, row in past_edts.iterrows():
                     date_str = row['Earnings Date'].strftime('%Y-%m-%d')
                     eps_est = row['EPS Estimate']
@@ -133,31 +133,31 @@ def fetch_financial_data(ticker_symbol):
                     
                     if pd.notna(eps_est) and pd.notna(eps_rep) and eps_est != 0:
                         surp_pct = ((eps_rep - eps_est) / abs(eps_est)) * 100
-                        if surp_pct > 0: res_str = f"<span style='color:green; font-weight:bold;'>🟢 +{surp_pct:.1f}% 상회</span>"
-                        else: res_str = f"<span style='color:red; font-weight:bold;'>🔴 {surp_pct:.1f}% 하회</span>"
+                        if surp_pct > 0:
+                            res_str = f"<span style='color:green; font-weight:bold;'>🟢 +{surp_pct:.1f}% 상회</span>"
+                        else:
+                            res_str = f"<span style='color:red; font-weight:bold;'>🔴 {surp_pct:.1f}% 하회</span>"
                         ai_earnings_data.append(f"[{date_str}] 예상 {eps_est} vs 실제 {eps_rep} ({surp_pct:.1f}%)")
                     else:
-                        eps_est = "-" if pd.isna(eps_est) else f"${eps_est:.2f}"
-                        eps_rep = "-" if pd.isna(eps_rep) else f"${eps_rep:.2f}"
                         res_str = "-"
                         
-                    edts_table += f"<tr><td>{date_str}</td><td>${eps_est:.2f} if isinstance(eps_est, float) else eps_est}</td><td>${eps_rep:.2f} if isinstance(eps_rep, float) else eps_rep}</td><td>{res_str}</td></tr>"
+                    eps_est_str = f"${eps_est:.2f}" if pd.notna(eps_est) else "-"
+                    eps_rep_str = f"${eps_rep:.2f}" if pd.notna(eps_rep) else "-"
+                        
+                    edts_table += f"<tr><td>{date_str}</td><td>{eps_est_str}</td><td>{eps_rep_str}</td><td>{res_str}</td></tr>"
                 edts_table += "</table>"
                 earnings_html = edts_table
-                earnings_raw = " | ".join(ai_earnings_data)
             else:
                 earnings_html = "<p>최근 실적 데이터가 없습니다.</p>"
-                earnings_raw = "실적 데이터 없음"
         except Exception as e:
             earnings_html = f"<p>실적 파싱 에러: {str(e)}</p>"
-            earnings_raw = "실적 파싱 에러"
 
-        # 5. 글로벌 뉴스 스크래핑
+        # 글로벌 뉴스 (아마존 파트너십 등 탐지)
         global_news = fetch_global_news(ticker_symbol)
 
         return {
             "market_cap": mcap_str, "global_news": global_news, "earnings_html": earnings_html,
-            "earnings_raw": earnings_raw, "current_price": current_price, "vol_status": vol_status,
+            "earnings_raw": " | ".join(ai_earnings_data), "current_price": current_price, "vol_status": vol_status,
             "vol_1d": vol_1d, "vol_1w": vol_1w, "vol_1m": vol_1m, "vol_1q": vol_1q, "vol_1y": vol_1y,
             "cross_type": cross_type, "cross_date": cross_date, "cross_price": cross_price,
             "curr_4h_ma200": curr_4h_ma200, "curr_1d_ma200": curr_1d_ma200
@@ -179,7 +179,7 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     - 현재가: ${fin_data.get('current_price', 0):.2f} / 거래량 동향: {fin_data.get('vol_status')}
     - 최근 4분기 실적 성과(Surprise): {fin_data.get('earnings_raw')}
     - 구글 뉴스(파트너십/M&A 등 핵심 팩트): {fin_data.get('global_news')}
-    - SaveTicker 등 수집 팩트: {saveticker_text}
+    - SaveTicker 수집 팩트: {saveticker_text}
     - 사용자 메모: {user_input}
     
     [작성 지침 - 반드시 아래 목차를 따를 것]
@@ -189,10 +189,10 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
        - {sector} 섹터 내에서 시총 기준 현재 위치(예: 글로벌 1위, 도전자 등) 명시.
        - 이 주식과 가격이 연동되는 주요 밸류체인 주식(경쟁사 또는 납품사) 2~3곳 언급.
     3. 📰 핵심 이슈 및 팩트체크 (뉴스 기반)
-       - 구글 뉴스 및 수집된 뉴스에서 상승/하락을 유발한 '아마존 파트너십', 'M&A', '실적 발표' 등의 핵심 트리거 팩트만 서술. (절대 모호하게 적지 말 것)
+       - 구글 뉴스 및 수집된 뉴스에서 상승/하락을 유발한 '아마존 파트너십', 'M&A', '실적 발표' 등의 핵심 트리거 팩트 서술.
     4. 💡 트레이딩 결론 (Actionable Insight)
-       - 실적, 뉴스, 거래량을 종합하여 현재 포지션 진입(Long/Short/관망)에 대한 기관급 조언.
+       - 실적, 모멘텀, 뉴스를 종합하여 현재 포지션 진입(Long/Short/관망)에 대한 기관급 조언.
        
-    🚨 주의사항: 좌측 대시보드에 이미 퍼센트(%)와 이동평균선 수치가 나오므로 본문에서 숫자를 앵무새처럼 나열하지 말고 '인사이트' 위주로 적으세요.
+    🚨 주의사항: 좌측 대시보드에 이미 퍼센트(%)와 가격이 나오므로 본문에서 숫자를 앵무새처럼 나열하지 말고 '인사이트' 위주로 적으세요.
     """
     return ask_gemini_dynamic(prompt, [])
