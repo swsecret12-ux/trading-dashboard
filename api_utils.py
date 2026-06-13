@@ -7,9 +7,11 @@ import re
 import io
 import time
 import ccxt
-from datetime import datetime
 from PIL import Image
 import google.generativeai as genai
+from datetime import datetime
+
+# 방금 전 저장한 이론 데이터를 불러옵니다.
 from theory_data import get_base_theory_dict
 
 URL = st.secrets.get("SUPABASE_URL", "")
@@ -22,13 +24,13 @@ HEADERS = {
 }
 
 # --- Database Functions ---
-def insert_db(table, data):
+def insert_db(table, data): 
     return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
 
-def update_db(table, match_col, match_val, data):
+def update_db(table, match_col, match_val, data): 
     return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data)
 
-def delete_db(table, match_col, match_val):
+def delete_db(table, match_col, match_val): 
     return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS)
 
 def upload_image_to_supabase(img_file, prefix="img"):
@@ -40,11 +42,9 @@ def upload_image_to_supabase(img_file, prefix="img"):
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
         img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": getattr(img_file, 'type', 'image/png')}
         res = requests.post(upload_url, headers=img_headers, data=file_bytes)
-        if res.status_code == 200:
-            return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
+        if res.status_code == 200: return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
         return None
-    except Exception:
-        return None
+    except: return None
 
 def load_trade_data():
     res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
@@ -62,8 +62,7 @@ def load_archive_data():
 
 def load_sector_data():
     res = requests.get(f"{URL}/rest/v1/sector_analysis?select=*&order=created_at.desc", headers=HEADERS)
-    if res.status_code == 200 and res.json():
-        return pd.DataFrame(res.json())
+    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
 def load_theory_db():
@@ -73,11 +72,7 @@ def load_theory_db():
         for row in res.json():
             cat, title = row['category'], row['title']
             if cat not in db_dict: db_dict[cat] = {}
-            db_dict[cat][title] = {
-                "id": row.get('id'), 
-                "content": row.get('content', ''), 
-                "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []
-            }
+            db_dict[cat][title] = {"id": row.get('id'), "content": row.get('content', ''), "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []}
     return db_dict
 
 def get_recent_archive_context(ticker_search):
@@ -93,8 +88,7 @@ def get_recent_archive_context(ticker_search):
         try:
             ocr_map = json.loads(row['ocr_text_mapping']) if isinstance(row['ocr_text_mapping'], str) else row['ocr_text_mapping']
             if ocr_map and isinstance(ocr_map, dict) and len(ocr_map) > 0:
-                first_ocr = list(ocr_map.values())[0][:300] 
-                context += f"  원작자 본문 일부: {first_ocr}...\n"
+                context += f"  원작자 본문 일부: {list(ocr_map.values())[0][:300]}...\n"
         except: pass
     return context
 
@@ -103,18 +97,27 @@ def get_gemini_keys():
     keys = []
     if "GEMINI_API_KEY" in st.secrets: keys.append(st.secrets["GEMINI_API_KEY"])
     for k in st.secrets:
-        if k.startswith("GEMINI_API_KEY_") and st.secrets[k]:
-            keys.append(st.secrets[k])
+        if k.startswith("GEMINI_API_KEY_") and st.secrets[k]: keys.append(st.secrets[k])
     return list(set(keys))
 
 def parse_ai_json(text):
     if not isinstance(text, str): text = str(text) if text is not None else ""
     try:
         clean_text = text.strip()
-        if "```json" in clean_text: clean_text = clean_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in clean_text: clean_text = clean_text.split("```")[1].split("```")[0].strip()
-        if clean_text.startswith("{") and clean_text.endswith("}"): return json.loads(clean_text)
-        else: raise Exception("Not a JSON")
+        
+        # 시스템 에러 원천 차단: 백틱 기호를 chr(96)으로 대체하여 안전하게 텍스트 파싱
+        mark_j = chr(96) * 3 + "json"
+        mark_e = chr(96) * 3
+        
+        if mark_j in clean_text: 
+            clean_text = clean_text.split(mark_j)[1].split(mark_e)[0].strip()
+        elif mark_e in clean_text: 
+            clean_text = clean_text.split(mark_e)[1].split(mark_e)[0].strip()
+            
+        if clean_text.startswith("{") and clean_text.endswith("}"): 
+            return json.loads(clean_text)
+        else: 
+            raise Exception("Not a JSON")
     except:
         return {"trend": "-", "key_level": "-", "momentum": "-", "volume": "-", "s_score": 0, "macro_news": "-", "analysis": text}
 
@@ -154,10 +157,7 @@ def get_real_ocr_text(image_url):
     try:
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
-        prompt = """
-        이 이미지에서 '차트 캔들 옆에 있는 가격 숫자', '시간 축 숫자', '차트 내 라벨'은 완벽하게 무시해. 
-        오직 차트 위/아래에 작성된 **블로그 본문 설명글, 문장 형태의 텍스트**만 정확하게 추출해. 줄바꿈 유지할 것.
-        """
+        prompt = "이 이미지에서 차트 숫자 등은 무시하고 오직 차트 위/아래에 작성된 블로그 본문 설명글만 정확하게 추출해. 줄바꿈 유지할 것."
         return ask_gemini_dynamic(prompt, img) 
     except Exception as e: return f"이미지 다운로드 실패: {e}"
 
@@ -166,20 +166,19 @@ def get_real_ai_advice(image_url, ticker, reference_text=""):
         res = requests.get(image_url)
         img = Image.open(io.BytesIO(res.content))
         prompt = f"""
-        이 차트 이미지를 바탕으로 **[{ticker}]** 종목에 대한 전문적인 기술적 분석을 수행해.
-        반드시 아래의 JSON 데이터 형식으로만 답변해. 다른 설명이나 마크다운은 절대 넣지 마. 오직 중괄호 {{ }} 만 출력해.
+        이 차트 이미지를 바탕으로 [{ticker}] 종목 기술적 분석을 수행해.
+        반드시 JSON 형식으로 답변해.
         {{
-          "trend": "단기 상승 / 하락 / 횡보 등 10자 이내 요약",
-          "key_level": "핵심 지지/저항 가격 15자 이내 요약",
-          "momentum": "RSI/MACD 등 모멘텀 상태 15자 이내 요약",
-          "volume": "돌파 시 거래량 등 상태 10자 이내 요약",
-          "s_score": "0에서 4 사이의 정수 숫자 (유동성 스윕, 오더블록, 패턴, 지지저항 중첩 개수 점수)",
-          "macro_news": "차트상 급등/급락이 관찰될 경우, 연관 매크로 이슈나 뉴스(나스닥 커플링 등) 추론 요약. 특이사항 없으면 '특이 동향 없음'.",
-          "analysis": "1) 종목/타임프레임 명시. 2) 차트 분석 조언 3~4줄 핵심 요약."
+          "trend": "상승/하락/횡보",
+          "key_level": "핵심 지지/저항",
+          "momentum": "모멘텀 요약",
+          "volume": "거래량 요약",
+          "s_score": "0~4 정수",
+          "macro_news": "급등락 시 매크로 뉴스 추론. 특이사항 없으면 '특이 동향 없음'",
+          "analysis": "종목 명시 및 조언 3~4줄"
         }}
         """
-        if reference_text:
-            prompt += f"\n\n**[원작자 관점 동기화]**\n아래 원작자 본문 내용의 방향성(롱/숏, 지지/저항 등)을 적극 반영해줘.\n```\n{reference_text}\n```"
+        if reference_text: prompt += f"\n[원작자 관점]\n{reference_text}\n"
         return ask_gemini_dynamic(prompt, img) 
     except Exception as e: return f"이미지 다운로드 실패: {e}"
 
@@ -205,65 +204,36 @@ def render_ai_advice_block(title, ai_text):
     st.progress(score_val / 4.0)
     st.success(ai_data.get('analysis', ''))
 
-def render_blog_image_html(url): return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 70vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
-def render_crisp_image_html(url): return f'<div style="width: 100%; display: flex; justify-content: flex-start; margin-bottom: 10px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; image-rendering: crisp-edges; border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" /></div>'
+def render_blog_image_html(url): 
+    return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 70vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
+
+def render_crisp_image_html(url): 
+    return f'<div style="width: 100%; display: flex; justify-content: flex-start; margin-bottom: 10px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; image-rendering: crisp-edges; border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" /></div>'
 
 def get_file_group_info(filename):
     name_without_ext = os.path.splitext(filename)[0]
     matches = re.findall(r'(\d+)(?:-(\d+))?', name_without_ext)
-    if matches:
-        return matches[-1][0], int(matches[-1][1] if matches[-1][1] else '0')
+    if matches: return matches[-1][0], int(matches[-1][1] if matches[-1][1] else '0')
     return str(uuid.uuid4().hex[:4]), 0
 
-# --- 생존 매매 봇 기능 추가 ---
 def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_percent, reason, risk_limit_percent):
     try:
-        exchange = ccxt.bitget({
-            'apiKey': api_key,
-            'secret': secret_key,
-            'password': passphrase,
-            'enableRateLimit': True,
-            'options': {'defaultType': 'swap'} 
-        })
-        
+        exchange = ccxt.bitget({'apiKey': api_key, 'secret': secret_key, 'password': passphrase, 'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
         ticker = exchange.fetch_ticker(symbol)
         current_price = ticker['last']
-        balance = exchange.fetch_balance()
-        total_usdt = balance['USDT']['free']
+        total_usdt = exchange.fetch_balance()['USDT']['free']
         
         max_loss_usdt = total_usdt * (risk_limit_percent / 100.0)
         loss_per_coin = current_price * (sl_percent / 100.0)
         amount = round(max_loss_usdt / loss_per_coin, 3) 
         
-        if amount <= 0:
-            return False, f"❌ 진입 가능 수량이 0입니다. (잔고: {round(total_usdt, 2)} USDT)"
-
+        if amount <= 0: return False, f"❌ 진입 가능 수량이 0입니다."
         stop_loss_price = current_price * (1 - sl_percent/100.0) if side == 'buy' else current_price * (1 + sl_percent/100.0)
-
-        entry_order = exchange.create_order(symbol, 'market', side, amount)
-
+        
+        exchange.create_order(symbol, 'market', side, amount)
         sl_side = 'sell' if side == 'buy' else 'buy'
-        sl_params = {
-            'stopPrice': stop_loss_price,
-            'triggerPrice': stop_loss_price,
-            'reduceOnly': True
-        }
-        sl_order = exchange.create_order(symbol, 'market', sl_side, amount, params=sl_params)
+        exchange.create_order(symbol, 'market', sl_side, amount, params={'stopPrice': stop_loss_price, 'triggerPrice': stop_loss_price, 'reduceOnly': True})
 
-        insert_data = {
-            "date": datetime.today().strftime("%Y-%m-%d"),
-            "ticker": symbol.split('/')[0],
-            "timeframe": "Auto",
-            "setup_pattern": "생존매매 (자동SL)",
-            "position": "Long" if side == 'buy' else "Short",
-            "result": "진입완료",
-            "rr_ratio": "-",
-            "profit": 0,
-            "entry_basis": reason,
-            "exit_basis": f"자동 스탑로스 설정 완료: {stop_loss_price}"
-        }
-        insert_db("trade_history", insert_data)
-
-        return True, f"✅ 진입 성공! (평단가: {current_price} | 수량: {amount} | 스탑로스: {stop_loss_price})"
-    except Exception as e:
-        return False, f"❌ 실행 오류 발생: {str(e)}"
+        insert_db("trade_history", {"date": datetime.today().strftime("%Y-%m-%d"), "ticker": symbol.split('/')[0], "timeframe": "Auto", "setup_pattern": "생존매매", "position": "Long" if side == 'buy' else "Short", "result": "진입완료", "rr_ratio": "-", "profit": 0, "entry_basis": reason, "exit_basis": f"자동 스탑로스 설정: {stop_loss_price}"})
+        return True, f"✅ 진입 성공! 평단: {current_price} | 수량: {amount} | 스탑로스: {stop_loss_price}"
+    except Exception as e: return False, f"❌ 오류 발생: {str(e)}"
