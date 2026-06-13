@@ -7,3 +7,5 @@ Flask
 gunicorn
 ccxt
 yfinance
+requests
+beautifulsoup4
