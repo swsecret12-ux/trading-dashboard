@@ -18,7 +18,6 @@ from api_utils import \
     render_blog_image_html, render_crisp_image_html, get_file_group_info, \
     execute_survival_trade, load_sector_data
 
-# 방금 수정한 리서치 자동화 모듈
 from market_research import fetch_financial_data, analyze_sector_with_ai
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
@@ -330,6 +329,7 @@ with tab5:
                 with col1: arch_date1 = st.date_input("스크랩 날짜", datetime.today())
                 with col2: arch_ticker1 = st.text_input("관련 종목명 (예: BTC)").upper()
                 with col3: arch_source1 = st.text_input("출처/제목")
+                
                 ticker_mapping_input, selected_charts_for_ai = {}, []
                 if arch_imgs_detail:
                     batch_ticker = st.text_input("💡 [일괄 적용] 모든 차트에 적용할 종목명")
@@ -430,7 +430,7 @@ with tab6:
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue)
                             
-                            # 💡 파이썬이 계산해온 이평선(MA) 표를 메모 위쪽에 깔끔하게 병합해 저장합니다.
+                            # 파이썬이 계산해온 이평선(MA) 표를 메모 위쪽에 깔끔하게 병합해 저장합니다.
                             enriched_issue = f"#### 📈 이평선 분석 (MA50 vs MA200)\n{fin_data.get('cross_table', '')}\n\n**🔥 사용자 이슈:** {s_issue}"
                             
                             insert_db("sector_analysis", {
@@ -461,7 +461,6 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 높이(height)를 650px로 시원하게 연장했습니다.
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <!-- TradingView Widget BEGIN -->
@@ -491,7 +490,6 @@ with tab6:
             </div>
             <!-- TradingView Widget END -->
             """
-            import streamlit.components.v1 as components # 혹시 몰라 임포트 라인 방어
             components.html(tv_widget, height=650)
             
             st.markdown("#### 📊 최근 주가 변동성(수익률)")
@@ -505,11 +503,10 @@ with tab6:
             st.markdown("---")
             c_left, c_right = st.columns([4, 6], gap="large")
             with c_left:
-                st.info(f"**🔥 나의 메모 및 가격 동향:**\n\n{stock_data['issue']}")
+                st.info(f"**🔥 나의 메모 및 이평선 데이터:**\n\n{stock_data['issue']}")
                 with st.expander("📰 AI가 읽어본 야후 파이낸스 원문 뉴스", expanded=False):
                     st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
             with c_right:
                 if stock_data.get('ai_analysis'):
                     st.markdown("#### 🤖 AI 월스트리트 애널리스트 분석")
-                    # AI 결과를 Markdown으로 예쁘게 렌더링
                     st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
