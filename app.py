@@ -18,7 +18,7 @@ from api_utils import \
     render_blog_image_html, render_crisp_image_html, get_file_group_info, \
     execute_survival_trade, load_sector_data
 
-from market_research import fetch_financial_data, analyze_sector_with_ai
+from market_research import fetch_financial_data, analyze_sector_with_ai, fetch_saveticker_news
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
@@ -28,6 +28,37 @@ div[data-testid="stInfo"] p { font-size: 1.1rem; }
 div[data-testid="stError"] p { font-size: 1.1rem; }
 div[data-testid="stMetricValue"] { font-size: 1.2rem !important; }
 div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
+
+/* 💡 프리미엄 정보 카드 UI 스타일 추가 */
+.info-card {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+.info-card h4 {
+    color: #1e40af;
+    margin-top: 0;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 10px;
+}
+.ma-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+.ma-table th, .ma-table td {
+    border: 1px solid #cbd5e1;
+    padding: 8px;
+    text-align: left;
+}
+.ma-table th {
+    background-color: #e2e8f0;
+    font-weight: bold;
+}
+
 @media (max-width: 768px) {
     .block-container { padding-top: 2rem !important; padding-left: 1rem !important; padding-right: 1rem !important; padding-bottom: 2rem !important; }
     h1 { font-size: 1.8rem !important; } h2 { font-size: 1.5rem !important; } h3 { font-size: 1.2rem !important; } p, span, div { font-size: 1rem !important; }
@@ -413,25 +444,53 @@ with tab5:
 # ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
-    st.info("야후 파이낸스(yfinance)를 통해 섹터별 핵심 종목의 시가총액, 기간별 변동성, 최신 영문 뉴스를 자동으로 긁어와 AI가 심층 리포트를 작성합니다.")
+    st.info("야후 파이낸스(yfinance)를 통해 섹터별 핵심 종목의 가격, 시총, 변동성을 긁어오고 AI가 심층 리포트를 작성합니다.")
     
     with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
             c1, c2 = st.columns(2)
             s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, BTC-USD)")
             s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
-            s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (AI 분석 시 펀더멘털 참고 자료로 쓰입니다)")
+            
+            # 💡 [추가됨] SaveTicker 계정 입력을 위한 영역 추가
+            st.markdown("##### 📰 팩트체크용 SaveTicker 계정 연동 (선택)")
+            st.caption("계정을 입력해두면 AI가 파이썬을 조종해 로그인하고 최신 뉴스를 자동으로 긁어옵니다. (수동 텍스트 입력 불필요)")
+            c_st1, c_st2 = st.columns(2)
+            st_id = c_st1.text_input("SaveTicker 아이디(이메일)", value=st.session_state.get('st_id', ''))
+            st_pw = c_st2.text_input("SaveTicker 비밀번호", type="password", value=st.session_state.get('st_pw', ''))
+            
+            s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
             
             if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    with st.spinner("야후 파이낸스에서 실시간 데이터를 수집하고 AI가 보고서를 작성 중입니다..."):
+                    # 세션에 SaveTicker 계정 저장
+                    st.session_state['st_id'] = st_id
+                    st.session_state['st_pw'] = st_pw
+                    
+                    with st.spinner("야후 파이낸스와 SaveTicker에서 실시간 데이터를 수집하고 AI가 보고서를 작성 중입니다..."):
+                        # 야후 데이터 수집
                         fin_data = fetch_financial_data(s_ticker.strip())
+                        
+                        # SaveTicker 뉴스 자동 수집
+                        st_news_content = fetch_saveticker_news(st_id, st_pw)
+                        
                         if "error" in fin_data: st.error(f"데이터 수집 실패 (티커를 확인하세요): {fin_data['error']}")
                         else:
-                            ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue)
+                            # 수집된 데이터를 전부 모아 AI 분석 돌리기
+                            ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
-                            # 파이썬이 계산해온 이평선(MA) 표를 메모 위쪽에 깔끔하게 병합해 저장합니다.
-                            enriched_issue = f"#### 📈 이평선 분석 (MA50 vs MA200)\n{fin_data.get('cross_table', '')}\n\n**🔥 사용자 이슈:** {s_issue}"
+                            # 파이썬이 계산해온 이평선(MA) 내역을 예쁜 표 형태의 HTML로 만들어 저장합니다.
+                            ma_table_html = f"""
+                            <table class="ma-table">
+                              <tr><th>지표</th><th>상태 및 가격</th><th>발생일</th></tr>
+                              <tr><td><b>최근 크로스</b></td><td>{fin_data.get('last_cross_type')}</td><td>{fin_data.get('last_cross_date')}</td></tr>
+                              <tr><td><b>당시 주가</b></td><td>{fin_data.get('last_cross_price')}</td><td>-</td></tr>
+                              <tr><td><b>현재 50일선</b></td><td>${fin_data.get('ma50', 0):.2f}</td><td>-</td></tr>
+                              <tr><td><b>현재 200일선</b></td><td>${fin_data.get('ma200', 0):.2f}</td><td>-</td></tr>
+                            </table>
+                            """
+                            
+                            enriched_issue = f"<div class='info-card'><h4>📈 이평선 분석 (MA50 vs MA200)</h4>{ma_table_html}</div><div class='info-card'><h4>🔥 나의 메모</h4><p>{s_issue}</p></div>"
                             
                             insert_db("sector_analysis", {
                                 "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data['market_cap'],
@@ -461,6 +520,7 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
+            # 💡 높이가 대폭 늘어난 (650px) 트레이딩뷰 위젯!
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <!-- TradingView Widget BEGIN -->
@@ -494,16 +554,19 @@ with tab6:
             
             st.markdown("#### 📊 최근 주가 변동성(수익률)")
             v1, v2, v3, v4, v5 = st.columns(5)
-            v1.metric("1일", f"{stock_data['vol_1d']}%")
-            v2.metric("1주일", f"{stock_data['vol_1w']}%")
-            v3.metric("1개월", f"{stock_data['vol_1m']}%")
-            v4.metric("1분기", f"{stock_data['vol_1q']}%")
-            v5.metric("1년", f"{stock_data['vol_1y']}%")
+            # market_research.py에서 계산해온 "과거 ➔ 현재 (+%)" 문자열을 예쁘게 출력합니다.
+            v1.markdown(f"**1일:**<br>{stock_data['vol_1d']}", unsafe_allow_html=True)
+            v2.markdown(f"**1주일:**<br>{stock_data['vol_1w']}", unsafe_allow_html=True)
+            v3.markdown(f"**1개월:**<br>{stock_data['vol_1m']}", unsafe_allow_html=True)
+            v4.markdown(f"**1분기:**<br>{stock_data['vol_1q']}", unsafe_allow_html=True)
+            v5.markdown(f"**1년:**<br>{stock_data['vol_1y']}", unsafe_allow_html=True)
             
             st.markdown("---")
             c_left, c_right = st.columns([4, 6], gap="large")
             with c_left:
-                st.info(f"**🔥 나의 메모 및 이평선 데이터:**\n\n{stock_data['issue']}")
+                # 💡 프리미엄 디자인(CSS)이 입혀진 이평선 표 & 유저 메모 블록
+                st.markdown(stock_data['issue'], unsafe_allow_html=True)
+                
                 with st.expander("📰 AI가 읽어본 야후 파이낸스 원문 뉴스", expanded=False):
                     st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
             with c_right:
