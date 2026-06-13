@@ -78,9 +78,6 @@ if "t2_ticker" not in st.session_state: st.session_state.t2_ticker = ""
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
-# ==============================
-# --- Tab 1: 매매 기록 보관지 ---
-# ==============================
 with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
@@ -166,9 +163,6 @@ with tab1:
                     if st.form_submit_button("📝 내용 업데이트"):
                         update_db("trade_history", "id", trade_id, {"entry_basis": e_entry, "exit_basis": e_exit}); st.rerun()
 
-# ==============================
-# --- Tab 2: 내 관점 분석 ---
-# ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백 (아카이브 지식 연동)")
     
@@ -245,9 +239,6 @@ with tab2:
                             st.session_state.ai_img_files = [] 
                             st.success("✅ Watchlist에 저장되었습니다!"); st.rerun()
 
-# ==============================
-# --- Tab 3: 기본 이론 & DB ---
-# ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
     theory_db = load_theory_db()
@@ -289,9 +280,6 @@ with tab3:
                         if c_s.form_submit_button("📝 수정 저장", type="primary", use_container_width=True): update_db("theory_db", "id", data['id'], {"content": ed_cont}); st.rerun()
                         if c_d.form_submit_button("🗑️ 삭제", use_container_width=True): delete_db("theory_db", "id", data['id']); st.rerun()
 
-# ==============================
-# --- Tab 4: 🤖 자동매매 컨트롤 센터 ---
-# ==============================
 with tab4:
     st.header("🤖 자동매매 사령실")
     col_status1, col_status2, col_status3, col_status4 = st.columns(4)
@@ -338,9 +326,6 @@ with tab4:
     with bot_tab4:
         st.code("[System] 봇 모듈 활성화 완료...", language="bash")
 
-# ==============================
-# --- Tab 5: 분석 자료 아카이브 ---
-# ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
     df_archive = load_archive_data()
@@ -438,9 +423,6 @@ with tab5:
                     st.info(f"**💡 나의 셋업 관점:**\n{my_data['source_view']}")
                     render_ai_advice_block("🤖 검증 피드백", my_data['memo'])
 
-# ==============================
-# --- Tab 6: 🏢 섹터 & 주도주 리서치 맵 ---
-# ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
@@ -455,7 +437,7 @@ with tab6:
             
             if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    # 영우님의 SaveTicker 계정 하드코딩
+                    # 💡 영우님의 SaveTicker 계정 완전 하드코딩
                     st_id = "swsecret@naver.com"
                     st_pw = "1!REre4423"
                     
@@ -467,6 +449,7 @@ with tab6:
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
+                            # 💡 4개의 박스형 테이블 HTML을 생성하여 DB에 통째로 저장합니다.
                             left_column_html = f"""
                             <div class='info-card'><h4>📈 이평선 분석 (4H MA200 vs 1D MA200)</h4>{fin_data.get('ma_html', '')}</div>
                             <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
@@ -521,8 +504,9 @@ with tab6:
             st.markdown("---")
             c_left, c_right = st.columns([4, 6], gap="large")
             with c_left:
+                # 💡 좌측에 HTML 표(Table)가 담긴 issue 컬럼을 예쁘게 출력합니다.
                 st.markdown(stock_data['issue'], unsafe_allow_html=True)
-                with st.expander("📰 AI가 팩트체크한 원문 뉴스 (Yahoo, Investing.com)", expanded=False):
+                with st.expander("📰 외부 수집 원문 뉴스 (Yahoo, Investing)", expanded=False):
                     st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
             with c_right:
                 if stock_data.get('ai_analysis'):
