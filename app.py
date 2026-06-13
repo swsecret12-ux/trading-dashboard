@@ -382,7 +382,7 @@ with tab5:
                     c_blog, c_ocr = st.columns([4, 6])
                     with c_blog: st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                     with c_ocr:
-                        for _, mdp in sorted(det_dict.get(g, [])): st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
+                        for mdp in det_dict.get(g, []): st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
                         if g in ai_map: render_ai_advice_block("🤖 AI 분석", ai_map[g])
                         st.info(ocr_map.get(g, "추출된 텍스트가 없습니다."))
 
