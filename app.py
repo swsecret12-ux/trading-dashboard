@@ -449,7 +449,6 @@ with tab6:
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
-                            # 💡 4개의 박스형 테이블 HTML을 생성하여 DB에 통째로 저장합니다.
                             left_column_html = f"""
                             <div class='info-card'><h4>📈 이평선 분석 (4H MA200 vs 1D MA200)</h4>{fin_data.get('ma_html', '')}</div>
                             <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
@@ -504,9 +503,8 @@ with tab6:
             st.markdown("---")
             c_left, c_right = st.columns([4, 6], gap="large")
             with c_left:
-                # 💡 좌측에 HTML 표(Table)가 담긴 issue 컬럼을 예쁘게 출력합니다.
                 st.markdown(stock_data['issue'], unsafe_allow_html=True)
-                with st.expander("📰 외부 수집 원문 뉴스 (Yahoo, Investing)", expanded=False):
+                with st.expander("📰 AI가 팩트체크한 원문 뉴스 (Yahoo, Investing.com)", expanded=False):
                     st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
             with c_right:
                 if stock_data.get('ai_analysis'):
