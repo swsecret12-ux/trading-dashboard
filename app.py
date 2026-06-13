@@ -129,16 +129,15 @@ div[data-testid="stMetricLabel"] {
     font-size: 1.3rem;
 }
 
-/* 💡 표(Table) 가독성 극대화 CSS */
 .ma-table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 15px;
-    font-size: 1.05rem; /* 글씨 크기 대폭 확대 */
+    font-size: 1.05rem;
 }
 .ma-table th, .ma-table td {
     border: 1px solid #cbd5e1;
-    padding: 12px 15px; /* 여백 확대 */
+    padding: 12px 15px;
     text-align: left;
 }
 .ma-table th {
@@ -340,7 +339,7 @@ with tab2:
                         3. **가장 먼저**, 첨부된 차트 이미지 상단이나 텍스트를 보고 1) 어떤 종목(티커)인지 2) 몇 시간(분) 봉(타임프레임)인지 파악해서 분석의 첫 문장에 명확히 명시해 주세요.
                         4. **분석 결과 필수 포함**: analysis 항목에는 반드시 "아카이브에 기록된 원작자가 O시에 말한 OOO 근거에 따르면 현재는 OOO한 상태입니다"라는 식으로 언급 시점과 근거를 명시해서 현재 나의 관점을 검증해야 합니다.
 
-                        반드시 아래의 JSON 형식으로만 답변을 출력해. 마크다운(` ```json ` 등)이나 다른 인사말은 절대 포함하지 마. 오직 중괄호 {{ }} 만 출력해.
+                        반드시 아래의 JSON 형식으로만 답변을 출력해. 마크다운이나 다른 인사말은 절대 포함하지 마. 오직 중괄호 {{ }} 만 출력해.
                         
                         {{
                           "trend": "상승 / 하락 / 횡보 등 10자 이내 요약",
@@ -1017,7 +1016,7 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 트레이딩뷰 위젯에 EMA(지수이동평균) 2개 기본 탑재!
+            # 💡 트레이딩뷰 위젯에 EMA(지수이동평균) 2개 확실히 탑재! (MAExp 적용)
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -1029,7 +1028,7 @@ with tab6:
               "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
               "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
               "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-              "studies": ["Moving Average Exponential@tv-basicstudies", "Moving Average Exponential@tv-basicstudies"],
+              "studies": ["MAExp@tv-basicstudies", "MAExp@tv-basicstudies"],
               "container_id": "tradingview_{stock_data['ticker']}"
               }});
               </script>
