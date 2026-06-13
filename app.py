@@ -492,19 +492,7 @@ with tab6:
         # 💡 메인 화면 목록에 크로스 정보를 띄워주기 위한 매핑 작업!
         disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1w"]
         
-        st.dataframe(
-            df_sector[disp_cols],
-            column_config={
-                "ticker": "티커", "sector": "섹터", "market_cap": "시가총액",
-                "vol_1d": "최근 크로스 (4H/1D)", "vol_1w": "크로스 발생일"
-            },
-            use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
-        )
-        
-        if sel_stock := st.session_state.get('st_dataframe_selection', {}): pass # streamlit rerun triggers before assignment if using on_select
-        sel_stock = st.session_state.get('st_dataframe_selection', None)
-        
-        # 💡 dataframe의 on_select 이벤트를 처리하기 위한 안전한 호출
+        # 중복 호출 에러(DuplicateElementId)를 해결한 단일 호출 코드
         df_selected = st.dataframe(
             df_sector[disp_cols],
             column_config={
