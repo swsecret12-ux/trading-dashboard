@@ -413,25 +413,25 @@ with tab5:
 # ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
-    st.info("야후 파이낸스(yfinance)를 통해 종목의 시가총액, 변동성, 최신 뉴스를 긁어와 AI가 심층 리포트를 작성합니다.")
+    st.info("야후 파이낸스(yfinance)를 통해 섹터별 핵심 종목의 시가총액, 기간별 변동성, 최신 영문 뉴스를 자동으로 긁어와 AI가 심층 리포트를 작성합니다.")
     
     with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
             c1, c2 = st.columns(2)
             s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, BTC-USD)")
-            s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"]) # 💡 소프트웨어 추가
-            s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈")
+            s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
+            s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (AI 분석 시 펀더멘털 참고 자료로 쓰입니다)")
             
-            if st.form_submit_button("🤖 금융 데이터 긁어오기 & AI 리서치 시작", type="primary"):
+            if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    with st.spinner("데이터 수집 및 분석 중..."):
+                    with st.spinner("야후 파이낸스에서 실시간 데이터를 수집하고 AI가 보고서를 작성 중입니다..."):
                         fin_data = fetch_financial_data(s_ticker.strip())
-                        if "error" in fin_data: st.error(f"데이터 수집 실패: {fin_data['error']}")
+                        if "error" in fin_data: st.error(f"데이터 수집 실패 (티커를 확인하세요): {fin_data['error']}")
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue)
                             
-                            # 💡 기존 DB 스키마를 깨지 않으면서 현재가와 이평선 상태를 issue 컬럼에 예쁘게 포장해 저장합니다.
-                            enriched_issue = f"**[현재가: ${fin_data['current_price']:.2f} / {fin_data['ma_status']}]**\n\n{s_issue}"
+                            # 💡 파이썬이 계산해온 이평선(MA) 표를 메모 위쪽에 깔끔하게 병합해 저장합니다.
+                            enriched_issue = f"#### 📈 이평선 분석 (MA50 vs MA200)\n{fin_data.get('cross_table', '')}\n\n**🔥 사용자 이슈:** {s_issue}"
                             
                             insert_db("sector_analysis", {
                                 "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data['market_cap'],
@@ -453,27 +453,26 @@ with tab6:
             st.divider()
             stock_data = df_sector.iloc[sel_stock['selection']['rows'][0]]
             s_id = stock_data['id']
-            s_ticker_val = stock_data['ticker']
             
             col_st1, col_st2 = st.columns([8, 2])
             with col_st1:
-                st.markdown(f"## 🏢 {s_ticker_val} 리서치 리포트")
+                st.markdown(f"## 🏢 {stock_data['ticker']} 리서치 리포트")
                 st.caption(f"섹터: {stock_data['sector']} | 시총: {stock_data['market_cap']}")
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 실시간 트레이딩뷰 위젯 삽입 (인터랙티브 차트)
-            st.markdown(f"#### 📈 {s_ticker_val} 실시간 차트 (TradingView)")
+            # 💡 높이(height)를 650px로 시원하게 연장했습니다.
+            st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <!-- TradingView Widget BEGIN -->
-            <div class="tradingview-widget-container" style="height:450px;width:100%; margin-bottom: 20px;">
-              <div id="tradingview_{s_ticker_val}" style="height:calc(100% - 32px);width:100%"></div>
+            <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
+              <div id="tradingview_{stock_data['ticker']}" style="height:calc(100% - 32px);width:100%"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
               <script type="text/javascript">
               new TradingView.widget(
               {{
               "autosize": true,
-              "symbol": "{s_ticker_val}",
+              "symbol": "{stock_data['ticker']}",
               "interval": "D",
               "timezone": "Etc/UTC",
               "theme": "light",
@@ -485,15 +484,16 @@ with tab6:
               "hide_top_toolbar": false,
               "hide_legend": false,
               "save_image": false,
-              "container_id": "tradingview_{s_ticker_val}"
+              "container_id": "tradingview_{stock_data['ticker']}"
             }}
               );
               </script>
             </div>
             <!-- TradingView Widget END -->
             """
-            components.html(tv_widget, height=450)
-
+            import streamlit.components.v1 as components # 혹시 몰라 임포트 라인 방어
+            components.html(tv_widget, height=650)
+            
             st.markdown("#### 📊 최근 주가 변동성(수익률)")
             v1, v2, v3, v4, v5 = st.columns(5)
             v1.metric("1일", f"{stock_data['vol_1d']}%")
