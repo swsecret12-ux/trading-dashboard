@@ -13,6 +13,9 @@ from PIL import Image
 import google.generativeai as genai
 import streamlit.components.v1 as components
 
+# ==========================================
+# --- 1. 클라우드 및 AI 세팅 ---
+# ==========================================
 URL = st.secrets.get("SUPABASE_URL", "")
 KEY = st.secrets.get("SUPABASE_KEY", "")
 HEADERS = {
@@ -25,6 +28,9 @@ HEADERS = {
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
+# ==========================================
+# --- 2. 클라우드 DB 통신 도우미 함수들 ---
+# ==========================================
 def insert_db(table, data):
     return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
 
@@ -305,7 +311,10 @@ with tab2:
                 st.image(img, caption=img.name, use_container_width=True)
             
     with col2:
-        ticker_input = st.text_input("분석할 티커 입력 (예: BTC, NDX)").upper()
+        if "t2_ticker" not in st.session_state: st.session_state.t2_ticker = ""
+        ticker_input = st.text_input("분석할 티커 입력 (예: BTC, NDX)", value=st.session_state.t2_ticker).upper()
+        st.session_state.t2_ticker = ticker_input
+        
         user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=100)
         
         if st.button("🚀 아카이브 기반 AI 관점 분석 요청", type="primary", use_container_width=True):
@@ -336,10 +345,10 @@ with tab2:
                         **[중요 분석 지침]**
                         1. **아카이브 동기화**: 위 [최근 아카이브 참조 데이터]가 있다면, 거기에 기록된 원작자의 최신 포지션(롱/숏)과 근거를 최우선으로 참고하세요.
                         2. **언급 시점 대조**: 원작자가 근거를 제시한 '시간'과 '가격 레벨'이 현재 차트에서 어떻게 구현되고 있는지 팩트 체크하세요.
-                        3. **가장 먼저**, 첨부된 차트 이미지 상단이나 텍스트를 보고 1) 어떤 종목(티커)인지 2) 몇 시간(분) 봉(타임프레임)인지 파악해서 분석의 첫 문장에 명확히 명시해 주세요.
+                        3. **가장 먼저**, 첨부된 차트 이미지 상단이나 텍스트를 보고 1) 어떤 종목(티커)인지 2) 몇 시간(분) 봉(타임프레임)인지 파악해서 분석의 첫 문장에 명확히 명시해 주세요. (이미지에서 알 수 없는 경우 '타임프레임 파악 불가'로 기재)
                         4. **분석 결과 필수 포함**: analysis 항목에는 반드시 "아카이브에 기록된 원작자가 O시에 말한 OOO 근거에 따르면 현재는 OOO한 상태입니다"라는 식으로 언급 시점과 근거를 명시해서 현재 나의 관점을 검증해야 합니다.
 
-                        반드시 아래의 JSON 형식으로만 답변을 출력해. 마크다운이나 다른 인사말은 절대 포함하지 마. 오직 중괄호 {{ }} 만 출력해.
+                        반드시 아래의 JSON 형식으로만 답변을 출력해. 마크다운(` ```json ` 등)이나 다른 인사말은 절대 포함하지 마. 오직 중괄호 {{ }} 만 출력해.
                         
                         {{
                           "trend": "상승 / 하락 / 횡보 등 10자 이내 요약",
@@ -944,6 +953,9 @@ with tab5:
         else:
             st.info("아직 저장된 관점이 없습니다. '🔎 AI 차트 & 관점 분석' 탭에서 분석 후 S급 셋업을 저장해 보세요!")
 
+# ==============================
+# --- Tab 6: 🏢 섹터 & 주도주 리서치 맵 ---
+# ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
@@ -969,6 +981,7 @@ with tab6:
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
+                            # 💡 좌측 패널 HTML 구성 (실적표, 이평선, 모멘텀 포함)
                             left_column_html = f"""
                             <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
                             <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
@@ -989,9 +1002,8 @@ with tab6:
         filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
         if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
             
+        # 💡 메인 화면 목록 (EMA 표기 및 날짜 포함)
         disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1w"]
-        
-        # 💡 중복 렌더링 에러를 원천 차단하는 안전한 데이터프레임 호출
         df_selected = st.dataframe(
             df_sector[disp_cols],
             column_config={
@@ -1013,7 +1025,7 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 트레이딩뷰 위젯: "EMA@tv-basicstudies" 2개 기본 탑재 완료 (고급 세팅창 지원)
+            # 💡 트레이딩뷰 위젯에 EMA(지수이동평균) 2개 확실히 탑재! (MAExp 적용)
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -1025,7 +1037,7 @@ with tab6:
               "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
               "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
               "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-              "studies": ["EMA@tv-basicstudies", "EMA@tv-basicstudies"],
+              "studies": ["MAExp@tv-basicstudies", "MAExp@tv-basicstudies"],
               "container_id": "tradingview_{stock_data['ticker']}"
               }});
               </script>
