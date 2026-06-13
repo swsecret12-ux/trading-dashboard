@@ -140,13 +140,19 @@ def fetch_financial_data(ticker_symbol):
             except:
                 return "-"
 
-        # 💡 3개년 (12분기) 실적 데이터 및 디자인 포맷팅
+        # 💡 3개년 (12분기) 실적 데이터 및 디자인 포맷팅 (미국장 기준 날짜 오류 수정)
         earnings_html = ""
         try:
-            # EPS라는 어려운 용어 대신 '시장 예상치'와 '실제 발표치'로 명칭 변경 및 3년(12분기) 제한
             edts = ticker.get_earnings_dates(limit=12)
             if edts is not None and not edts.empty:
                 edts = edts.reset_index()
+                
+                # 💡 UTC 시간을 미국 동부 표준시(US/Eastern)로 변환하여 날짜가 하루 밀리는 현상 해결
+                if edts['Earnings Date'].dt.tz is not None:
+                    edts['Earnings Date'] = edts['Earnings Date'].dt.tz_convert('US/Eastern')
+                else:
+                    edts['Earnings Date'] = edts['Earnings Date'].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
+                
                 edts['Date'] = edts['Earnings Date'].dt.strftime('%Y-%m-%d')
                 
                 edts_table = """
