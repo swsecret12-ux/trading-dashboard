@@ -7,15 +7,21 @@ import io
 from PIL import Image
 import streamlit.components.v1 as components 
 
-from api_utils import \
-    insert_db, update_db, delete_db, upload_image_to_supabase, \
-    load_trade_data, load_archive_data, get_recent_archive_context, \
-    load_theory_db, get_gemini_keys, parse_ai_json, ask_gemini_dynamic, \
-    get_real_ocr_text, get_real_ai_advice, render_ai_advice_block, \
-    render_blog_image_html, render_crisp_image_html, get_file_group_info, \
+# 💡 복사 누락 에러 방지를 위해 import 문장을 괄호로 안전하게 묶었습니다.
+from api_utils import (
+    insert_db, update_db, delete_db, upload_image_to_supabase,
+    load_trade_data, load_archive_data, get_recent_archive_context,
+    load_theory_db, get_gemini_keys, parse_ai_json, ask_gemini_dynamic,
+    get_real_ocr_text, get_real_ai_advice, render_ai_advice_block,
+    render_blog_image_html, render_crisp_image_html, get_file_group_info,
     execute_survival_trade, load_sector_data
+)
 
-from market_research import fetch_financial_data, analyze_sector_with_ai, fetch_saveticker_news
+from market_research import (
+    fetch_financial_data, 
+    analyze_sector_with_ai, 
+    fetch_saveticker_news
+)
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
@@ -387,7 +393,7 @@ with tab5:
 # ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
-    st.info("야후 파이낸스, 구글 뉴스, SaveTicker를 총동원하여 기관급 팩트체크 리포트를 생성합니다.")
+    st.info("야후 파이낸스와 글로벌 뉴스를 통해 기관급 팩트체크 리포트를 생성합니다.")
     
     with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
@@ -410,32 +416,10 @@ with tab6:
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
-                            # 💡 3단 콤보 표 HTML 생성 (이평선, 모멘텀, 실적)
-                            ma_table = f"""
-                            <table class="ma-table">
-                              <tr><th>지표</th><th>상태 및 가격</th><th>발생일</th></tr>
-                              <tr><td><b>최근 크로스</b></td><td>{fin_data.get('cross_type')}</td><td>{fin_data.get('cross_date')}</td></tr>
-                              <tr><td><b>당시 주가</b></td><td>{fin_data.get('cross_price')}</td><td>-</td></tr>
-                              <tr><td><b>현재 4H 200선</b></td><td>{fin_data.get('curr_4h_ma200')}</td><td>-</td></tr>
-                              <tr><td><b>현재 1D 200선</b></td><td>{fin_data.get('curr_1d_ma200')}</td><td>-</td></tr>
-                            </table>
-                            """
-                            
-                            mom_table = f"""
-                            <table class="ma-table">
-                              <tr><th>기간</th><th>가격 변동 및 거래량 동향</th></tr>
-                              <tr><td><b>현재</b></td><td>최근 거래량: {fin_data.get('vol_status')}</td></tr>
-                              <tr><td><b>1일 전</b></td><td>{fin_data.get('vol_1d')}</td></tr>
-                              <tr><td><b>1주일 전</b></td><td>{fin_data.get('vol_1w')}</td></tr>
-                              <tr><td><b>1개월 전</b></td><td>{fin_data.get('vol_1m')}</td></tr>
-                              <tr><td><b>1분기 전</b></td><td>{fin_data.get('vol_1q')}</td></tr>
-                              <tr><td><b>1년 전</b></td><td>{fin_data.get('vol_1y')}</td></tr>
-                            </table>
-                            """
-                            
+                            # 3단 콤보 HTML 통합 구성
                             left_column_html = f"""
-                            <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D MA200)</h4>{ma_table}</div>
-                            <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{mom_table}</div>
+                            <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D MA200)</h4>{fin_data.get('ma_html')}</div>
+                            <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html')}</div>
                             <div class='info-card'><h4>💰 분기 실적 (Earnings)</h4>{fin_data.get('earnings_html')}</div>
                             <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
                             """
@@ -467,7 +451,7 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 트레이딩뷰 위젯: "studies" 파라미터 추가로 2개의 이동평균선(SMA) 버튼 노출 활성화!
+            # 💡 트레이딩뷰 위젯: "studies" 파라미터 추가로 이동평균선(SMA) 버튼 노출 활성화!
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
