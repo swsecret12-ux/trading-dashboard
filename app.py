@@ -5,11 +5,8 @@ import time
 import json
 import io
 from PIL import Image
-
-# 💡 실시간 트레이딩뷰 차트를 띄우기 위한 라이브러리 추가
 import streamlit.components.v1 as components 
 
-# 분리된 모듈들을 깔끔하게 불러옵니다.
 from api_utils import \
     insert_db, update_db, delete_db, upload_image_to_supabase, \
     load_trade_data, load_archive_data, get_recent_archive_context, \
@@ -29,7 +26,6 @@ div[data-testid="stError"] p { font-size: 1.1rem; }
 div[data-testid="stMetricValue"] { font-size: 1.2rem !important; }
 div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
 
-/* 💡 프리미엄 정보 카드 UI 스타일 추가 */
 .info-card {
     background-color: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -48,15 +44,20 @@ div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
+    font-size: 0.95rem;
 }
 .ma-table th, .ma-table td {
     border: 1px solid #cbd5e1;
-    padding: 8px;
+    padding: 8px 12px;
     text-align: left;
 }
 .ma-table th {
     background-color: #e2e8f0;
     font-weight: bold;
+    color: #333;
+}
+.ma-table tr:nth-child(even) {
+    background-color: #f1f5f9;
 }
 
 @media (max-width: 768px) {
@@ -68,7 +69,6 @@ div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
 
 st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
-# 💡 탭 간 이동 시 변수 실종(NameError)을 막기 위한 전역 상태(Session State) 최상단 선언!
 if "ai_analysis_done" not in st.session_state: st.session_state.ai_analysis_done = False
 if "ai_result" not in st.session_state: st.session_state.ai_result = ""
 if "ai_view_text" not in st.session_state: st.session_state.ai_view_text = ""
@@ -76,7 +76,6 @@ if "ai_img_files" not in st.session_state: st.session_state.ai_img_files = []
 if "uploader_key" not in st.session_state: st.session_state.uploader_key = 0 
 if "t2_ticker" not in st.session_state: st.session_state.t2_ticker = ""
 
-# 6개의 탭 구조
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
 # ==============================
@@ -444,7 +443,7 @@ with tab5:
 # ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
-    st.info("야후 파이낸스(yfinance)를 통해 섹터별 핵심 종목의 가격, 시총, 변동성을 긁어오고 AI가 심층 리포트를 작성합니다.")
+    st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
     
     with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
@@ -452,9 +451,8 @@ with tab6:
             s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, BTC-USD)")
             s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
             
-            # 💡 [추가됨] SaveTicker 계정 입력을 위한 영역 추가
             st.markdown("##### 📰 팩트체크용 SaveTicker 계정 연동 (선택)")
-            st.caption("계정을 입력해두면 AI가 파이썬을 조종해 로그인하고 최신 뉴스를 자동으로 긁어옵니다. (수동 텍스트 입력 불필요)")
+            st.caption("계정을 입력해두면 파이썬이 브라우저로 위장 로그인하여 최신 뉴스를 자동으로 긁어옵니다.")
             c_st1, c_st2 = st.columns(2)
             st_id = c_st1.text_input("SaveTicker 아이디(이메일)", value=st.session_state.get('st_id', ''))
             st_pw = c_st2.text_input("SaveTicker 비밀번호", type="password", value=st.session_state.get('st_pw', ''))
@@ -463,40 +461,29 @@ with tab6:
             
             if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    # 세션에 SaveTicker 계정 저장
                     st.session_state['st_id'] = st_id
                     st.session_state['st_pw'] = st_pw
                     
-                    with st.spinner("야후 파이낸스와 SaveTicker에서 실시간 데이터를 수집하고 AI가 보고서를 작성 중입니다..."):
-                        # 야후 데이터 수집
+                    with st.spinner("데이터 수집 및 크로스체크 분석 중... (최대 1~2분 소요)"):
                         fin_data = fetch_financial_data(s_ticker.strip())
-                        
-                        # SaveTicker 뉴스 자동 수집
                         st_news_content = fetch_saveticker_news(st_id, st_pw)
                         
-                        if "error" in fin_data: st.error(f"데이터 수집 실패 (티커를 확인하세요): {fin_data['error']}")
+                        if "error" in fin_data: st.error(f"데이터 수집 실패: {fin_data['error']}")
                         else:
-                            # 수집된 데이터를 전부 모아 AI 분석 돌리기
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
-                            # 파이썬이 계산해온 이평선(MA) 내역을 예쁜 표 형태의 HTML로 만들어 저장합니다.
-                            ma_table_html = f"""
-                            <table class="ma-table">
-                              <tr><th>지표</th><th>상태 및 가격</th><th>발생일</th></tr>
-                              <tr><td><b>최근 크로스</b></td><td>{fin_data.get('last_cross_type')}</td><td>{fin_data.get('last_cross_date')}</td></tr>
-                              <tr><td><b>당시 주가</b></td><td>{fin_data.get('last_cross_price')}</td><td>-</td></tr>
-                              <tr><td><b>현재 50일선</b></td><td>${fin_data.get('ma50', 0):.2f}</td><td>-</td></tr>
-                              <tr><td><b>현재 200일선</b></td><td>${fin_data.get('ma200', 0):.2f}</td><td>-</td></tr>
-                            </table>
+                            # 좌측에 들어갈 모든 테이블과 정보들을 조합
+                            left_column_html = f"""
+                            <div class='info-card'><h4>📈 이평선 분석 (4H MA200 vs 1D MA200)</h4>{fin_data.get('ma_html', '')}</div>
+                            <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
+                            <div class='info-card'><h4>💰 실적(Earnings) 데이터</h4>{fin_data.get('earnings_html', '')}</div>
+                            <div class='info-card'><h4>🔥 나의 메모 및 투자 관점</h4><p>{s_issue}</p></div>
                             """
                             
-                            enriched_issue = f"<div class='info-card'><h4>📈 이평선 분석 (MA50 vs MA200)</h4>{ma_table_html}</div><div class='info-card'><h4>🔥 나의 메모</h4><p>{s_issue}</p></div>"
-                            
                             insert_db("sector_analysis", {
-                                "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data['market_cap'],
-                                "vol_1d": fin_data['vol_1d'], "vol_1w": fin_data['vol_1w'], "vol_1m": fin_data['vol_1m'], 
-                                "vol_1q": fin_data['vol_1q'], "vol_1y": fin_data['vol_1y'],
-                                "issue": enriched_issue, "detail_data": fin_data['raw_news'], "ai_analysis": ai_res
+                                "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', ''),
+                                "vol_1d": "", "vol_1w": "", "vol_1m": "", "vol_1q": "", "vol_1y": "", # 구버전 칼럼(사용 안함)
+                                "issue": left_column_html, "detail_data": fin_data.get('raw_news', ''), "ai_analysis": ai_res
                             })
                             st.success("리서치 리포트 등록 완료!"); time.sleep(1); st.rerun()
 
@@ -505,7 +492,7 @@ with tab6:
         filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
         if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
             
-        disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1m", "vol_1y"]
+        disp_cols = ["ticker", "sector", "market_cap"]
         sel_stock = st.dataframe(df_sector[disp_cols], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
         
         if sel_stock.get('selection', {}).get('rows', []):
@@ -520,54 +507,28 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 높이가 대폭 늘어난 (650px) 트레이딩뷰 위젯!
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
-            <!-- TradingView Widget BEGIN -->
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
               <div id="tradingview_{stock_data['ticker']}" style="height:calc(100% - 32px);width:100%"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
               <script type="text/javascript">
-              new TradingView.widget(
-              {{
-              "autosize": true,
-              "symbol": "{stock_data['ticker']}",
-              "interval": "D",
-              "timezone": "Etc/UTC",
-              "theme": "light",
-              "style": "1",
-              "locale": "kr",
-              "enable_publishing": false,
-              "backgroundColor": "rgba(255, 255, 255, 1)",
-              "gridColor": "rgba(240, 243, 250, 0)",
-              "hide_top_toolbar": false,
-              "hide_legend": false,
-              "save_image": false,
-              "container_id": "tradingview_{stock_data['ticker']}"
-            }}
-              );
+              new TradingView.widget({{
+              "autosize": true, "symbol": "{stock_data['ticker']}", "interval": "D", "timezone": "Etc/UTC",
+              "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+              "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
+              "hide_top_toolbar": false, "hide_legend": false, "save_image": false, "container_id": "tradingview_{stock_data['ticker']}"
+              }});
               </script>
             </div>
-            <!-- TradingView Widget END -->
             """
             components.html(tv_widget, height=650)
-            
-            st.markdown("#### 📊 최근 주가 변동성(수익률)")
-            v1, v2, v3, v4, v5 = st.columns(5)
-            # market_research.py에서 계산해온 "과거 ➔ 현재 (+%)" 문자열을 예쁘게 출력합니다.
-            v1.markdown(f"**1일:**<br>{stock_data['vol_1d']}", unsafe_allow_html=True)
-            v2.markdown(f"**1주일:**<br>{stock_data['vol_1w']}", unsafe_allow_html=True)
-            v3.markdown(f"**1개월:**<br>{stock_data['vol_1m']}", unsafe_allow_html=True)
-            v4.markdown(f"**1분기:**<br>{stock_data['vol_1q']}", unsafe_allow_html=True)
-            v5.markdown(f"**1년:**<br>{stock_data['vol_1y']}", unsafe_allow_html=True)
             
             st.markdown("---")
             c_left, c_right = st.columns([4, 6], gap="large")
             with c_left:
-                # 💡 프리미엄 디자인(CSS)이 입혀진 이평선 표 & 유저 메모 블록
                 st.markdown(stock_data['issue'], unsafe_allow_html=True)
-                
-                with st.expander("📰 AI가 읽어본 야후 파이낸스 원문 뉴스", expanded=False):
+                with st.expander("📰 AI가 팩트체크한 원문 뉴스 (Yahoo, Investing.com)", expanded=False):
                     st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
             with c_right:
                 if stock_data.get('ai_analysis'):
