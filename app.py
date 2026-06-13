@@ -6,8 +6,15 @@ import json
 import io
 from PIL import Image
 
-# 💡 괄호 에러 원천 차단! 한 줄로 깔끔하게 모듈을 불러옵니다.
-from api_utils import insert_db, update_db, delete_db, upload_image_to_supabase, load_trade_data, load_archive_data, get_recent_archive_context, load_theory_db, get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, get_real_ai_advice, render_ai_advice_block, render_blog_image_html, render_crisp_image_html, get_file_group_info, load_sector_data, execute_survival_trade
+# Import 에러를 막기 위해 백슬래시(\)를 사용하여 안전하게 한 줄씩 로드합니다.
+from api_utils import \
+    insert_db, update_db, delete_db, upload_image_to_supabase, \
+    load_trade_data, load_archive_data, get_recent_archive_context, \
+    load_theory_db, get_gemini_keys, parse_ai_json, ask_gemini_dynamic, \
+    get_real_ocr_text, get_real_ai_advice, render_ai_advice_block, \
+    render_blog_image_html, render_crisp_image_html, get_file_group_info, \
+    execute_survival_trade, load_sector_data
+
 from market_research import fetch_financial_data, analyze_sector_with_ai
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
@@ -27,7 +34,7 @@ div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
 
 st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
 
-# 💡 탭 간 이동 시 변수 실종(NameError) 방지
+# 💡 탭 간 이동 시 에러를 막기 위한 전역 상태(Session State) 선언
 if "ai_analysis_done" not in st.session_state: st.session_state.ai_analysis_done = False
 if "ai_result" not in st.session_state: st.session_state.ai_result = ""
 if "ai_view_text" not in st.session_state: st.session_state.ai_view_text = ""
@@ -35,7 +42,6 @@ if "ai_img_files" not in st.session_state: st.session_state.ai_img_files = []
 if "uploader_key" not in st.session_state: st.session_state.uploader_key = 0 
 if "t2_ticker" not in st.session_state: st.session_state.t2_ticker = ""
 
-# 6개의 탭 구조
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
 # ==============================
@@ -131,7 +137,6 @@ with tab1:
 # ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백 (아카이브 지식 연동)")
-    st.info("차트 스크린샷을 올리면, 아카이브(Tab 5)에 저장된 최신 전문가 관점을 스스로 찾아내어 함께 분석합니다.")
     
     col1, col2 = st.columns([1, 1])
     with col1:
@@ -145,7 +150,9 @@ with tab2:
         user_view = st.text_area("✍️ 현재 나의 관점 (선택)", height=100)
         
         if st.button("🚀 아카이브 기반 AI 관점 분석 요청", type="primary", use_container_width=True):
-            if not get_gemini_keys(): st.error("Gemini API 키가 설정되지 않았습니다.")
+            keys = get_gemini_keys()
+            if not keys:
+                st.error("Gemini API 키가 설정되지 않았습니다.")
             elif view_uploaded_files and ticker_input:
                 with st.spinner('아카이브에서 관련 자료를 찾고 분석하는 중... 🤖'):
                     try:
@@ -158,24 +165,18 @@ with tab2:
                         
                         analysis_prompt = f"""
                         당신은 월스트리트 출신의 전문 트레이더이자 멘토입니다. 
-                        첨부 차트와 아래의 [나의 관점]을 종합 검토하세요.
                         [종목]: {ticker_input}
                         [나의 관점]: {user_view}
                         {archive_context}
                         
-                        **[중요 지침]**
-                        1. **아카이브 동기화**: 위 데이터가 있다면 원작자의 최신 포지션(롱/숏)과 근거를 최우선 참고하세요.
-                        2. **언급 시점 대조**: 원작자의 '시간'과 '가격 레벨'이 현재 차트에서 구현되는지 팩트 체크하세요.
-                        3. **분석 결과 필수 포함**: analysis 항목에는 반드시 "아카이브에 기록된 원작자가 O시에 말한 OOO 근거에 따르면..." 형식으로 언급 시점/근거를 명시하세요.
-
                         반드시 아래 JSON 형식으로만 답변하세요. 마크다운 제외.
                         {{
                           "trend": "상승 / 하락 / 횡보 요약",
                           "key_level": "핵심 지지/저항 요약",
                           "momentum": "모멘텀 상태 요약",
                           "volume": "거래량 상태 요약",
-                          "s_score": "0~4 사이 정수 (유동성, 오더블록, 지지저항 중첩 개수)",
-                          "macro_news": "차트 급등락 시 연관 매크로 이슈(나스닥 커플링 등) 요약. 특이 없으면 '특이 동향 없음'.",
+                          "s_score": "0~4 사이 정수",
+                          "macro_news": "차트 급등락 시 연관 매크로 이슈 요약. 특이 없으면 '특이 동향 없음'.",
                           "analysis": "1) 종목/타임프레임 명시. 2) 아카이브 근거 기반 조언."
                         }}
                         """
@@ -312,11 +313,13 @@ with tab5:
     sub_tab_a, sub_tab_b = st.tabs(["👨‍🏫 타인 분석 스크랩", "👀 나의 관점 (Watchlist)"])
     with sub_tab_a:
         with st.expander("➕ 새로운 스크랩 추가하기", expanded=False):
-            st.markdown("### 📝 새 분석 스크랩 작성")
+            col_header, col_reset = st.columns([8, 2])
+            with col_header: st.markdown("### 📝 새 분석 스크랩 작성")
+            with col_reset:
+                if st.button("🗑️ 첨부 일괄 삭제", use_container_width=True): st.session_state.uploader_key += 1; st.rerun()
             col_up1, col_up2 = st.columns(2)
             with col_up1: arch_imgs_blog = st.file_uploader("인사이트 원본 글", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key=f"arch_imgs_blog_{st.session_state.uploader_key}")
             with col_up2: arch_imgs_detail = st.file_uploader("세부 고해상도 차트", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key=f"arch_imgs_detail_{st.session_state.uploader_key}")
-            
             with st.form("archive_form_others", clear_on_submit=True):
                 col1, col2, col3 = st.columns(3)
                 with col1: arch_date1 = st.date_input("스크랩 날짜", datetime.today())
@@ -379,8 +382,7 @@ with tab5:
                     c_blog, c_ocr = st.columns([4, 6])
                     with c_blog: st.markdown(render_blog_image_html(path), unsafe_allow_html=True)
                     with c_ocr:
-                        for _, mdp in sorted(det_dict.get(g, [])):
-                            st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
+                        for _, mdp in sorted(det_dict.get(g, [])): st.markdown(render_crisp_image_html(mdp), unsafe_allow_html=True)
                         if g in ai_map: render_ai_advice_block("🤖 AI 분석", ai_map[g])
                         st.info(ocr_map.get(g, "추출된 텍스트가 없습니다."))
 
@@ -406,54 +408,34 @@ with tab5:
 # ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
-    st.info("야후 파이낸스(yfinance)를 통해 섹터별 핵심 종목의 시가총액, 기간별 변동성, 최신 영문 뉴스를 자동으로 긁어와 AI가 심층 리포트를 작성합니다. \n(💡 Supabase에 `sector_analysis` 테이블을 미리 만들어 주세요!)")
+    st.info("야후 파이낸스(yfinance)를 통해 종목의 시가총액, 변동성, 최신 뉴스를 긁어와 AI가 심층 리포트를 작성합니다.")
     
     with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
             c1, c2 = st.columns(2)
-            # yfinance에서 검색 가능한 공식 티커 입력 (코인은 BTC-USD 등)
             s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, BTC-USD)")
             s_sector = c2.selectbox("섹터 분류", ["AI", "조선", "반도체", "소프트웨어", "헬스케어", "코인", "기타"])
+            s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈")
             
-            s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (AI 분석 시 펀더멘털 참고 자료로 쓰입니다)")
-            
-            if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
+            if st.form_submit_button("🤖 금융 데이터 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    with st.spinner("야후 파이낸스에서 실시간 데이터를 수집하고 AI가 보고서를 작성 중입니다..."):
-                        # 1. 야후 파이낸스 데이터 긁어오기
+                    with st.spinner("데이터 수집 및 분석 중..."):
                         fin_data = fetch_financial_data(s_ticker.strip())
-                        
-                        if "error" in fin_data:
-                            st.error(f"데이터 수집 실패 (티커를 확인하세요): {fin_data['error']}")
+                        if "error" in fin_data: st.error(f"데이터 수집 실패: {fin_data['error']}")
                         else:
-                            # 2. AI 리서치 분석 요청
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue)
-                            
-                            # 3. DB 저장
-                            insert_data = {
-                                "ticker": s_ticker.upper(), 
-                                "sector": s_sector, 
-                                "market_cap": fin_data['market_cap'],
-                                "vol_1d": fin_data['vol_1d'], 
-                                "vol_1w": fin_data['vol_1w'], 
-                                "vol_1m": fin_data['vol_1m'], 
-                                "vol_1q": fin_data['vol_1q'], 
-                                "vol_1y": fin_data['vol_1y'],
-                                "issue": s_issue, 
-                                "detail_data": fin_data['raw_news'], # 뉴스 원문을 detail_data에 백업
-                                "ai_analysis": ai_res
-                            }
-                            insert_db("sector_analysis", insert_data)
-                            st.success("데이터 수집 및 리서치 리포트 등록 완료!")
-                            time.sleep(1)
-                            st.rerun()
+                            insert_db("sector_analysis", {
+                                "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data['market_cap'],
+                                "vol_1d": fin_data['vol_1d'], "vol_1w": fin_data['vol_1w'], "vol_1m": fin_data['vol_1m'], 
+                                "vol_1q": fin_data['vol_1q'], "vol_1y": fin_data['vol_1y'],
+                                "issue": s_issue, "detail_data": fin_data['raw_news'], "ai_analysis": ai_res
+                            })
+                            st.success("리서치 리포트 등록 완료!"); time.sleep(1); st.rerun()
 
     df_sector = load_sector_data()
     if not df_sector.empty:
-        # 섹터별 필터링
         filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
-        if filter_sec != "전체":
-            df_sector = df_sector[df_sector['sector'] == filter_sec]
+        if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
             
         disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1m", "vol_1y"]
         sel_stock = st.dataframe(df_sector[disp_cols], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
@@ -468,11 +450,8 @@ with tab6:
                 st.markdown(f"## 🏢 {stock_data['ticker']} 리서치 리포트")
                 st.caption(f"섹터: {stock_data['sector']} | 시총: {stock_data['market_cap']}")
             with col_st2:
-                if st.button("🗑️ 이 종목 삭제", type="primary", use_container_width=True):
-                    delete_db("sector_analysis", "id", s_id)
-                    st.rerun()
+                if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 주가 변동성 5칸 메트릭 렌더링
             st.markdown("#### 📊 최근 주가 변동성(수익률)")
             v1, v2, v3, v4, v5 = st.columns(5)
             v1.metric("1일", f"{stock_data['vol_1d']}%")
@@ -487,11 +466,7 @@ with tab6:
                 st.info(f"**🔥 나의 메모/핵심 이슈:**\n\n{stock_data['issue']}")
                 with st.expander("📰 AI가 읽어본 야후 파이낸스 원문 뉴스", expanded=False):
                     st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
-            
             with c_right:
                 if stock_data.get('ai_analysis'):
                     st.markdown("#### 🤖 AI 월스트리트 애널리스트 분석")
                     st.success(stock_data['ai_analysis'])
-```
-
-이대로 적용하고 스트림릿 창을 띄워보시면, 이제 모든 에러가 사라지고 새롭게 추가된 6번 탭(섹터 맵)까지 완벽하게 작동하는 것을 확인하실 수 있을 겁니다!
