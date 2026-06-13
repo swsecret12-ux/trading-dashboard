@@ -455,7 +455,7 @@ with tab6:
             
             if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
                 if s_ticker:
-                    # 영우님의 SaveTicker 계정 자동 로그인 
+                    # 영우님의 SaveTicker 계정 자동 로그인 하드코딩
                     st_id = "swsecret@naver.com"
                     st_pw = "1!REre4423"
                     
@@ -467,7 +467,7 @@ with tab6:
                         else:
                             ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                             
-                            # 좌측 패널 HTML 구성
+                            # 💡 좌측 패널 HTML 구성 (실적표, 이평선, 모멘텀 포함)
                             left_column_html = f"""
                             <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D MA200)</h4>{fin_data.get('ma_html', '')}</div>
                             <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
@@ -475,7 +475,7 @@ with tab6:
                             <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
                             """
                             
-                            # 💡 DB에 저장할 때 vol_1d와 vol_1w 컬럼에 크로스 데이터를 몰래 넣어 메인 표에서 꺼내 쓰게 만듭니다!
+                            # 💡 DB에 vol_1d와 vol_1w 컬럼에 크로스 데이터를 몰래 넣어 메인 표에서 꺼내 쓰게 만듭니다!
                             insert_db("sector_analysis", {
                                 "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', ''),
                                 "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
