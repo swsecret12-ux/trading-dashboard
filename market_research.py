@@ -9,8 +9,7 @@ import xml.etree.ElementTree as ET
 def fetch_investing_news(ticker):
     """구글 뉴스 RSS를 우회하여 최신 글로벌 기사(Investing, 파트너십 등)를 긁어옵니다."""
     try:
-        # 💡 검색어 범용성 확대 (더 많은 글로벌 핵심 뉴스를 잡아오도록 수정)
-        query = urllib.parse.quote(f"{ticker} stock OR news")
+        query = urllib.parse.quote(f"{ticker} stock OR partnership OR earnings")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
@@ -55,19 +54,17 @@ def fetch_financial_data(ticker_symbol):
         elif market_cap > 1e6: mcap_str = f"{market_cap / 1e6:.2f}M (백만 달러)"
         else: mcap_str = "데이터 없음"
 
-        # 일봉 데이터 로드 (5년치 로드하여 실적일 주가 계산에 활용)
         hist_1d = ticker.history(period="5y")
         if hist_1d.empty: return {"error": "차트 데이터를 불러올 수 없습니다."}
         
         current_price = float(hist_1d['Close'].iloc[-1])
         current_vol = int(hist_1d['Volume'].iloc[-1])
         
-        # 💡 예쁘고 직관적인 모멘텀 표 데이터 생성 로직
         def calc_return_html(days):
             if len(hist_1d) > days:
                 past = float(hist_1d['Close'].iloc[-(days+1)])
                 pct = ((current_price - past)/past)*100
-                color = "#ef4444" if pct < 0 else "#22c55e" # 빨강 or 초록
+                color = "#ef4444" if pct < 0 else "#22c55e"
                 sign = "+" if pct > 0 else ""
                 return f"${past:.2f} ➔ ${current_price:.2f}", f"<span style='color:{color}; font-weight:bold;'>{sign}{pct:.2f}%</span>"
             return "-", "-"
@@ -78,7 +75,6 @@ def fetch_financial_data(ticker_symbol):
         v1q_p, v1q_pct = calc_return_html(60)
         v1y_p, v1y_pct = calc_return_html(250)
 
-        # 💡 MA -> EMA (지수이동평균) 200선으로 완벽 변경
         hist_1d['EMA200_1D'] = hist_1d['Close'].ewm(span=200, adjust=False).mean()
         
         hist_1h = ticker.history(period="730d", interval="1h")
@@ -119,14 +115,17 @@ def fetch_financial_data(ticker_symbol):
             curr_4h_ema200 = "-"
             curr_1d_ema200 = f"${hist_1d['EMA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['EMA200_1D'].iloc[-1]) else "-"
 
-        # 💡 실적 발표일 주가 등락률 계산 함수
+        # 💡 미래 날짜 실적 등락률 오류 방지 로직 추가
         def get_earnings_price_change(target_date_str):
             try:
                 target_date = pd.to_datetime(target_date_str)
+                # 아직 오지 않은 미래 날짜면 계산 생략
+                if target_date > pd.Timestamp.now().normalize():
+                    return "-"
+                    
                 if hist_1d.index.tz is not None:
                     target_date = target_date.tz_localize(hist_1d.index.tz) if target_date.tzinfo is None else target_date.tz_convert(hist_1d.index.tz)
                 
-                # 해당 날짜와 가장 가까운 인덱스 찾기
                 idx = hist_1d.index.get_indexer([target_date], method='nearest')[0]
                 start_idx = max(0, idx - 1)
                 end_idx = min(len(hist_1d) - 1, idx + 1)
@@ -140,25 +139,17 @@ def fetch_financial_data(ticker_symbol):
             except:
                 return "-"
 
-        # 💡 3개년 (12분기) 실적 데이터 및 디자인 포맷팅
         earnings_html = ""
         try:
-            try:
-                edts = ticker.get_earnings_dates(limit=12)
-            except Exception:
-                edts = ticker.earnings_dates
-                if edts is not None: edts = edts.head(12)
-                
+            edts = ticker.get_earnings_dates(limit=12)
             if edts is not None and not edts.empty:
                 edts = edts.reset_index()
-                
                 date_col = 'Earnings Date' if 'Earnings Date' in edts.columns else edts.columns[0]
                 
-                # 💡 안전하고 범용적인 타임존키(America/New_York) 적용
                 if edts[date_col].dt.tz is not None:
-                    edts[date_col] = edts[date_col].dt.tz_convert('America/New_York')
+                    edts[date_col] = edts[date_col].dt.tz_convert('US/Eastern')
                 else:
-                    edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('America/New_York')
+                    edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
                 
                 edts['Date'] = edts[date_col].dt.strftime('%Y-%m-%d')
                 
@@ -188,27 +179,12 @@ def fetch_financial_data(ticker_symbol):
                 edts_table += "</table>"
                 earnings_html = edts_table
             else:
-                earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다. (제공사 데이터 없음)</p>"
+                earnings_html = "<p>최근 실적 데이터가 없습니다.</p>"
         except Exception as e:
             earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
-        # 💡 뉴스 데이터 방어 및 야후 API 구조 변경 완벽 대응
-        try:
-            news = ticker.news
-            yh_news_list = []
-            for n in news[:5]:
-                # 야후 파이낸스 API가 타이틀을 'content' 딕셔너리 안에 숨기는 패턴 처리
-                title = n.get('title', '')
-                if not title and 'content' in n:
-                    title = n['content'].get('title', '')
-                
-                if title:
-                    yh_news_list.append(f"- {title}")
-                    
-            yh_news = "\n".join(yh_news_list) if yh_news_list else "최근 야후 뉴스를 불러올 수 없습니다."
-        except:
-            yh_news = "야후 뉴스 제공 오류"
-            
+        news = ticker.news
+        yh_news = "\n".join([f"- {n.get('title','')}" for n in news[:3]]) if news else ""
         inv_news = fetch_investing_news(ticker_symbol)
         raw_news = f"[Yahoo News]\n{yh_news}\n\n[Global Web News]\n{inv_news}"
 
@@ -245,10 +221,9 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     from api_utils import ask_gemini_dynamic
     today_str = datetime.today().strftime('%Y-%m-%d')
     
+    # 💡 장황함 제거, 순서 변경, 10% 급변동 표 지시 추가
     prompt = f"""
-    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 미사여구를 철저히 배제하고, 오직 데이터와 팩트 기반의 건조한(Dry) 문체로 보고서를 작성하세요.
-    
-    **[중요 지시사항]: 실제 기관 투자자들이 중요하게 보는 거시경제(매크로) 흐름, 밸류체인 파급력, 향후 가이던스 등을 포함하여 분량을 기존보다 3배 이상 길고 심층적으로 작성하십시오.**
+    당신은 월스트리트의 핵심 기관 애널리스트입니다. 수식어와 장황한 설명을 절대 금지하며, 철저히 '개조식(Bullet points)'과 '핵심 요약' 위주로 간결하게 작성하세요.
     보고서 작성 기준일: {today_str}
 
     [분석 대상 데이터]
@@ -258,10 +233,18 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     - SaveTicker 등 외부 수집 뉴스: {saveticker_text}
     - 유저 메모: {user_input}
     
-    [작성 목차]
-    1. 🏢 시장 위치 및 밸류체인 심층 분석
-    2. 🌍 매크로 동향 및 핵심 뉴스 팩트체크 (가장 중요: 파트너십, 이슈 등 상세 서술)
-    3. 💰 실적(Earnings) 및 모멘텀 종합 의견
-    4. 💡 기관 트레이딩 결론 (Actionable Insight: 리스크 관리 포함 구체적 롱/숏/관망 의견)
+    [작성 목차 및 필수 지시사항]
+    1. 🏢 시장 위치 및 밸류체인
+       - 시가총액 기준 섹터 내 위치 단답형 요약.
+       - 주요 경쟁사 및 연계 밸류체인(공급망) 주식 나열.
+    2. 💰 실적(Earnings) 종합 의견
+       - 최근 실적발표 상회/하회 여부가 주가에 미친 영향 2줄 이내 요약.
+    3. 📈 가격 및 거래량 모멘텀 분석
+       - 현재 추세 상태 간략 진단.
+    4. 🚨 [최근 급변동 사유 분석] (조건부 작성)
+       - 제공된 데이터 상 1개월 또는 1분기 변동성이 +10% 이상이거나 -10% 이하인 경우에만 이 항목을 표(Table) 형태로 작성하세요.
+       - 표의 컬럼은 [이슈 발생일(추정) | 관련 파트너십/실적 뉴스 내용 | 주가에 미친 파급력] 으로 구성하세요. (예: SNOW-아마존 협업 등 팩트 기재)
+    5. 💡 기관 트레이딩 결론
+       - 명확한 포지션(Long/Short/관망) 단답형 제시 및 핵심 리스크 1줄 요약.
     """
     return ask_gemini_dynamic(prompt, [])
