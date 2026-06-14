@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 def fetch_investing_news(ticker):
     """구글 뉴스 RSS를 우회하여 최신 글로벌 기사(Investing, 파트너십 등)를 긁어옵니다."""
     try:
-        query = urllib.parse.quote(f"{ticker} stock OR news OR partnership")
+        query = urllib.parse.quote(f"{ticker} stock OR partnership OR earnings")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
@@ -54,18 +54,55 @@ def fetch_financial_data(ticker_symbol):
         elif market_cap > 1e6: mcap_str = f"{market_cap / 1e6:.2f}M (백만 달러)"
         else: mcap_str = "데이터 없음"
 
-        # 일봉 데이터 로드 (5년치)
+        # 일봉 데이터 로드
         hist_1d = ticker.history(period="5y")
         if hist_1d.empty: return {"error": "차트 데이터를 불러올 수 없습니다."}
         
         current_price = float(hist_1d['Close'].iloc[-1])
         current_vol = int(hist_1d['Volume'].iloc[-1])
         
+        # 💡 [핵심 추가] 최근 2달(약 45~60거래일) 일봉 기준 10% 이상 급등락 분석기
+        volatility_events = []
+        try:
+            recent_hist = hist_1d.tail(50) # 약 두 달
+            ndx_hist = yf.Ticker("^IXIC").history(period="1y") # 나스닥 지수 비교용
+            
+            for i in range(1, len(recent_hist)):
+                prev_c = recent_hist['Close'].iloc[i-1]
+                curr_c = recent_hist['Close'].iloc[i]
+                pct_change = ((curr_c - prev_c) / prev_c) * 100
+                
+                # 하루 변동폭이 10% 이상인 경우 캡처!
+                if abs(pct_change) >= 10.0:
+                    target_d = recent_hist.index[i]
+                    event_date_str = target_d.strftime('%Y-%m-%d')
+                    
+                    # 해당 날짜의 나스닥 등락률 찾기
+                    ndx_pct_str = "확인 불가"
+                    if not ndx_hist.empty:
+                        try:
+                            if target_d.tzinfo is not None and ndx_hist.index.tz is None:
+                                ndx_hist.index = ndx_hist.index.tz_localize('UTC').tz_convert(target_d.tzinfo)
+                            ndx_idx = ndx_hist.index.get_indexer([target_d], method='nearest')[0]
+                            if ndx_idx > 0:
+                                n_prev = ndx_hist['Close'].iloc[ndx_idx-1]
+                                n_curr = ndx_hist['Close'].iloc[ndx_idx]
+                                n_pct = ((n_curr - n_prev) / n_prev) * 100
+                                ndx_pct_str = f"{n_pct:+.1f}%"
+                        except: pass
+                    
+                    volatility_events.append(f"- 날짜: {event_date_str} | 종목 변동: {pct_change:+.1f}% (${prev_c:.2f} -> ${curr_c:.2f}) | 당일 나스닥 지수 변동: {ndx_pct_str}")
+        except Exception as e:
+            volatility_events.append(f"급변동 분석 에러: {str(e)}")
+            
+        vol_events_text = "\n".join(volatility_events) if volatility_events else "최근 2개월 내 일봉 기준 10% 이상 급변동 없음."
+
+        # 💡 예쁘고 직관적인 모멘텀 표 데이터 생성
         def calc_return_html(days):
             if len(hist_1d) > days:
                 past = float(hist_1d['Close'].iloc[-(days+1)])
                 pct = ((current_price - past)/past)*100
-                color = "#ef4444" if pct < 0 else "#22c55e"
+                color = "#ef4444" if pct < 0 else "#22c55e" # 빨강 or 초록
                 sign = "+" if pct > 0 else ""
                 return f"${past:.2f} ➔ ${current_price:.2f}", f"<span style='color:{color}; font-weight:bold;'>{sign}{pct:.2f}%</span>"
             return "-", "-"
@@ -76,6 +113,7 @@ def fetch_financial_data(ticker_symbol):
         v1q_p, v1q_pct = calc_return_html(60)
         v1y_p, v1y_pct = calc_return_html(250)
 
+        # 💡 MA -> EMA (지수이동평균) 200선으로 완벽 변경
         hist_1d['EMA200_1D'] = hist_1d['Close'].ewm(span=200, adjust=False).mean()
         
         hist_1h = ticker.history(period="730d", interval="1h")
@@ -140,6 +178,7 @@ def fetch_financial_data(ticker_symbol):
             except:
                 return "-"
 
+        # 💡 3개년 (12분기) 실적 데이터 렌더링
         earnings_html = ""
         try:
             try:
@@ -185,6 +224,7 @@ def fetch_financial_data(ticker_symbol):
         except Exception as e:
             earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
+        # 뉴스 데이터
         try:
             news = ticker.news
             yh_news_list = []
@@ -223,7 +263,8 @@ def fetch_financial_data(ticker_symbol):
         return {
             "market_cap": mcap_str, "raw_news": raw_news, "ma_html": ma_html, 
             "momentum_html": mom_html, "earnings_html": earnings_html,
-            "last_cross_type": cross_type, "last_cross_date": cross_date
+            "last_cross_type": cross_type, "last_cross_date": cross_date,
+            "vol_events_text": vol_events_text # 💡 AI에게 넘겨줄 급등락 팩트 텍스트
         }
     except Exception as e:
         return {"error": str(e)}
@@ -232,30 +273,32 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     from api_utils import ask_gemini_dynamic
     today_str = datetime.today().strftime('%Y-%m-%d')
     
-    # 💡 강력한 AI 프롬프트 개조: 깊이 확보 및 10% 급변동 표 강제 생성
+    # 💡 AI 리포트 분량 강화 및 10% 변동성 팩트체크 테이블 강제
     prompt = f"""
-    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 너무 짧은 단답형 요약은 지양하고, 실제 기관 투자자들이 읽을 수 있도록 충분한 깊이와 논리를 갖춘 상세한 리포트를 작성하세요. 단, 과장된 미사여구는 모두 빼고 팩트 기반의 건조하고 날카로운 전문가 문체를 유지하세요.
+    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 너무 짧은 요약이나 감정적, 추상적 미사여구는 배제하고, 오직 데이터와 팩트 기반의 논리적이고 깊이 있는 리포트를 작성하세요.
     
     보고서 작성 기준일: {today_str}
 
     [분석 대상 데이터]
     - 종목명: {ticker} (섹터: {sector})
     - 시가총액: {fin_data.get('market_cap')}
+    - 파이썬 봇이 추출한 [최근 2달 내 10% 이상 일일 급변동 발생일 팩트]: 
+    {fin_data.get('vol_events_text')}
     - 최신 글로벌 뉴스(야후, 인베스팅 등): {fin_data.get('raw_news')}
-    - 추가 수집 데이터: {saveticker_text}
-    - 유저 메모: {user_input}
+    - 외부 뉴스/메모: {saveticker_text} \n {user_input}
     
     [작성 목차 및 필수 포함 내용]
     1. 🏢 시장 위치 및 밸류체인 심층 분석
-       - 글로벌 섹터 내 시총 위치 및 연계된 공급망(경쟁사, 주요 고객사)들과의 상관관계를 충분히 풀어서 설명.
+       - 이 종목이 글로벌 {sector} 섹터 내에서 시가총액 기준으로 어느 정도 위치인지.
+       - 경쟁사 및 연계된 공급망(밸류체인) 주식들과의 동향을 심층 서술.
     2. 💰 실적(Earnings) 및 모멘텀 종합 의견
-       - 최근 1~2년 간의 실적 상회/하회 트렌드와 이것이 가격 모멘텀에 미친 영향을 분석. 향후 가이던스 기대감 서술.
-    3. 🌍 매크로 동향 및 핵심 뉴스 팩트체크 (가장 중요)
-       - 제공된 최신 뉴스에서 시장을 뒤흔든 대형 호재/악재(예: 대형 파트너십 체결, M&A 등)를 구체적으로 짚어내고 펀더멘털 파급력을 분석.
+       - 최근 실적 상회/하회 트렌드와 다음 가이던스에 대한 기관 우려/기대감 추론.
+    3. 🌍 매크로 동향 및 팩트체크
+       - 현재 금리나 섹터 매크로 환경이 미치는 영향.
     
-    🚨 [필수 조건]: 최근 1개월~1분기 변동성이 10% 이상인 급변동 흐름이 감지된 경우, 반드시 위 3번 항목 하단에 "🚨 최근 10% 이상 급변동 사유 분석"이라는 제목으로 '표(Table)'를 삽입하여 급변동 촉매제(Trigger)를 명시할 것.
+    🚨 [필수 조건]: 파이썬 봇이 제공한 [10% 이상 급변동 발생일 팩트] 데이터가 존재한다면, 3번 항목 바로 아래에 반드시 "🚨 최근 10% 이상 급변동 사유 분석" 이라는 제목으로 '표(Markdown Table)'를 삽입하세요. 해당 날짜에 왜 급등/급락했는지(예: 아마존 협업 발표, 실적 쇼크 등)를 제공된 뉴스와 매칭하여 분석해 적어주세요. 나스닥 지수 변동과 비교하여 개별 호재인지 시장 동조화인지도 밝히세요.
     
     4. 💡 기관 트레이딩 결론 (Actionable Insight)
-       - 펀더멘털, 팩트체크를 모두 고려한 기계적인 Long/Short/관망 조언.
+       - 구체적이고 냉철한 진입 조언(Long/Short/관망).
     """
     return ask_gemini_dynamic(prompt, [])
