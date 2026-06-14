@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 def fetch_investing_news(ticker):
     """구글 뉴스 RSS를 우회하여 최신 글로벌 기사(Investing, 파트너십 등)를 긁어옵니다."""
     try:
-        query = urllib.parse.quote(f"{ticker} stock OR partnership OR earnings")
+        query = urllib.parse.quote(f"{ticker} stock OR news OR partnership")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
@@ -54,6 +54,7 @@ def fetch_financial_data(ticker_symbol):
         elif market_cap > 1e6: mcap_str = f"{market_cap / 1e6:.2f}M (백만 달러)"
         else: mcap_str = "데이터 없음"
 
+        # 일봉 데이터 로드 (5년치)
         hist_1d = ticker.history(period="5y")
         if hist_1d.empty: return {"error": "차트 데이터를 불러올 수 없습니다."}
         
@@ -115,14 +116,9 @@ def fetch_financial_data(ticker_symbol):
             curr_4h_ema200 = "-"
             curr_1d_ema200 = f"${hist_1d['EMA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['EMA200_1D'].iloc[-1]) else "-"
 
-        # 💡 미래 날짜 실적 등락률 오류 방지 로직 추가
         def get_earnings_price_change(target_date_str):
             try:
                 target_date = pd.to_datetime(target_date_str)
-                # 아직 오지 않은 미래 날짜면 계산 생략
-                if target_date > pd.Timestamp.now().normalize():
-                    return "-"
-                    
                 if hist_1d.index.tz is not None:
                     target_date = target_date.tz_localize(hist_1d.index.tz) if target_date.tzinfo is None else target_date.tz_convert(hist_1d.index.tz)
                 
@@ -141,17 +137,18 @@ def fetch_financial_data(ticker_symbol):
 
         earnings_html = ""
         try:
-            edts = ticker.get_earnings_dates(limit=12)
+            try:
+                edts = ticker.get_earnings_dates(limit=12)
+            except Exception:
+                edts = ticker.earnings_dates
+                if edts is not None: edts = edts.head(12)
+                
             if edts is not None and not edts.empty:
                 edts = edts.reset_index()
                 date_col = 'Earnings Date' if 'Earnings Date' in edts.columns else edts.columns[0]
                 
-                if edts[date_col].dt.tz is not None:
-                    edts[date_col] = edts[date_col].dt.tz_convert('US/Eastern')
-                else:
-                    edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('US/Eastern')
-                
-                edts['Date'] = edts[date_col].dt.strftime('%Y-%m-%d')
+                # 💡 강력한 문자열 가위질(Slicing) 로직: 타임존 변환 에러가 나도 YYYY-MM-DD만 뜯어옵니다.
+                edts['Date'] = edts[date_col].astype(str).str.slice(0, 10)
                 
                 edts_table = """
                 <table class='ma-table' style='text-align:center;'>
@@ -179,12 +176,21 @@ def fetch_financial_data(ticker_symbol):
                 edts_table += "</table>"
                 earnings_html = edts_table
             else:
-                earnings_html = "<p>최근 실적 데이터가 없습니다.</p>"
+                earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다. (제공사 데이터 없음)</p>"
         except Exception as e:
             earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
-        news = ticker.news
-        yh_news = "\n".join([f"- {n.get('title','')}" for n in news[:3]]) if news else ""
+        try:
+            news = ticker.news
+            yh_news_list = []
+            for n in news[:4]:
+                title = n.get('title', '')
+                if not title and 'content' in n: title = n['content'].get('title', '')
+                if title: yh_news_list.append(f"- {title}")
+            yh_news = "\n".join(yh_news_list) if yh_news_list else "최근 야후 뉴스를 찾을 수 없습니다."
+        except:
+            yh_news = "야후 뉴스 제공 오류"
+            
         inv_news = fetch_investing_news(ticker_symbol)
         raw_news = f"[Yahoo News]\n{yh_news}\n\n[Global Web News]\n{inv_news}"
 
@@ -221,30 +227,29 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     from api_utils import ask_gemini_dynamic
     today_str = datetime.today().strftime('%Y-%m-%d')
     
-    # 💡 장황함 제거, 순서 변경, 10% 급변동 표 지시 추가
     prompt = f"""
-    당신은 월스트리트의 핵심 기관 애널리스트입니다. 수식어와 장황한 설명을 절대 금지하며, 철저히 '개조식(Bullet points)'과 '핵심 요약' 위주로 간결하게 작성하세요.
+    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 너무 짧은 단답형 요약은 지양하고, 실제 기관 투자자들이 읽을 수 있도록 충분한 깊이와 논리를 갖춘 상세한 리포트를 작성하세요. 단, 과장된 미사여구는 모두 빼고 팩트 기반의 건조하고 날카로운 전문가 문체를 유지하세요.
+    
     보고서 작성 기준일: {today_str}
 
     [분석 대상 데이터]
     - 종목명: {ticker} (섹터: {sector})
     - 시가총액: {fin_data.get('market_cap')}
-    - 최신 글로벌 뉴스(협업, 실적 등 포함): {fin_data.get('raw_news')}
-    - SaveTicker 등 외부 수집 뉴스: {saveticker_text}
+    - 최신 글로벌 뉴스(야후, 인베스팅 등): {fin_data.get('raw_news')}
+    - 추가 수집 데이터: {saveticker_text}
     - 유저 메모: {user_input}
     
-    [작성 목차 및 필수 지시사항]
-    1. 🏢 시장 위치 및 밸류체인
-       - 시가총액 기준 섹터 내 위치 단답형 요약.
-       - 주요 경쟁사 및 연계 밸류체인(공급망) 주식 나열.
-    2. 💰 실적(Earnings) 종합 의견
-       - 최근 실적발표 상회/하회 여부가 주가에 미친 영향 2줄 이내 요약.
-    3. 📈 가격 및 거래량 모멘텀 분석
-       - 현재 추세 상태 간략 진단.
-    4. 🚨 [최근 급변동 사유 분석] (조건부 작성)
-       - 제공된 데이터 상 1개월 또는 1분기 변동성이 +10% 이상이거나 -10% 이하인 경우에만 이 항목을 표(Table) 형태로 작성하세요.
-       - 표의 컬럼은 [이슈 발생일(추정) | 관련 파트너십/실적 뉴스 내용 | 주가에 미친 파급력] 으로 구성하세요. (예: SNOW-아마존 협업 등 팩트 기재)
-    5. 💡 기관 트레이딩 결론
-       - 명확한 포지션(Long/Short/관망) 단답형 제시 및 핵심 리스크 1줄 요약.
+    [작성 목차 및 필수 포함 내용]
+    1. 🏢 시장 위치 및 밸류체인 심층 분석
+       - 글로벌 섹터 내 시총 위치 및 연계된 공급망(경쟁사, 주요 고객사)들과의 상관관계를 충분히 풀어서 설명.
+    2. 💰 실적(Earnings) 및 모멘텀 종합 의견
+       - 최근 1~2년 간의 실적 상회/하회 트렌드와 이것이 가격 모멘텀에 미친 영향을 분석. 향후 가이던스 기대감 서술.
+    3. 🌍 매크로 동향 및 핵심 뉴스 팩트체크 (가장 중요)
+       - 제공된 최신 뉴스에서 시장을 뒤흔든 대형 호재/악재(예: 대형 파트너십 체결, M&A 등)를 구체적으로 짚어내고 펀더멘털 파급력을 분석.
+    
+    🚨 [필수 조건]: 최근 1개월~1분기 변동성이 10% 이상인 급변동 흐름이 감지된 경우, 반드시 위 3번 항목 하단에 "🚨 최근 10% 이상 급변동 사유 분석"이라는 제목으로 '표(Table)'를 삽입하여 급변동 촉매제(Trigger)를 명시할 것.
+    
+    4. 💡 기관 트레이딩 결론 (Actionable Insight)
+       - 펀더멘털, 팩트체크를 모두 고려한 기계적인 Long/Short/관망 조언.
     """
     return ask_gemini_dynamic(prompt, [])
