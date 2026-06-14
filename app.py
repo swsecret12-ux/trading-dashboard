@@ -42,6 +42,7 @@ div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
     font-size: 1.3rem;
 }
 
+/* 표(Table) 가독성 극대화 CSS */
 .ma-table {
     width: 100%;
     border-collapse: collapse;
@@ -82,8 +83,12 @@ if "ai_img_files" not in st.session_state: st.session_state.ai_img_files = []
 if "uploader_key" not in st.session_state: st.session_state.uploader_key = 0 
 if "t2_ticker" not in st.session_state: st.session_state.t2_ticker = ""
 
+# 6개의 탭 구조
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
+# ==============================
+# --- Tab 1: 매매 기록 보관지 ---
+# ==============================
 with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
@@ -169,6 +174,9 @@ with tab1:
                     if st.form_submit_button("📝 내용 업데이트"):
                         update_db("trade_history", "id", trade_id, {"entry_basis": e_entry, "exit_basis": e_exit}); st.rerun()
 
+# ==============================
+# --- Tab 2: 내 관점 분석 ---
+# ==============================
 with tab2:
     st.header("🔍 AI 차트 분석 및 관점 피드백 (아카이브 지식 연동)")
     
@@ -245,6 +253,9 @@ with tab2:
                             st.session_state.ai_img_files = [] 
                             st.success("✅ Watchlist에 저장되었습니다!"); st.rerun()
 
+# ==============================
+# --- Tab 3: 기본 이론 & DB ---
+# ==============================
 with tab3:
     st.header("📚 나의 매매 기준 & 기본 이론 DB")
     theory_db = load_theory_db()
@@ -286,6 +297,9 @@ with tab3:
                         if c_s.form_submit_button("📝 수정 저장", type="primary", use_container_width=True): update_db("theory_db", "id", data['id'], {"content": ed_cont}); st.rerun()
                         if c_d.form_submit_button("🗑️ 삭제", use_container_width=True): delete_db("theory_db", "id", data['id']); st.rerun()
 
+# ==============================
+# --- Tab 4: 🤖 자동매매 컨트롤 센터 ---
+# ==============================
 with tab4:
     st.header("🤖 자동매매 사령실")
     col_status1, col_status2, col_status3, col_status4 = st.columns(4)
@@ -332,6 +346,9 @@ with tab4:
     with bot_tab4:
         st.code("[System] 봇 모듈 활성화 완료...", language="bash")
 
+# ==============================
+# --- Tab 5: 분석 자료 아카이브 ---
+# ==============================
 with tab5:
     st.header("📁 분석 자료 아카이브 (AI 자동화)")
     df_archive = load_archive_data()
@@ -429,6 +446,9 @@ with tab5:
                     st.info(f"**💡 나의 셋업 관점:**\n{my_data['source_view']}")
                     render_ai_advice_block("🤖 검증 피드백", my_data['memo'])
 
+# ==============================
+# --- Tab 6: 🏢 섹터 & 주도주 리서치 맵 ---
+# ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
@@ -496,7 +516,7 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 EMA 지표 2개를 기본으로 띄우는 TradingView 위젯 설정
+            # 💡 트레이딩뷰 위젯 - EMA 2개 셋팅 (안전하게 로드)
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
