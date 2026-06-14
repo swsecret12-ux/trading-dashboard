@@ -446,9 +446,6 @@ with tab5:
                     st.info(f"**💡 나의 셋업 관점:**\n{my_data['source_view']}")
                     render_ai_advice_block("🤖 검증 피드백", my_data['memo'])
 
-# ==============================
-# --- Tab 6: 🏢 섹터 & 주도주 리서치 맵 ---
-# ==============================
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
@@ -494,6 +491,7 @@ with tab6:
         filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
         if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
             
+        # 💡 메인 화면 목록 (EMA 표기 변경)
         disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1w"]
         df_selected = st.dataframe(
             df_sector[disp_cols],
@@ -516,7 +514,7 @@ with tab6:
             with col_st2:
                 if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
             
-            # 💡 트레이딩뷰 위젯 - EMA 2개 셋팅 (안전하게 로드)
+            # 💡 트레이딩뷰 위젯에 공식 EMA(지수이동평균) 2개 기본 탑재
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             tv_widget = f"""
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
