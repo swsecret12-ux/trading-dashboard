@@ -122,6 +122,11 @@ def fetch_financial_data(ticker_symbol):
                 if hist_1d.index.tz is not None:
                     target_date = target_date.tz_localize(hist_1d.index.tz) if target_date.tzinfo is None else target_date.tz_convert(hist_1d.index.tz)
                 
+                # 💡 미래 날짜(아직 오지 않은 실적발표일) 방어 로직 추가!
+                current_time = pd.Timestamp.now(tz=hist_1d.index.tz)
+                if target_date > current_time:
+                    return "-" # 미래 날짜는 계산하지 않음
+                
                 idx = hist_1d.index.get_indexer([target_date], method='nearest')[0]
                 start_idx = max(0, idx - 1)
                 end_idx = min(len(hist_1d) - 1, idx + 1)
@@ -227,6 +232,7 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     from api_utils import ask_gemini_dynamic
     today_str = datetime.today().strftime('%Y-%m-%d')
     
+    # 💡 강력한 AI 프롬프트 개조: 깊이 확보 및 10% 급변동 표 강제 생성
     prompt = f"""
     당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 너무 짧은 단답형 요약은 지양하고, 실제 기관 투자자들이 읽을 수 있도록 충분한 깊이와 논리를 갖춘 상세한 리포트를 작성하세요. 단, 과장된 미사여구는 모두 빼고 팩트 기반의 건조하고 날카로운 전문가 문체를 유지하세요.
     
