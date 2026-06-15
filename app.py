@@ -651,7 +651,6 @@ with tab6:
             df_init['업데이트 날짜'] = "-"
             st.session_state.sp100_state_df = df_init
 
-        # 💡 상단 대시보드 (원형 차트 6: 나스닥 지표+차트 4 비율 최적화)
         col_pie, col_ndx = st.columns([6, 4], gap="large")
         
         with col_pie:
@@ -675,8 +674,8 @@ with tab6:
                 def color_val(val):
                     color = '#ef4444' if val < 0 else '#22c55e'
                     return f"color: {color}; font-weight: bold;"
-                # 소수점 둘째자리 포맷팅
-                formatted_df = ndx_df.applymap(lambda x: f"{x:+.2f}%")
+                # 소수점 둘째자리 포맷팅 (applymap -> map 으로 수정)
+                formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%")
                 st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                 
                 # 💡 나스닥 1년치 일봉 캔들 차트 (TradingView 미니 위젯)
