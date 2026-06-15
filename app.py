@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from PIL import Image
 import google.generativeai as genai
 import streamlit.components.v1 as components
+import yfinance as yf
 
 # ==========================================
 # --- 1. 클라우드 및 AI 세팅 ---
@@ -81,130 +82,56 @@ def load_sector_data():
     if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
-# 💡 미국 시총 100위 고정 데이터베이스 (위키피디아 의존성 100% 제거)
-TOP_100_STOCKS = [
-    {"Symbol": "MSFT", "Name": "Microsoft (마이크로소프트)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "AAPL", "Name": "Apple Inc. (애플)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "NVDA", "Name": "NVIDIA (엔비디아)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "GOOGL", "Name": "Alphabet Class A (구글)", "Sector": "Communication Services (커뮤니케이션)"},
-    {"Symbol": "AMZN", "Name": "Amazon (아마존)", "Sector": "Consumer Discretionary (자유소비재)"},
-    {"Symbol": "META", "Name": "Meta Platforms (메타/페이스북)", "Sector": "Communication Services (커뮤니케이션)"},
-    {"Symbol": "BRK-B", "Name": "Berkshire Hathaway (버크셔 해서웨이)", "Sector": "Financials (금융)"},
-    {"Symbol": "LLY", "Name": "Eli Lilly (일라이 릴리)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "TSLA", "Name": "Tesla (테슬라)", "Sector": "Consumer Discretionary (자유소비재)"},
-    {"Symbol": "AVGO", "Name": "Broadcom (브로드컴)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "V", "Name": "Visa (비자)", "Sector": "Financials (금융)"},
-    {"Symbol": "JPM", "Name": "JPMorgan Chase (JP모건)", "Sector": "Financials (금융)"},
-    {"Symbol": "WMT", "Name": "Walmart (월마트)", "Sector": "Consumer Staples (필수소비재)"},
-    {"Symbol": "UNH", "Name": "UnitedHealth (유나이티드헬스)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "MA", "Name": "Mastercard (마스터카드)", "Sector": "Financials (금융)"},
-    {"Symbol": "PG", "Name": "Procter & Gamble (P&G)", "Sector": "Consumer Staples (필수소비재)"},
-    {"Symbol": "JNJ", "Name": "Johnson & Johnson (존슨앤드존슨)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "HD", "Name": "Home Depot (홈디포)", "Sector": "Consumer Discretionary (자유소비재)"},
-    {"Symbol": "ORCL", "Name": "Oracle (오라클)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "MRK", "Name": "Merck & Co. (머크)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "COST", "Name": "Costco (코스트코)", "Sector": "Consumer Staples (필수소비재)"},
-    {"Symbol": "CVX", "Name": "Chevron (쉐브론)", "Sector": "Energy (에너지)"},
-    {"Symbol": "ABBV", "Name": "AbbVie (애브비)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "BAC", "Name": "Bank of America (뱅크오브아메리카)", "Sector": "Financials (금융)"},
-    {"Symbol": "CRM", "Name": "Salesforce (세일즈포스)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "AMD", "Name": "Advanced Micro Devices (AMD)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "NFLX", "Name": "Netflix (넷플릭스)", "Sector": "Communication Services (커뮤니케이션)"},
-    {"Symbol": "KO", "Name": "Coca-Cola (코카콜라)", "Sector": "Consumer Staples (필수소비재)"},
-    {"Symbol": "PEP", "Name": "PepsiCo (펩시코)", "Sector": "Consumer Staples (필수소비재)"},
-    {"Symbol": "TMO", "Name": "Thermo Fisher Scientific (써모피셔)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "LIN", "Name": "Linde (린데)", "Sector": "Materials (소재)"},
-    {"Symbol": "DIS", "Name": "Walt Disney (디즈니)", "Sector": "Communication Services (커뮤니케이션)"},
-    {"Symbol": "WFC", "Name": "Wells Fargo (웰스파고)", "Sector": "Financials (금융)"},
-    {"Symbol": "MCD", "Name": "McDonald's (맥도날드)", "Sector": "Consumer Discretionary (자유소비재)"},
-    {"Symbol": "CSCO", "Name": "Cisco Systems (시스코)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "ADBE", "Name": "Adobe (어도비)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "INTU", "Name": "Intuit (인튜이트)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "QCOM", "Name": "Qualcomm (퀄컴)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "AXP", "Name": "American Express (아메리칸 익스프레스)", "Sector": "Financials (금융)"},
-    {"Symbol": "IBM", "Name": "IBM (아이비엠)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "TXN", "Name": "Texas Instruments (텍사스 인스트루먼츠)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "AMAT", "Name": "Applied Materials (어플라이드 머티리얼즈)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "CAT", "Name": "Caterpillar (캐터필러)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "UBER", "Name": "Uber Technologies (우버)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "AMGN", "Name": "Amgen (암젠)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "PFE", "Name": "Pfizer (화이자)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "GE", "Name": "General Electric (GE)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "ISRG", "Name": "Intuitive Surgical (인튜이티브 서지컬)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "NOW", "Name": "ServiceNow (서비스나우)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "BA", "Name": "Boeing (보잉)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "PM", "Name": "Philip Morris (필립모리스)", "Sector": "Consumer Staples (필수소비재)"},
-    {"Symbol": "SPGI", "Name": "S&P Global (S&P 글로벌)", "Sector": "Financials (금융)"},
-    {"Symbol": "HON", "Name": "Honeywell (하니웰)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "UNP", "Name": "Union Pacific (유니언 퍼시픽)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "BKNG", "Name": "Booking Holdings (부킹홀딩스)", "Sector": "Consumer Discretionary (자유소비재)"},
-    {"Symbol": "SYK", "Name": "Stryker (스트라이커)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "COP", "Name": "ConocoPhillips (코노코필립스)", "Sector": "Energy (에너지)"},
-    {"Symbol": "GS", "Name": "Goldman Sachs (골드만삭스)", "Sector": "Financials (금융)"},
-    {"Symbol": "PLTR", "Name": "Palantir Technologies (팔란티어)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "ARM", "Name": "ARM Holdings (암 홀딩스)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "RTX", "Name": "RTX Corporation (레이시온)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "VRTX", "Name": "Vertex Pharmaceuticals (버텍스 파마)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "T", "Name": "AT&T (에이티앤티)", "Sector": "Communication Services (커뮤니케이션)"},
-    {"Symbol": "MS", "Name": "Morgan Stanley (모건스탠리)", "Sector": "Financials (금융)"},
-    {"Symbol": "LMT", "Name": "Lockheed Martin (록히드 마틴)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "BLK", "Name": "BlackRock (블랙록)", "Sector": "Financials (금융)"},
-    {"Symbol": "MDT", "Name": "Medtronic (메드트로닉)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "C", "Name": "Citigroup (씨티그룹)", "Sector": "Financials (금융)"},
-    {"Symbol": "PGR", "Name": "Progressive (프로그레시브)", "Sector": "Financials (금융)"},
-    {"Symbol": "ADP", "Name": "Automatic Data Processing (ADP)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "CB", "Name": "Chubb (처브)", "Sector": "Financials (금융)"},
-    {"Symbol": "ADI", "Name": "Analog Devices (아날로그 디바이스)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "MDLZ", "Name": "Mondelez (몬델리즈)", "Sector": "Consumer Staples (필수소비재)"},
-    {"Symbol": "MMC", "Name": "Marsh & McLennan (마쉬 앤 매클레넌)", "Sector": "Financials (금융)"},
-    {"Symbol": "CI", "Name": "Cigna (시그나)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "BMY", "Name": "Bristol-Myers Squibb (BMS)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "GILD", "Name": "Gilead Sciences (길리어드)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "DE", "Name": "Deere & Company (존디어)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "SBUX", "Name": "Starbucks (스타벅스)", "Sector": "Consumer Discretionary (자유소비재)"},
-    {"Symbol": "NKE", "Name": "Nike (나이키)", "Sector": "Consumer Discretionary (자유소비재)"},
-    {"Symbol": "ABT", "Name": "Abbott Laboratories (애보트)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "SNOW", "Name": "Snowflake (스노우플레이크)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "CRWD", "Name": "CrowdStrike (크라우드스트라이크)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "PANW", "Name": "Palo Alto Networks (팔로알토)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "MU", "Name": "Micron Technology (마이크론)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "SMCI", "Name": "Super Micro Computer (슈퍼마이크로)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "INTC", "Name": "Intel (인텔)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "MRNA", "Name": "Moderna (모더나)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "CVS", "Name": "CVS Health (CVS 헬스)", "Sector": "Health Care (헬스케어)"},
-    {"Symbol": "FI", "Name": "Fiserv (파이서브)", "Sector": "Financials (금융)"},
-    {"Symbol": "KLAC", "Name": "KLA Corp (KLA)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "SNPS", "Name": "Synopsys (시놉시스)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "CDNS", "Name": "Cadence Design Systems (케이던스)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "CMCSA", "Name": "Comcast (컴캐스트)", "Sector": "Communication Services (커뮤니케이션)"},
-    {"Symbol": "GPN", "Name": "Global Payments (글로벌 페이먼츠)", "Sector": "Financials (금융)"},
-    {"Symbol": "VRT", "Name": "Vertiv (버티브)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "CEG", "Name": "Constellation Energy (콘스텔레이션 에너지)", "Sector": "Utilities (유틸리티)"},
-    {"Symbol": "GEV", "Name": "GE Vernova (GE 버노바)", "Sector": "Industrials (산업재)"},
-    {"Symbol": "SO", "Name": "Southern Company (서던 컴퍼니)", "Sector": "Utilities (유틸리티)"},
-    {"Symbol": "DUK", "Name": "Duke Energy (듀크 에너지)", "Sector": "Utilities (유틸리티)"}
-]
-
 def format_mcap_krw(usd_val):
     if not usd_val or usd_val <= 0: return "-"
     krw_val = usd_val * 1380
-    
-    if krw_val >= 1e12:
-        trillion = int(krw_val // 1e12)
-        billion = int((krw_val % 1e12) // 1e8)
-        if billion > 0: return f"{trillion:,}조 {billion:,}억원"
-        return f"{trillion:,}조원"
-    elif krw_val >= 1e8:
-        return f"{int(krw_val // 1e8):,}억원"
+    if krw_val >= 1e12: # 조 단위
+        trillion = krw_val / 1e12
+        return f"{trillion:.1f}조원".replace(".0조", "조")
+    elif krw_val >= 1e8: # 억 단위
+        billion = krw_val / 1e8
+        return f"{int(billion):,}억원"
     return "-"
 
-# yfinance 내부 세션 속도 최적화
-import yfinance as yf
+SECTOR_TRANSLATIONS = {
+    "Technology Services": "Information Technology (정보기술)",
+    "Electronic Technology": "Information Technology (정보기술)",
+    "Health Technology": "Health Care (헬스케어)",
+    "Health Services": "Health Care (헬스케어)",
+    "Finance": "Financials (금융)",
+    "Consumer Non-Durables": "Consumer Staples (필수소비재)",
+    "Consumer Durables": "Consumer Discretionary (자유소비재)",
+    "Consumer Services": "Consumer Discretionary (자유소비재)",
+    "Retail Trade": "Consumer Discretionary (자유소비재)",
+    "Energy Minerals": "Energy (에너지)",
+    "Non-Energy Minerals": "Materials (소재)",
+    "Producer Manufacturing": "Industrials (산업재)",
+    "Industrial Services": "Industrials (산업재)",
+    "Transportation": "Industrials (산업재)",
+    "Utilities": "Utilities (유틸리티)",
+    "Communications": "Communication Services (커뮤니케이션)",
+    "Commercial Services": "Communication Services (커뮤니케이션)"
+}
+
+NAME_TRANSLATIONS = {
+    "AAPL": "Apple Inc. (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
+    "GOOGL": "Alphabet Class A (구글)", "GOOG": "Alphabet Class C (구글)", "AMZN": "Amazon (아마존)",
+    "META": "Meta Platforms (메타/페이스북)", "BRK-B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)",
+    "TSLA": "Tesla (테슬라)", "AVGO": "Broadcom (브로드컴)", "V": "Visa (비자)",
+    "JPM": "JPMorgan Chase (JP모건)", "WMT": "Walmart (월마트)", "UNH": "UnitedHealth (유나이티드헬스)",
+    "MA": "Mastercard (마스터카드)", "PG": "Procter & Gamble (P&G)", "JNJ": "Johnson & Johnson (존슨앤드존슨)",
+    "HD": "Home Depot (홈디포)", "COST": "Costco (코스트코)", "MRK": "Merck & Co. (머크)",
+    "ABBV": "AbbVie (애브비)", "CRM": "Salesforce (세일즈포스)", "AMD": "Advanced Micro Devices (AMD)",
+    "NFLX": "Netflix (넷플릭스)", "KO": "Coca-Cola (코카콜라)", "PEP": "PepsiCo (펩시코)",
+    "DIS": "Walt Disney (디즈니)", "CSCO": "Cisco Systems (시스코)", "ADBE": "Adobe (어도비)",
+    "QCOM": "Qualcomm (퀄컴)", "INTC": "Intel (인텔)", "ARM": "ARM Holdings (암 홀딩스)",
+    "PLTR": "Palantir (팔란티어)"
+}
+
 def get_robust_session():
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     })
     return session
 
@@ -258,7 +185,6 @@ if "sp100_state_df" not in st.session_state:
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
-# --- Tab 1 ~ Tab 5 (기존 코드 유지) ---
 with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
@@ -537,7 +463,6 @@ with tab5:
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
 
-# --- Tab 6: 섹터 & 주도주 맵 ---
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
@@ -637,32 +562,72 @@ with tab6:
                         st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
 
     with sub_tab_top100:
-        st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실제 데이터 기준)")
-        st.info("💡 **알림:** 이제 S&P 100 편입 기준과 무관하게, **미국 시장에 상장된 실제 시가총액 최상위 100개 기업**(테슬라, ARM, 팔란티어 등 포함)을 조회합니다.")
+        st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실시간 데이터 기준)")
+        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 1위~100위' 명단을 즉시 스캔하여 줄을 세웁니다.")
 
-        if st.session_state.sp100_state_df.empty:
-            df_init = pd.DataFrame(TOP_100_STOCKS)
-            df_init.insert(0, '순위', range(1, 1 + len(df_init)))
-            df_init.insert(1, '시총', "-")
-            df_init['시가총액_num'] = 0.0
-            df_init['섹터 순위'] = "-"
-            df_init['크로스 상태 (4H/1D EMA200)'] = "대기 중"
-            df_init['크로스 날짜'] = "-"
-            df_init['크로스 당시 주가'] = "-"
-            df_init['업데이트 날짜'] = "-"
-            st.session_state.sp100_state_df = df_init
+        if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary"):
+            with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
+                try:
+                    url = "https://scanner.tradingview.com/america/scan"
+                    payload = {
+                        "filter": [
+                            {"left": "market_cap_basic", "operation": "nempty"},
+                            {"left": "type", "operation": "in_range", "right": ["stock", "dr"]}
+                        ],
+                        "options": {"lang": "en"},
+                        "markets": ["america"],
+                        "symbols": {"query": {"types": []}, "tickers": []},
+                        "columns": ["name", "description", "sector", "market_cap_basic"],
+                        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+                        "range": [0, 100]
+                    }
+                    headers = {"User-Agent": "Mozilla/5.0"}
+                    res = requests.post(url, json=payload, headers=headers)
+                    data = res.json()
+                    
+                    df_list = []
+                    for i, item in enumerate(data.get('data', [])):
+                        sym = item['d'][0].replace('.', '-')
+                        name_raw = item['d'][1]
+                        sec_raw = item['d'][2]
+                        mcap = item['d'][3]
+                        
+                        sec_trans = SECTOR_TRANSLATIONS.get(sec_raw, f"{sec_raw} (기타)")
+                        name_trans = NAME_TRANSLATIONS.get(sym, name_raw)
+                        
+                        df_list.append({
+                            '순위': i + 1,
+                            '시총': format_mcap_krw(mcap),
+                            'Symbol': sym,
+                            'Name': name_trans,
+                            'Sector': sec_trans,
+                            '시가총액_num': mcap,
+                            '섹터 순위': "-",
+                            '크로스 상태 (4H/1D EMA200)': "대기 중",
+                            '크로스 날짜': "-",
+                            '크로스 당시 주가': "-",
+                            '업데이트 날짜': "-"
+                        })
+                    
+                    new_df = pd.DataFrame(df_list)
+                    new_df['섹터 내 순위'] = new_df.groupby('Sector')['시가총액_num'].rank(ascending=False, method='min')
+                    new_df['섹터 순위'] = new_df['섹터 내 순위'].apply(lambda x: f"섹터 {int(x)}위" if pd.notna(x) else "-")
+                    new_df = new_df.drop(columns=['섹터 내 순위'])
+                    
+                    st.session_state.sp100_state_df = new_df
+                    st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
+                except Exception as e:
+                    st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
-        # 💡 레이아웃 비율 [6:4] 조절 및 쌍둥이 도넛 차트
-        col_pie, col_ndx = st.columns([6, 4], gap="large")
-        
-        with col_pie:
-            scanned_df = st.session_state.sp100_state_df[st.session_state.sp100_state_df['시가총액_num'] > 0]
-            if not scanned_df.empty:
+        if not st.session_state.sp100_state_df.empty:
+            col_pie, col_ndx = st.columns([6, 4], gap="large")
+            
+            with col_pie:
                 st.markdown("#### 🍩 미국 주도 섹터 비중 (스캔된 종목 기준)")
                 c_p1, c_p2 = st.columns(2)
                 
                 with c_p1:
-                    sector_count = scanned_df['Sector'].value_counts().reset_index()
+                    sector_count = st.session_state.sp100_state_df['Sector'].value_counts().reset_index()
                     sector_count.columns = ['Sector', 'Count']
                     fig_count = alt.Chart(sector_count).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="Count", type="quantitative"),
@@ -672,55 +637,51 @@ with tab6:
                     st.altair_chart(fig_count, use_container_width=True)
                 
                 with c_p2:
-                    sector_mcap = scanned_df.groupby('Sector')['시가총액_num'].sum().reset_index()
+                    sector_mcap = st.session_state.sp100_state_df.groupby('Sector')['시가총액_num'].sum().reset_index()
                     fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="시가총액_num", type="quantitative"),
                         color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=2, labelLimit=250)),
                         tooltip=['Sector', alt.Tooltip('시가총액_num', format=",.0f", title="시가총액(USD)")]
                     ).properties(title="[종합 시가총액 기준]", height=380)
                     st.altair_chart(fig_mcap, use_container_width=True)
-            else:
-                st.info("👇 아래의 스캔 버튼을 눌러 데이터를 불러오면 이곳에 '섹터별 주도 비중(쌍둥이 도넛 그래프)'이 나타납니다.")
-        
-        with col_ndx:
-            st.markdown("#### 📈 나스닥(^IXIC) 기간별 수익률 지표")
-            ndx_data = get_nasdaq_performance()
-            if ndx_data:
-                ndx_df = pd.DataFrame([ndx_data])
-                def color_val(val):
-                    color = '#ef4444' if val < 0 else '#22c55e'
-                    return f"color: {color}; font-weight: bold;"
-                # 소수점 둘째자리 포맷팅
-                formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
-                st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
-                
-                # 💡 나스닥 1년 흐름 (OANDA NAS100USD 실시간 주봉 영역 차트)
-                st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉)")
-                ndx_tv_widget = """
-                <div class="tradingview-widget-container" style="height:280px;width:100%;">
-                  <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
-                  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-                  <script type="text/javascript">
-                  new TradingView.widget({
-                  "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
-                  "theme": "light", "style": "3", "locale": "kr", "enable_publishing": false,
-                  "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
-                  "container_id": "tradingview_ixic"
-                  });
-                  </script>
-                </div>
-                """
-                components.html(ndx_tv_widget, height=280)
-            else:
-                st.write("나스닥 데이터를 불러오는 중입니다...")
+            
+            with col_ndx:
+                st.markdown("#### 📈 나스닥(^IXIC) 기간별 수익률 지표")
+                ndx_data = get_nasdaq_performance()
+                if ndx_data:
+                    ndx_df = pd.DataFrame([ndx_data])
+                    def color_val(val):
+                        color = '#ef4444' if val < 0 else '#22c55e'
+                        return f"color: {color}; font-weight: bold;"
+                    formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
+                    st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
+                    
+                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들)")
+                    ndx_tv_widget = """
+                    <div class="tradingview-widget-container" style="height:280px;width:100%;">
+                      <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
+                      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                      <script type="text/javascript">
+                      new TradingView.widget({
+                      "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
+                      "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+                      "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
+                      "container_id": "tradingview_ixic"
+                      });
+                      </script>
+                    </div>
+                    """
+                    components.html(ndx_tv_widget, height=280)
+                else:
+                    st.write("나스닥 데이터를 불러오는 중입니다...")
 
-        st.markdown("---")
+            st.markdown("---")
 
-        if not st.session_state.sp100_state_df.empty:
             symbols = st.session_state.sp100_state_df['Symbol'].tolist()
             chunks = [symbols[i:i+25] for i in range(0, 100, 25)]
             labels = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
             
+            st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 '4시간봉 EMA 200 vs 1일봉 EMA 200' 크로스 현황을 정밀 스캔합니다.")
             cols = st.columns(4)
             for i in range(4):
                 if i < len(chunks):
@@ -743,11 +704,6 @@ with tab6:
                                 current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                 
                                 for sym in chunks[i]:
-                                    try: 
-                                        tk = yf.Ticker(sym, session=session)
-                                        mcap = tk.fast_info.get('marketCap', 0)
-                                    except: mcap = 0
-
                                     if sym not in data_1d.columns or sym not in data_1h.columns:
                                         c_type, c_date, c_price = "데이터 부족", "-", "-"
                                     else:
@@ -771,7 +727,6 @@ with tab6:
                                             df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
                                             
                                             merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
-                                            
                                             merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
                                             merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
                                             
@@ -797,21 +752,12 @@ with tab6:
                                     st.session_state.sp100_state_df.loc[mask, '크로스 날짜'] = c_date
                                     st.session_state.sp100_state_df.loc[mask, '크로스 당시 주가'] = c_price
                                     st.session_state.sp100_state_df.loc[mask, '업데이트 날짜'] = current_update_time
-                                    st.session_state.sp100_state_df.loc[mask, '시가총액_num'] = mcap
-                                    st.session_state.sp100_state_df.loc[mask, '시총'] = format_mcap_krw(mcap)
-                                
-                                scanned_mask = st.session_state.sp100_state_df['시가총액_num'] > 0
-                                if scanned_mask.any():
-                                    st.session_state.sp100_state_df.loc[scanned_mask, '섹터 내 순위'] = \
-                                        st.session_state.sp100_state_df[scanned_mask].groupby('Sector')['시가총액_num'].rank(ascending=False, method='min')
-                                    def format_rank(r): return f"섹터 {int(r)}위" if pd.notna(r) else "-"
-                                    st.session_state.sp100_state_df['섹터 순위'] = st.session_state.sp100_state_df['섹터 내 순위'].apply(format_rank)
 
-                                st.success(f"✅ {current_update_time} 기준, {labels[i]} 분석 완료!")
+                                st.success(f"✅ {current_update_time} 기준, {labels[i]} 크로스 분석 완료!")
                                 st.rerun() 
                                 
                             except Exception as e:
                                 st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
             display_cols = ['순위', '시총', 'Symbol', 'Name', 'Sector', '섹터 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
-            st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=500)
+            st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=600)
