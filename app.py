@@ -83,15 +83,24 @@ def load_sector_data():
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
 def format_mcap_krw(usd_val):
-    if not usd_val or usd_val <= 0: return "-"
-    krw_val = usd_val * 1380
-    if krw_val >= 1e12: # 조 단위
-        trillion = krw_val / 1e12
-        return f"{trillion:.1f}조원".replace(".0조", "조")
-    elif krw_val >= 1e8: # 억 단위
-        billion = krw_val / 1e8
-        return f"{int(billion):,}억원"
-    return "-"
+    try:
+        val = float(usd_val)
+        if val <= 0: return "-"
+        krw_val = val * 1380
+        if krw_val >= 1e12: # 조 단위
+            trillion = krw_val / 1e12
+            # 1조 미만의 단위를 억으로 환산하여 표현 (예: 1.3조 -> 1조 3,000억원)
+            t_part = int(trillion)
+            b_part = int((trillion - t_part) * 10000)
+            if t_part == 0: return f"{b_part:,}억원"
+            if b_part == 0: return f"{t_part:,}조원"
+            return f"{t_part:,}조 {b_part:,}억원"
+        elif krw_val >= 1e8: # 억 단위
+            billion = krw_val / 1e8
+            return f"{int(billion):,}억원"
+        return "-"
+    except:
+        return usd_val
 
 SECTOR_TRANSLATIONS = {
     "Technology Services": "Information Technology (정보기술)",
@@ -116,7 +125,7 @@ SECTOR_TRANSLATIONS = {
 NAME_TRANSLATIONS = {
     "AAPL": "Apple Inc. (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
     "GOOGL": "Alphabet Class A (구글)", "GOOG": "Alphabet Class C (구글)", "AMZN": "Amazon (아마존)",
-    "META": "Meta Platforms (메타/페이스북)", "BRK-B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)",
+    "META": "Meta Platforms (메타/페이스북)", "BRK.B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)",
     "TSLA": "Tesla (테슬라)", "AVGO": "Broadcom (브로드컴)", "V": "Visa (비자)",
     "JPM": "JPMorgan Chase (JP모건)", "WMT": "Walmart (월마트)", "UNH": "UnitedHealth (유나이티드헬스)",
     "MA": "Mastercard (마스터카드)", "PG": "Procter & Gamble (P&G)", "JNJ": "Johnson & Johnson (존슨앤드존슨)",
@@ -125,7 +134,7 @@ NAME_TRANSLATIONS = {
     "NFLX": "Netflix (넷플릭스)", "KO": "Coca-Cola (코카콜라)", "PEP": "PepsiCo (펩시코)",
     "DIS": "Walt Disney (디즈니)", "CSCO": "Cisco Systems (시스코)", "ADBE": "Adobe (어도비)",
     "QCOM": "Qualcomm (퀄컴)", "INTC": "Intel (인텔)", "ARM": "ARM Holdings (암 홀딩스)",
-    "PLTR": "Palantir (팔란티어)"
+    "PLTR": "Palantir (팔란티어)", "RTX": "RTX Corporation (레이시온)", "PFE": "Pfizer (화이자)"
 }
 
 def get_robust_session():
@@ -509,10 +518,14 @@ with tab6:
             filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
             if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
                 
-            disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1w"]
+            # 리서치 탭 테이블 렌더링 시 시가총액을 format_mcap_krw로 즉시 변환
+            df_display = df_sector.copy()
+            df_display['market_cap_formatted'] = df_display['market_cap'].apply(lambda x: format_mcap_krw(float(x)) if pd.notna(x) and str(x).replace('.','',1).isdigit() else x)
+            
+            disp_cols = ["ticker", "sector", "market_cap_formatted", "vol_1d", "vol_1w"]
             df_selected = st.dataframe(
-                df_sector[disp_cols],
-                column_config={"ticker": "티커", "sector": "섹터", "market_cap": "시가총액", "vol_1d": "EMA 크로스 (4H/1D)", "vol_1w": "크로스 발생일"},
+                df_display[disp_cols],
+                column_config={"ticker": "티커", "sector": "섹터", "market_cap_formatted": "시가총액", "vol_1d": "EMA 크로스 (4H/1D)", "vol_1w": "크로스 발생일"},
                 use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
             )
             
@@ -629,20 +642,28 @@ with tab6:
                 with c_p1:
                     sector_count = st.session_state.sp100_state_df['Sector'].value_counts().reset_index()
                     sector_count.columns = ['Sector', 'Count']
+                    sector_count['Percentage'] = (sector_count['Count'] / sector_count['Count'].sum() * 100).round(1).astype(str) + '%'
+                    sector_count['LegendLabel'] = sector_count['Sector'] + " (" + sector_count['Percentage'] + ")"
+                    
                     fig_count = alt.Chart(sector_count).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="Count", type="quantitative"),
-                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=2, labelLimit=250)),
-                        tooltip=['Sector', alt.Tooltip('Count', title="포함 종목 수")]
-                    ).properties(title="[종목 개수 기준]", height=380)
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (종목 수)", orient="bottom", columns=1, labelLimit=500)),
+                        tooltip=['Sector', alt.Tooltip('Count', title="포함 종목 수"), alt.Tooltip('Percentage', title="비중")]
+                    ).properties(title="[종목 개수 기준]", height=450)
                     st.altair_chart(fig_count, use_container_width=True)
                 
                 with c_p2:
                     sector_mcap = st.session_state.sp100_state_df.groupby('Sector')['시가총액_num'].sum().reset_index()
+                    total_mcap = sector_mcap['시가총액_num'].sum()
+                    sector_mcap['Percentage'] = (sector_mcap['시가총액_num'] / total_mcap * 100).round(1).astype(str) + '%'
+                    sector_mcap['Formatted_Mcap'] = sector_mcap['시가총액_num'].apply(format_mcap_krw)
+                    sector_mcap['LegendLabel'] = sector_mcap['Sector'] + " (" + sector_mcap['Percentage'] + ")"
+                    
                     fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="시가총액_num", type="quantitative"),
-                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=2, labelLimit=250)),
-                        tooltip=['Sector', alt.Tooltip('시가총액_num', format=",.0f", title="시가총액(USD)")]
-                    ).properties(title="[종합 시가총액 기준]", height=380)
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (시총 합산)", orient="bottom", columns=1, labelLimit=500)),
+                        tooltip=['Sector', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
+                    ).properties(title="[종합 시가총액 기준]", height=450)
                     st.altair_chart(fig_mcap, use_container_width=True)
             
             with col_ndx:
@@ -656,22 +677,22 @@ with tab6:
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                     
-                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들)")
+                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 선 차트)")
                     ndx_tv_widget = """
-                    <div class="tradingview-widget-container" style="height:280px;width:100%;">
+                    <div class="tradingview-widget-container" style="height:320px;width:100%;">
                       <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
                       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
                       <script type="text/javascript">
                       new TradingView.widget({
                       "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
-                      "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+                      "theme": "light", "style": "3", "locale": "kr", "enable_publishing": false,
                       "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
                       "container_id": "tradingview_ixic"
                       });
                       </script>
                     </div>
                     """
-                    components.html(ndx_tv_widget, height=280)
+                    components.html(ndx_tv_widget, height=320)
                 else:
                     st.write("나스닥 데이터를 불러오는 중입니다...")
 
