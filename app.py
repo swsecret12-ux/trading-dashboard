@@ -79,6 +79,30 @@ def load_sector_data():
     if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
+# 💡 영우 님이 요청하신 한글 번역 사전 (섹터 및 주요 종목)
+SECTOR_TRANSLATION = {
+    "Information Technology": "정보기술", "Health Care": "헬스케어",
+    "Financials": "금융", "Consumer Discretionary": "자유소비재",
+    "Communication Services": "커뮤니케이션", "Industrials": "산업재",
+    "Consumer Staples": "필수소비재", "Energy": "에너지",
+    "Utilities": "유틸리티", "Real Estate": "부동산", "Materials": "소재"
+}
+
+COMPANY_TRANSLATION = {
+    "AAPL": "애플", "MSFT": "마이크로소프트", "NVDA": "엔비디아", "AMZN": "아마존",
+    "META": "메타", "GOOGL": "구글", "GOOG": "구글", "TSLA": "테슬라",
+    "BRK.B": "버크셔 해서웨이", "LLY": "일라이 릴리", "AVGO": "브로드컴",
+    "V": "비자", "JPM": "JP모건", "WMT": "월마트", "UNH": "유나이티드헬스",
+    "MA": "마스터카드", "PG": "P&G", "JNJ": "존슨앤드존슨", "HD": "홈디포",
+    "MRK": "머크", "ORCL": "오라클", "CVX": "쉐브론", "COST": "코스트코",
+    "ABBV": "애브비", "BAC": "뱅크오브아메리카", "KO": "코카콜라", "NFLX": "넷플릭스",
+    "PEP": "펩시코", "TMO": "써모피셔", "CRM": "세일즈포스", "AMD": "AMD",
+    "QCOM": "퀄컴", "CSCO": "시스코", "INTC": "인텔", "SNOW": "스노우플레이크",
+    "DIS": "디즈니", "MCD": "맥도날드", "ADBE": "어도비", "IBM": "IBM",
+    "NKE": "나이키", "SBUX": "스타벅스", "BA": "보잉", "PFE": "화이자",
+    "AMAT": "어플라이드 머티리얼즈", "AMGN": "암젠", "AMT": "아메리칸 타워"
+}
+
 @st.cache_data(ttl=86400)
 def get_sp100_data():
     try:
@@ -137,6 +161,8 @@ if "ai_analysis_done" not in st.session_state:
     st.session_state.ai_img_files = [] 
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0 
+if "sp100_state_df" not in st.session_state:
+    st.session_state.sp100_state_df = pd.DataFrame()
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
@@ -436,26 +462,30 @@ with tab6:
                     if s_ticker:
                         st_id = "swsecret@naver.com"
                         st_pw = "1!REre4423"
-                        with st.spinner("데이터 수집 및 크로스체크 심층 분석 중..."):
-                            fin_data = fetch_financial_data(s_ticker.strip())
-                            st_news_content = fetch_saveticker_news(st_id, st_pw)
-                            
-                            if "error" in fin_data: st.error(f"데이터 수집 실패: {fin_data['error']}")
-                            else:
-                                ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
-                                left_column_html = f"""
-                                <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
-                                <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
-                                <div class='info-card'><h4>💰 분기 실적 (Earnings)</h4>{fin_data.get('earnings_html', '')}</div>
-                                <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
-                                """
-                                insert_db("sector_analysis", {
-                                    "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', ''),
-                                    "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
-                                    "vol_1m": "", "vol_1q": "", "vol_1y": "",
-                                    "issue": left_column_html, "detail_data": fin_data.get('raw_news', ''), "ai_analysis": ai_res
-                                })
-                                st.success("리서치 리포트 등록 완료!"); time.sleep(1); st.rerun()
+                        with st.spinner("데이터 수집 및 크로스체크 심층 분석 중... (최대 10초)"):
+                            try:
+                                fin_data = fetch_financial_data(s_ticker.strip())
+                                st_news_content = fetch_saveticker_news(st_id, st_pw)
+                                
+                                if "error" in fin_data: 
+                                    st.error(f"데이터 수집 실패: {fin_data['error']}")
+                                else:
+                                    ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
+                                    left_column_html = f"""
+                                    <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
+                                    <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
+                                    <div class='info-card'><h4>💰 분기 실적 (Earnings)</h4>{fin_data.get('earnings_html', '')}</div>
+                                    <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
+                                    """
+                                    insert_db("sector_analysis", {
+                                        "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', ''),
+                                        "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
+                                        "vol_1m": "", "vol_1q": "", "vol_1y": "",
+                                        "issue": left_column_html, "detail_data": fin_data.get('raw_news', ''), "ai_analysis": ai_res
+                                    })
+                                    st.success("리서치 리포트 등록 완료!"); time.sleep(1); st.rerun()
+                            except Exception as e:
+                                st.error(f"분석 중 치명적 오류 발생: {str(e)}")
 
         df_sector = load_sector_data()
         if not df_sector.empty:
@@ -481,6 +511,7 @@ with tab6:
                 with col_st2:
                     if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
                 
+                # 💡 트레이딩뷰 위젯: 볼린저 밴드와 200 EMA 추가
                 st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
                 tv_widget = f"""
                 <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -492,14 +523,14 @@ with tab6:
                   "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
                   "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
                   "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-                  "studies": ["Moving Average Exponential@tv-basicstudies", "Moving Average Exponential@tv-basicstudies"],
+                  "studies": ["Moving Average Exponential@tv-basicstudies", "Bollinger Bands@tv-basicstudies"],
                   "container_id": "tradingview_{stock_data['ticker']}"
                   }});
                   </script>
                 </div>
                 """
                 components.html(tv_widget, height=650)
-                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 지수이동평균선(EMA) 2개의 길이를 200으로 설정하세요! (1일봉, 4시간봉 번갈아가며 확인)")
+                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 지수이동평균선(EMA)을 200으로 설정하세요! (볼린저 밴드 탑재)")
                 
                 st.markdown("---")
                 c_left, c_right = st.columns([4, 6], gap="large")
@@ -516,102 +547,120 @@ with tab6:
         st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (S&P 100)")
         st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 **'4시간봉 EMA 200 vs 1일봉 EMA 200'** 크로스 현황을 정밀 스캔합니다.")
         
-        df_sp100 = get_sp100_data()
+        # 1. 최초 1회만 데이터 로드 후 세션에 저장 (초기화)
+        if st.session_state.sp100_state_df.empty:
+            df_sp100 = get_sp100_data()
+            if not df_sp100.empty and 'Sector' in df_sp100.columns:
+                # 💡 순위 열 추가 (가장 왼쪽)
+                df_sp100.insert(0, '순위', range(1, 1 + len(df_sp100)))
+                
+                # 💡 한글 번역 맵핑 함수
+                def format_name(row):
+                    kor_name = COMPANY_TRANSLATION.get(row['Symbol'], "")
+                    return f"{row['Name']} ({kor_name})" if kor_name else row['Name']
+
+                def format_sector(val):
+                    kor_sec = SECTOR_TRANSLATION.get(val, "")
+                    return f"{val} ({kor_sec})" if kor_sec else val
+
+                df_sp100['Name'] = df_sp100.apply(format_name, axis=1)
+                df_sp100['Sector'] = df_sp100['Sector'].apply(format_sector)
+                
+                df_sp100['크로스 상태 (4H/1D EMA200)'] = "대기 중"
+                df_sp100['크로스 날짜'] = "-"
+                df_sp100['크로스 당시 주가'] = "-"
+                df_sp100['업데이트 날짜'] = "-"
+                
+                st.session_state.sp100_state_df = df_sp100
+            else:
+                st.error("위키피디아에서 S&P 100 데이터를 정상적으로 불러오지 못했습니다. 잠시 후 다시 시도해주세요.")
         
-        if not df_sp100.empty and 'Sector' in df_sp100.columns:
-            # 💡 100개 목록 전체를 보여주는 빈 껍데기 표 출력
-            df_placeholder = st.empty()
-            df_placeholder.dataframe(df_sp100, use_container_width=True, hide_index=True)
+        # 2. 캐싱된 데이터 표출 (스크롤 영역 고정)
+        if not st.session_state.sp100_state_df.empty:
             
-            symbols = df_sp100['Symbol'].tolist()
+            # 💡 높이(height)를 600으로 고정하여 거슬리는 무한 스크롤 방지
+            st.dataframe(st.session_state.sp100_state_df, use_container_width=True, hide_index=True, height=600)
+            
+            symbols = st.session_state.sp100_state_df['Symbol'].tolist()
             original_symbols = symbols[:100]
             yf_symbols = [s.replace('.', '-') for s in original_symbols]
             
             chunks_orig = [original_symbols[i:i+25] for i in range(0, 100, 25)]
             chunks_yf = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
             labels = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
+            ranges = [(0, 25), (25, 50), (50, 75), (75, 100)]
             
             cols = st.columns(4)
-            for i in range(len(chunks_orig)):
-                if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True):
-                    with st.spinner(f"{labels[i]} 종목 데이터 수집 및 4H/1D 크로스 분석 중... (약 10~20초 소요)"):
-                        try:
-                            data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
-                            data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
-                            
-                            if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
-                            else: data_1d = pd.DataFrame()
+            for i in range(4):
+                if i < len(chunks_orig):
+                    if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True):
+                        with st.spinner(f"{labels[i]} 종목 데이터 수집 및 4H/1D 크로스 분석 중... (약 5~10초)"):
+                            try:
+                                data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
+                                data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
                                 
-                            if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
-                            else: data_1h = pd.DataFrame()
-                                
-                            if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks_yf[i][0])
-                            if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks_yf[i][0])
-                            
-                            cross_results = []
-                            for orig_sym, yf_sym in zip(chunks_orig[i], chunks_yf[i]):
-                                if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns:
-                                    cross_results.append({"Symbol": orig_sym, "크로스 상태 (4H/1D EMA200)": "데이터 없음", "크로스 날짜": "-", "크로스 당시 주가": "-"})
-                                    continue
-                                
-                                df_sym_1d = data_1d[yf_sym].dropna()
-                                df_sym_1h = data_1h[yf_sym].dropna()
-                                
-                                if len(df_sym_1d) < 200 or len(df_sym_1h) < 200:
-                                    cross_results.append({"Symbol": orig_sym, "크로스 상태 (4H/1D EMA200)": "데이터 부족", "크로스 날짜": "-", "크로스 당시 주가": "-"})
-                                    continue
+                                if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
+                                else: data_1d = data_1d_raw
                                     
-                                df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
-                                df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
-                                
-                                df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
-                                df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
-                                df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
-                                
-                                # 💡 타임존 병합 에러(incompatible merge keys) 방지를 위해 강제 UTC 통일
-                                df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
-                                df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
-                                
-                                df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
-                                df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
-                                
-                                merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
-                                
-                                merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
-                                merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
-                                
-                                gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])]
-                                dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])]
-                                
-                                if not gc.empty or not dc.empty:
-                                    last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
-                                    last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
+                                else: data_1h = data_1h_raw
                                     
-                                    latest_idx = max(last_gc, last_dc)
-                                    c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
-                                    c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
-                                    c_price = f"${merged.loc[latest_idx, 'Close']:.2f}"
-                                else:
-                                    c_type, c_date, c_price = "최근 1년 내 크로스 없음", "-", "-"
-                                    
-                                cross_results.append({
-                                    "Symbol": orig_sym, 
-                                    "크로스 상태 (4H/1D EMA200)": c_type, 
-                                    "크로스 날짜": c_date, 
-                                    "크로스 당시 주가": c_price
-                                })
+                                if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks_yf[i][0])
+                                if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks_yf[i][0])
                                 
-                            df_chunk = df_sp100[df_sp100['Symbol'].isin(chunks_orig[i])]
-                            df_cross = pd.DataFrame(cross_results)
-                            df_final = pd.merge(df_chunk, df_cross, on="Symbol", how="left")
-                            
-                            df_placeholder.empty()
-                            st.success(f"✅ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 기준, {labels[i]} 4H/1D 크로스 분석 완료!")
-                            st.dataframe(df_final, use_container_width=True, hide_index=True)
-                            
-                        except Exception as e:
-                            st.error(f"야후 파이낸스 데이터 묶음 스캔 중 오류 발생: {str(e)}")
-        else:
-            st.error("위키피디아에서 S&P 100 데이터를 정상적으로 불러오지 못했습니다.")
-            if 'Error' in df_sp100.columns:
-                st.info(f"상세 에러: {df_sp100['Error'].iloc[0]}")
+                                current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                
+                                for orig_sym, yf_sym in zip(chunks_orig[i], chunks_yf[i]):
+                                    if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns:
+                                        c_type, c_date, c_price = "데이터 없음", "-", "-"
+                                    else:
+                                        df_sym_1d = data_1d[yf_sym].dropna()
+                                        df_sym_1h = data_1h[yf_sym].dropna()
+                                        
+                                        if len(df_sym_1d) < 200 or len(df_sym_1h) < 200:
+                                            c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                        else:
+                                            df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
+                                            df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
+                                            
+                                            df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
+                                            df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
+                                            df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
+                                            
+                                            # 💡 타임존 병합 에러 원천 차단 (강제 UTC 통일)
+                                            df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
+                                            df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
+                                            
+                                            df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
+                                            df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
+                                            
+                                            merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
+                                            
+                                            merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
+                                            merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
+                                            
+                                            gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])]
+                                            dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])]
+                                            
+                                            if not gc.empty or not dc.empty:
+                                                last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                                last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                                
+                                                latest_idx = max(last_gc, last_dc)
+                                                c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
+                                                c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
+                                                c_price = f"${merged.loc[latest_idx, 'Close']:.2f}"
+                                            else:
+                                                c_type, c_date, c_price = "최근 1년 내 크로스 없음", "-", "-"
+                                    
+                                    # 💡 상태 영구 저장 (세션 데이터프레임 다이렉트 업데이트)
+                                    mask = st.session_state.sp100_state_df['Symbol'] == orig_sym
+                                    st.session_state.sp100_state_df.loc[mask, '크로스 상태 (4H/1D EMA200)'] = c_type
+                                    st.session_state.sp100_state_df.loc[mask, '크로스 날짜'] = c_date
+                                    st.session_state.sp100_state_df.loc[mask, '크로스 당시 주가'] = c_price
+                                    st.session_state.sp100_state_df.loc[mask, '업데이트 날짜'] = current_update_time
+                                
+                                st.rerun() # 업데이트 후 표 즉시 새로고침
+                                
+                            except Exception as e:
+                                st.error(f"야후 파이낸스 데이터 묶음 스캔 중 오류 발생: {str(e)}")
