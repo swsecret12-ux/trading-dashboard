@@ -11,11 +11,12 @@ import ccxt
 import altair as alt
 from datetime import datetime, timezone, timedelta
 from PIL import Image
-from bs4 import BeautifulSoup
 import google.generativeai as genai
 import streamlit.components.v1 as components
-import yfinance as yf
 
+# ==========================================
+# --- 1. 클라우드 및 AI 세팅 ---
+# ==========================================
 URL = st.secrets.get("SUPABASE_URL", "")
 KEY = st.secrets.get("SUPABASE_KEY", "")
 HEADERS = {
@@ -80,6 +81,7 @@ def load_sector_data():
     if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
+# 💡 미국 시총 100위 고정 데이터베이스 (위키피디아 의존성 100% 제거)
 TOP_100_STOCKS = [
     {"Symbol": "MSFT", "Name": "Microsoft (마이크로소프트)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "AAPL", "Name": "Apple Inc. (애플)", "Sector": "Information Technology (정보기술)"},
@@ -190,13 +192,14 @@ def format_mcap_krw(usd_val):
     if krw_val >= 1e12:
         trillion = int(krw_val // 1e12)
         billion = int((krw_val % 1e12) // 1e8)
-        if billion > 0:
-            return f"{trillion:,}조 {billion:,}억원"
+        if billion > 0: return f"{trillion:,}조 {billion:,}억원"
         return f"{trillion:,}조원"
     elif krw_val >= 1e8:
         return f"{int(krw_val // 1e8):,}억원"
     return "-"
 
+# yfinance 내부 세션 속도 최적화
+import yfinance as yf
 def get_robust_session():
     session = requests.Session()
     session.headers.update({
@@ -221,7 +224,7 @@ from api_utils import (
     get_real_ai_advice, render_ai_advice_block, render_blog_image_html, 
     render_crisp_image_html, get_file_group_info, execute_survival_trade, load_theory_db
 )
-from market_research import fetch_financial_data, analyze_sector_with_ai, fetch_saveticker_news
+from market_research import fetch_financial_data, analyze_sector_with_ai
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
@@ -255,6 +258,7 @@ if "sp100_state_df" not in st.session_state:
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
+# --- Tab 1 ~ Tab 5 (기존 코드 유지) ---
 with tab1:
     st.header("📝 매매 기록 보관지")
     df_trade = load_trade_data()
@@ -533,6 +537,7 @@ with tab5:
     with sub_tab_b:
         st.markdown("### 👀 나의 관점 (Watchlist)")
 
+# --- Tab 6: 섹터 & 주도주 맵 ---
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
@@ -599,7 +604,7 @@ with tab6:
                 with col_st2:
                     if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
                 
-                # 💡 트레이딩뷰 위젯: EMA 200 1개 + 볼린저 밴드(BB) 1개 정확히 적용
+                # 💡 트레이딩뷰 위젯: EMA (MAExp) + RSI 적용
                 st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
                 tv_widget = f"""
                 <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -611,14 +616,14 @@ with tab6:
                   "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
                   "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
                   "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-                  "studies": ["MAExp@tv-basicstudies", "BollingerBands@tv-basicstudies"],
+                  "studies": ["MAExp@tv-basicstudies", "RSI@tv-basicstudies"],
                   "container_id": "tradingview_{stock_data['ticker']}"
                   }});
                   </script>
                 </div>
                 """
                 components.html(tv_widget, height=650)
-                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 BB(볼린저 밴드)의 설정을 입맛대로 변경하세요!")
+                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
                 
                 st.markdown("---")
                 c_left, c_right = st.columns([4, 6], gap="large")
@@ -647,15 +652,13 @@ with tab6:
             df_init['업데이트 날짜'] = "-"
             st.session_state.sp100_state_df = df_init
 
-        # 💡 레이아웃 비율 [6:4] 조절로 도넛 차트 벙벙함 해결 및 쌍둥이 도넛 추가
+        # 💡 레이아웃 비율 [6:4] 조절 및 쌍둥이 도넛 차트
         col_pie, col_ndx = st.columns([6, 4], gap="large")
         
         with col_pie:
             scanned_df = st.session_state.sp100_state_df[st.session_state.sp100_state_df['시가총액_num'] > 0]
             if not scanned_df.empty:
                 st.markdown("#### 🍩 미국 주도 섹터 비중 (스캔된 종목 기준)")
-                
-                # 쌍둥이 도넛 차트 레이아웃
                 c_p1, c_p2 = st.columns(2)
                 
                 with c_p1:
@@ -663,18 +666,18 @@ with tab6:
                     sector_count.columns = ['Sector', 'Count']
                     fig_count = alt.Chart(sector_count).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="Count", type="quantitative"),
-                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title="섹터 (종목 수)", orient="bottom", labelLimit=0)),
+                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=2, labelLimit=250)),
                         tooltip=['Sector', alt.Tooltip('Count', title="포함 종목 수")]
-                    ).properties(title="[종목 개수 기준]", height=320)
+                    ).properties(title="[종목 개수 기준]", height=380)
                     st.altair_chart(fig_count, use_container_width=True)
                 
                 with c_p2:
                     sector_mcap = scanned_df.groupby('Sector')['시가총액_num'].sum().reset_index()
                     fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="시가총액_num", type="quantitative"),
-                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title="섹터 (시총 합산)", orient="bottom", labelLimit=0)),
+                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=2, labelLimit=250)),
                         tooltip=['Sector', alt.Tooltip('시가총액_num', format=",.0f", title="시가총액(USD)")]
-                    ).properties(title="[종합 시가총액 기준]", height=320)
+                    ).properties(title="[종합 시가총액 기준]", height=380)
                     st.altair_chart(fig_mcap, use_container_width=True)
             else:
                 st.info("👇 아래의 스캔 버튼을 눌러 데이터를 불러오면 이곳에 '섹터별 주도 비중(쌍둥이 도넛 그래프)'이 나타납니다.")
@@ -687,20 +690,20 @@ with tab6:
                 def color_val(val):
                     color = '#ef4444' if val < 0 else '#22c55e'
                     return f"color: {color}; font-weight: bold;"
-                # 소수점 둘째자리 포맷팅 고정
+                # 소수점 둘째자리 포맷팅
                 formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                 
-                # 💡 나스닥 실시간 주봉(Weekly) 캔들 차트 (TradingView)
-                st.markdown("#### 📊 나스닥 1년 흐름 (주봉 캔들)")
+                # 💡 나스닥 1년 흐름 (OANDA NAS100USD 실시간 주봉 영역 차트)
+                st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉)")
                 ndx_tv_widget = """
                 <div class="tradingview-widget-container" style="height:280px;width:100%;">
                   <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
                   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
                   <script type="text/javascript">
                   new TradingView.widget({
-                  "autosize": true, "symbol": "NASDAQ:IXIC", "interval": "W", "timezone": "Etc/UTC",
-                  "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+                  "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
+                  "theme": "light", "style": "3", "locale": "kr", "enable_publishing": false,
                   "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
                   "container_id": "tradingview_ixic"
                   });
