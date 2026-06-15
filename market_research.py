@@ -45,7 +45,12 @@ def fetch_saveticker_news(user_id, password):
 
 def fetch_financial_data(ticker_symbol):
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        # 💡 야후 파이낸스 차단(Too Many Requests) 방어용 우회 세션 추가
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        ticker = yf.Ticker(ticker_symbol, session=session)
         info = ticker.info
         
         market_cap = info.get('marketCap', 0)
