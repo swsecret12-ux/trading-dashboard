@@ -590,7 +590,7 @@ with tab6:
                 use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
             )
             
-                if df_selected.get('selection', {}).get('rows', []):
+            if df_selected.get('selection', {}).get('rows', []):
                 st.divider()
                 stock_data = df_sector.iloc[df_selected['selection']['rows'][0]]
                 s_id = stock_data['id']
