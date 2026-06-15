@@ -8,15 +8,14 @@ import xml.etree.ElementTree as ET
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# 💡 야후 파이낸스 IP 차단(Too Many Requests)을 완벽하게 뚫어내는 우회 세션 구축
+# 💡 야후 파이낸스 무한 로딩 방지 (대기 시간 및 재시도 횟수 최적화)
 def get_robust_session():
     session = requests.Session()
-    # 429(차단), 500대 에러 발생 시 최대 5번까지 텀을 두고 집요하게 재시도합니다.
-    retry = Retry(connect=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
+    # 기존 5번 재시도 -> 2번으로 줄여서 병목(무한 로딩) 방지
+    retry = Retry(connect=2, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
     adapter = HTTPAdapter(max_retries=retry)
     session.mount('http://', adapter)
     session.mount('https://', adapter)
-    # 봇이 아닌 일반 구글 크롬 브라우저인 것처럼 위장합니다.
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     })
@@ -61,7 +60,6 @@ def fetch_saveticker_news(user_id, password):
 
 def fetch_financial_data(ticker_symbol):
     try:
-        # 강력한 우회 세션을 적용하여 Ticker 객체 생성
         session = get_robust_session()
         ticker = yf.Ticker(ticker_symbol, session=session)
         info = ticker.info
@@ -132,7 +130,7 @@ def fetch_financial_data(ticker_symbol):
             curr_4h_ema200 = "-"
             curr_1d_ema200 = f"${hist_1d['EMA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['EMA200_1D'].iloc[-1]) else "-"
 
-        # 실적 처리
+        # 💡 실적 처리 로직
         earnings_html = ""
         try:
             try:
@@ -151,7 +149,6 @@ def fetch_financial_data(ticker_symbol):
                     edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('America/New_York')
                 
                 edts['Date'] = edts[date_col].dt.strftime('%Y-%m-%d')
-                
                 current_time_ny = pd.Timestamp.now(tz='America/New_York')
                 
                 def get_earnings_price_change(target_date_str):
@@ -192,11 +189,15 @@ def fetch_financial_data(ticker_symbol):
             else: earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다.</p>"
         except Exception as e: earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
-        # 급변동(10% 이상) 팩트체크 로직
+        # 💡 급변동(10% 이상) 팩트체크 타임존 에러 완벽 해결
         volatility_events = []
         try:
             recent_hist = hist_1d.tail(60) 
-            ndx_hist = yf.Ticker("^IXIC", session=session).history(period="1y")
+            # 나스닥 지수 로드 실패 시 무시하도록 처리
+            try:
+                ndx_hist = yf.Ticker("^IXIC", session=session).history(period="1y")
+            except:
+                ndx_hist = pd.DataFrame()
             
             for i in range(1, len(recent_hist)):
                 prev_c = recent_hist['Close'].iloc[i-1]
@@ -207,16 +208,21 @@ def fetch_financial_data(ticker_symbol):
                     target_d = recent_hist.index[i]
                     date_str = target_d.strftime('%Y-%m-%d')
                     ndx_pct_str = "확인불가"
+                    
                     if not ndx_hist.empty:
                         try:
-                            if target_d.tzinfo is not None and ndx_hist.index.tz is None:
-                                ndx_hist.index = ndx_hist.index.tz_localize('UTC').tz_convert(target_d.tzinfo)
-                            ndx_idx = ndx_hist.index.get_indexer([target_d], method='nearest')[0]
-                            if ndx_idx > 0:
-                                n_prev = ndx_hist['Close'].iloc[ndx_idx-1]
-                                n_curr = ndx_hist['Close'].iloc[ndx_idx]
+                            # 둘 다 타임존을 강제로 UTC로 통일하여 비교 (에러 원천 차단)
+                            target_d_utc = pd.to_datetime(target_d, utc=True)
+                            ndx_idx_utc = pd.to_datetime(ndx_hist.index, utc=True)
+                            
+                            idx_arr = ndx_idx_utc.get_indexer([target_d_utc], method='nearest')
+                            if len(idx_arr) > 0 and idx_arr[0] > 0:
+                                n_idx = idx_arr[0]
+                                n_prev = ndx_hist['Close'].iloc[n_idx-1]
+                                n_curr = ndx_hist['Close'].iloc[n_idx]
                                 ndx_pct_str = f"{((n_curr - n_prev) / n_prev) * 100:+.1f}%"
                         except: pass
+                        
                     volatility_events.append(f"- 날짜: {date_str} | 종목등락: {pct_change:+.1f}% (${prev_c:.2f}->${curr_c:.2f}) | 당일 나스닥등락: {ndx_pct_str}")
         except: pass
         vol_text = "\n".join(volatility_events) if volatility_events else "최근 2개월 내 10% 이상 일일 급변동 없음."
