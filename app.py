@@ -8,6 +8,7 @@ import os
 import io
 import time
 import ccxt
+import altair as alt
 from datetime import datetime, timezone
 from PIL import Image
 from bs4 import BeautifulSoup
@@ -79,7 +80,6 @@ def load_sector_data():
     if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
-# 💡 위키피디아 에러를 원천 차단하는 '미국 실제 시총 Top 100 기업' 하드코딩 리스트 (테슬라, 신규 상장주 포함)
 TOP_100_STOCKS = [
     {"Symbol": "MSFT", "Name": "Microsoft (마이크로소프트)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "AAPL", "Name": "Apple Inc. (애플)", "Sector": "Information Technology (정보기술)"},
@@ -150,12 +150,12 @@ TOP_100_STOCKS = [
     {"Symbol": "MDT", "Name": "Medtronic (메드트로닉)", "Sector": "Health Care (헬스케어)"},
     {"Symbol": "C", "Name": "Citigroup (씨티그룹)", "Sector": "Financials (금융)"},
     {"Symbol": "PGR", "Name": "Progressive (프로그레시브)", "Sector": "Financials (금융)"},
-    {"Symbol": "ADP", "Name": "Progressive (프로그레시브)", "Sector": "Financials (금융)"},
+    {"Symbol": "ADP", "Name": "Automatic Data Processing (ADP)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "CB", "Name": "Chubb (처브)", "Sector": "Financials (금융)"},
     {"Symbol": "ADI", "Name": "Analog Devices (아날로그 디바이스)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "MDLZ", "Name": "Mondelez (몬델리즈)", "Sector": "Consumer Staples (필수소비재)"},
     {"Symbol": "MMC", "Name": "Marsh & McLennan (마쉬 앤 매클레넌)", "Sector": "Financials (금융)"},
-    {"Symbol": "CI", "Name": "Chubb (처브)", "Sector": "Financials (금융)"},
+    {"Symbol": "CI", "Name": "Cigna (시그나)", "Sector": "Health Care (헬스케어)"},
     {"Symbol": "BMY", "Name": "Bristol-Myers Squibb (BMS)", "Sector": "Health Care (헬스케어)"},
     {"Symbol": "GILD", "Name": "Gilead Sciences (길리어드)", "Sector": "Health Care (헬스케어)"},
     {"Symbol": "DE", "Name": "Deere & Company (존디어)", "Sector": "Industrials (산업재)"},
@@ -164,7 +164,7 @@ TOP_100_STOCKS = [
     {"Symbol": "ABT", "Name": "Abbott Laboratories (애보트)", "Sector": "Health Care (헬스케어)"},
     {"Symbol": "SNOW", "Name": "Snowflake (스노우플레이크)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "CRWD", "Name": "CrowdStrike (크라우드스트라이크)", "Sector": "Information Technology (정보기술)"},
-    {"Symbol": "PANW", "Name": "CrowdStrike (크라우드스트라이크)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "PANW", "Name": "Palo Alto Networks (팔로알토)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "MU", "Name": "Micron Technology (마이크론)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "SMCI", "Name": "Super Micro Computer (슈퍼마이크로)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "INTC", "Name": "Intel (인텔)", "Sector": "Information Technology (정보기술)"},
@@ -187,9 +187,7 @@ def format_mcap_krw(usd_val):
     if not usd_val or usd_val <= 0: return "-"
     krw_val = usd_val * 1380
     if krw_val >= 1e12:
-        jo = int(krw_val // 1e12)
-        eok = int((krw_val % 1e12) // 1e8)
-        return f"{jo:,}조 {eok:,}억원" if eok > 0 else f"{jo:,}조원"
+        return f"{krw_val / 1e12:.1f}조원"
     elif krw_val >= 1e8:
         return f"{int(krw_val // 1e8):,}억원"
     return "-"
@@ -201,6 +199,17 @@ def get_robust_session():
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
     })
     return session
+
+@st.cache_data(ttl=3600)
+def get_nasdaq_performance():
+    try:
+        ndx = yf.Ticker("^IXIC").history(period="4y")
+        curr = ndx['Close'].iloc[-1]
+        def ret(days):
+            if len(ndx) > days: return (curr - ndx['Close'].iloc[-(days+1)]) / ndx['Close'].iloc[-(days+1)] * 100
+            return 0
+        return {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
+    except: return {}
 
 from api_utils import (
     get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, 
@@ -553,7 +562,7 @@ with tab6:
                                     <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
                                     """
                                     insert_db("sector_analysis", {
-                                        "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', ''),
+                                        "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', 0),
                                         "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
                                         "vol_1m": "", "vol_1q": "", "vol_1y": "",
                                         "issue": left_column_html, "detail_data": fin_data.get('raw_news', ''), "ai_analysis": ai_res
@@ -578,15 +587,15 @@ with tab6:
                 st.divider()
                 stock_data = df_sector.iloc[df_selected['selection']['rows'][0]]
                 s_id = stock_data['id']
+                mcap_str = format_mcap_krw(float(stock_data['market_cap'])) if pd.notna(stock_data['market_cap']) and str(stock_data['market_cap']).replace('.','',1).isdigit() else stock_data['market_cap']
                 
                 col_st1, col_st2 = st.columns([8, 2])
                 with col_st1:
                     st.markdown(f"## 🏢 {stock_data['ticker']} 심층 리서치 리포트")
-                    st.caption(f"섹터: {stock_data['sector']} | 시총: {stock_data['market_cap']}")
+                    st.caption(f"섹터: {stock_data['sector']} | 시총: {mcap_str}")
                 with col_st2:
                     if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
                 
-                # 💡 트레이딩뷰 EMA 200 2개 고정
                 st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
                 tv_widget = f"""
                 <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -598,14 +607,14 @@ with tab6:
                   "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
                   "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
                   "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-                  "studies": ["Moving Average Exponential@tv-basicstudies", "Moving Average Exponential@tv-basicstudies"],
+                  "studies": ["Moving Average Exponential@tv-basicstudies", "Bollinger Bands@tv-basicstudies"],
                   "container_id": "tradingview_{stock_data['ticker']}"
                   }});
                   </script>
                 </div>
                 """
                 components.html(tv_widget, height=650)
-                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 지수이동평균선(EMA)을 각각 50과 200으로 설정하세요!")
+                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 BB(볼린저 밴드)의 설정을 입맛대로 변경하세요!")
                 
                 st.markdown("---")
                 c_left, c_right = st.columns([4, 6], gap="large")
@@ -620,7 +629,6 @@ with tab6:
 
     with sub_tab_top100:
         st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실제 데이터 기준)")
-        st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 스캔합니다.")
         st.info("💡 **알림:** 이제 S&P 100 편입 기준과 무관하게, **미국 시장에 상장된 실제 시가총액 최상위 100개 기업**(테슬라, ARM, 팔란티어 등 포함)을 조회합니다.")
 
         if st.session_state.sp100_state_df.empty:
@@ -635,6 +643,36 @@ with tab6:
             df_init['업데이트 날짜'] = "-"
             st.session_state.sp100_state_df = df_init
 
+        # 상단 대시보드 (원형 차트 & 나스닥 지수)
+        col_pie, col_ndx = st.columns([6, 4], gap="large")
+        with col_pie:
+            scanned_df = st.session_state.sp100_state_df[st.session_state.sp100_state_df['시가총액_num'] > 0]
+            if not scanned_df.empty:
+                sector_data = scanned_df.groupby('Sector')['시가총액_num'].sum().reset_index()
+                fig = alt.Chart(sector_data).mark_arc(innerRadius=60).encode(
+                    theta=alt.Theta(field="시가총액_num", type="quantitative"),
+                    color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title="섹터")),
+                    tooltip=['Sector', alt.Tooltip('시가총액_num', format=",.0f", title="시가총액(USD)")]
+                ).properties(title="미국 주도 섹터 비중 (스캔된 종목 기준)", height=300)
+                st.altair_chart(fig, use_container_width=True)
+            else:
+                st.info("👇 아래의 스캔 버튼을 눌러 데이터를 불러오면 이곳에 '섹터별 주도 비중(원형 그래프)'이 나타납니다.")
+        
+        with col_ndx:
+            st.markdown("#### 📈 나스닥(^IXIC) 기간별 수익률 지표")
+            ndx_data = get_nasdaq_performance()
+            if ndx_data:
+                ndx_df = pd.DataFrame([ndx_data])
+                def color_val(val):
+                    color = '#ef4444' if val < 0 else '#22c55e'
+                    sign = '+' if val > 0 else ''
+                    return f"color: {color}; font-weight: bold;"
+                st.dataframe(ndx_df.style.map(color_val), use_container_width=True, hide_index=True)
+            else:
+                st.write("나스닥 데이터를 불러오는 중입니다...")
+
+        st.markdown("---")
+
         if not st.session_state.sp100_state_df.empty:
             symbols = st.session_state.sp100_state_df['Symbol'].tolist()
             chunks = [symbols[i:i+25] for i in range(0, 100, 25)]
@@ -644,11 +682,9 @@ with tab6:
             for i in range(4):
                 if i < len(chunks):
                     if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True):
-                        with st.spinner(f"{labels[i]} 실시간 시총 및 크로스 데이터 병합 중... (약 10초)"):
+                        with st.spinner(f"{labels[i]} 실시간 시총 및 크로스 데이터 스캔 중... (약 5초)"):
                             try:
                                 session = get_robust_session()
-                                
-                                # 💡 yf.download를 사용해 가격 데이터만 빠르게 묶음 로드
                                 data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False)
                                 data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False)
                                 
@@ -664,20 +700,19 @@ with tab6:
                                 current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                 
                                 for sym in chunks[i]:
-                                    # 시총은 fast_info로 가볍게 로드 (에러 방지)
                                     try: 
                                         tk = yf.Ticker(sym, session=session)
                                         mcap = tk.fast_info.get('marketCap', 0)
                                     except: mcap = 0
 
                                     if sym not in data_1d.columns or sym not in data_1h.columns:
-                                        c_type, c_date, c_price = "데이터 없음", "-", "-"
+                                        c_type, c_date, c_price = "데이터 부족", "-", "-"
                                     else:
                                         df_sym_1d = data_1d[sym].dropna()
                                         df_sym_1h = data_1h[sym].dropna()
                                         
-                                        if len(df_sym_1d) < 200 or len(df_sym_1h) < 200:
-                                            c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                        if len(df_sym_1d) < 150 or len(df_sym_1h) < 150:
+                                            c_type, c_date, c_price = "상장기간 부족", "-", "-"
                                         else:
                                             df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
                                             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
@@ -686,7 +721,6 @@ with tab6:
                                             df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
                                             df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
                                             
-                                            # 💡 완벽한 타임존 통일 (UTC)
                                             df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
                                             df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
                                             
@@ -705,8 +739,8 @@ with tab6:
                                                 last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
                                                 last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
                                                 latest_idx = max(last_gc, last_dc)
-                                                c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
                                                 
+                                                c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
                                                 days_diff = (datetime.now(timezone.utc) - latest_idx).days
                                                 if days_diff <= 90: c_type = f"🔥 {c_type}"
                                                     
@@ -723,7 +757,6 @@ with tab6:
                                     st.session_state.sp100_state_df.loc[mask, '시가총액_num'] = mcap
                                     st.session_state.sp100_state_df.loc[mask, '시총'] = format_mcap_krw(mcap)
                                 
-                                # 섹터 순위 업데이트
                                 scanned_mask = st.session_state.sp100_state_df['시가총액_num'] > 0
                                 if scanned_mask.any():
                                     st.session_state.sp100_state_df.loc[scanned_mask, '섹터 내 순위'] = \
@@ -731,17 +764,11 @@ with tab6:
                                     def format_rank(r): return f"섹터 {int(r)}위" if pd.notna(r) else "-"
                                     st.session_state.sp100_state_df['섹터 순위'] = st.session_state.sp100_state_df['섹터 내 순위'].apply(format_rank)
 
-                                st.success(f"✅ {current_update_time} 기준, {labels[i]} 분석 및 캐싱 완료!")
+                                st.success(f"✅ {current_update_time} 기준, {labels[i]} 분석 완료!")
                                 st.rerun() 
                                 
                             except Exception as e:
-                                st.error(f"야후 파이낸스 데이터 묶음 스캔 중 오류 발생: {str(e)}")
+                                st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
             display_cols = ['순위', '시총', 'Symbol', 'Name', 'Sector', '섹터 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
-            
-            st.markdown('<div style="height: 600px; overflow-y: scroll; border: 1px solid #e2e8f0; border-radius: 8px;">', unsafe_allow_html=True)
-            st.dataframe(
-                st.session_state.sp100_state_df[display_cols],
-                use_container_width=True, hide_index=True, height=580
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True)
