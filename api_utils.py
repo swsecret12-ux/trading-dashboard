@@ -10,8 +10,6 @@ import ccxt
 from PIL import Image
 import google.generativeai as genai
 from datetime import datetime
-
-# 방금 전 저장한 이론 데이터를 불러옵니다.
 from theory_data import get_base_theory_dict
 
 URL = st.secrets.get("SUPABASE_URL", "")
@@ -23,15 +21,9 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
-# --- Database Functions ---
-def insert_db(table, data): 
-    return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
-
-def update_db(table, match_col, match_val, data): 
-    return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data)
-
-def delete_db(table, match_col, match_val): 
-    return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS)
+def insert_db(table, data): return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
+def update_db(table, match_col, match_val, data): return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data)
+def delete_db(table, match_col, match_val): return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS)
 
 def upload_image_to_supabase(img_file, prefix="img"):
     try:
@@ -92,7 +84,6 @@ def get_recent_archive_context(ticker_search):
         except: pass
     return context
 
-# --- AI Functions ---
 def get_gemini_keys():
     keys = []
     if "GEMINI_API_KEY" in st.secrets: keys.append(st.secrets["GEMINI_API_KEY"])
@@ -104,8 +95,6 @@ def parse_ai_json(text):
     if not isinstance(text, str): text = str(text) if text is not None else ""
     try:
         clean_text = text.strip()
-        
-        # 시스템 에러 원천 차단: 백틱 기호를 chr(96)으로 대체하여 안전하게 텍스트 파싱
         mark_j = chr(96) * 3 + "json"
         mark_e = chr(96) * 3
         
@@ -142,9 +131,13 @@ def ask_gemini_dynamic(prompt, imgs):
             for model_name in models_to_try:
                 try:
                     model = genai.GenerativeModel(model_name)
-                    return model.generate_content(payload).text
+                    res = model.generate_content(payload)
+                    return res.text
                 except Exception as e:
                     last_error = str(e)
+                    # 💡 구글 AI 안전 필터(finish_reason=1) 에러 방어 코드 추가
+                    if "finish_reason is 1" in last_error or "safety" in last_error.lower():
+                        return "{\"trend\": \"-\", \"key_level\": \"-\", \"momentum\": \"-\", \"volume\": \"-\", \"s_score\": 0, \"macro_news\": \"AI 안전 필터로 인해 내용 생략됨\", \"analysis\": \"구글 AI의 콘텐츠 안전 규정(금융/투자 직접 권유 방지)에 의해 상세 분석 생성이 차단되었습니다.\"}"
                     if "429" in last_error or "quota" in last_error.lower(): break 
                     elif "404" in last_error or "not found" in last_error.lower(): continue 
                     else: break 
