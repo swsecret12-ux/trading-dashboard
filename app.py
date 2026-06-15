@@ -80,6 +80,7 @@ def load_sector_data():
     if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
+# 💡 미국 시총 최상위 100개 기업 데이터 (한글 맵핑 완벽 적용)
 TOP_100_STOCKS = [
     {"Symbol": "MSFT", "Name": "Microsoft (마이크로소프트)", "Sector": "Information Technology (정보기술)"},
     {"Symbol": "AAPL", "Name": "Apple Inc. (애플)", "Sector": "Information Technology (정보기술)"},
@@ -183,11 +184,17 @@ TOP_100_STOCKS = [
     {"Symbol": "DUK", "Name": "Duke Energy (듀크 에너지)", "Sector": "Utilities (유틸리티)"}
 ]
 
+# 💡 직관적인 원화 시총 변환 (조/억 단위)
 def format_mcap_krw(usd_val):
     if not usd_val or usd_val <= 0: return "-"
     krw_val = usd_val * 1380
+    
     if krw_val >= 1e12:
-        return f"{krw_val / 1e12:.1f}조원"
+        trillion = int(krw_val // 1e12)
+        billion = int((krw_val % 1e12) // 1e8)
+        if billion > 0:
+            return f"{trillion:,}조 {billion:,}억원"
+        return f"{trillion:,}조원"
     elif krw_val >= 1e8:
         return f"{int(krw_val // 1e8):,}억원"
     return "-"
@@ -596,6 +603,7 @@ with tab6:
                 with col_st2:
                     if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
                 
+                # 💡 트레이딩뷰 위젯: EMA 1개 + 볼린저 밴드(BB) 1개로 완벽 적용
                 st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
                 tv_widget = f"""
                 <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -643,8 +651,9 @@ with tab6:
             df_init['업데이트 날짜'] = "-"
             st.session_state.sp100_state_df = df_init
 
-        # 상단 대시보드 (원형 차트 & 나스닥 지수)
+        # 💡 상단 대시보드 (원형 차트 6: 나스닥 지표+차트 4 비율 최적화)
         col_pie, col_ndx = st.columns([6, 4], gap="large")
+        
         with col_pie:
             scanned_df = st.session_state.sp100_state_df[st.session_state.sp100_state_df['시가총액_num'] > 0]
             if not scanned_df.empty:
@@ -668,6 +677,14 @@ with tab6:
                     sign = '+' if val > 0 else ''
                     return f"color: {color}; font-weight: bold;"
                 st.dataframe(ndx_df.style.map(color_val), use_container_width=True, hide_index=True)
+                
+                # 💡 나스닥 1년치 일봉 차트 추가 (알테어 또는 스트림릿 내장 사용)
+                st.markdown("#### 📊 나스닥 최근 1년 흐름")
+                try:
+                    ndx_hist_chart = yf.Ticker("^IXIC").history(period="1y")['Close']
+                    st.line_chart(ndx_hist_chart, height=150)
+                except:
+                    st.caption("차트 로딩 실패")
             else:
                 st.write("나스닥 데이터를 불러오는 중입니다...")
 
@@ -770,5 +787,6 @@ with tab6:
                             except Exception as e:
                                 st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
+            # 💡 높이 제한(500)을 두어 무한 스크롤 방지
             display_cols = ['순위', '시총', 'Symbol', 'Name', 'Sector', '섹터 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
-            st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True)
+            st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=500)
