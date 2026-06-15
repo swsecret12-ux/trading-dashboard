@@ -677,7 +677,7 @@ with tab6:
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                     
-                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 선 차트)")
+                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들 차트)")
                     ndx_tv_widget = """
                     <div class="tradingview-widget-container" style="height:320px;width:100%;">
                       <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
@@ -685,7 +685,7 @@ with tab6:
                       <script type="text/javascript">
                       new TradingView.widget({
                       "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
-                      "theme": "light", "style": "3", "locale": "kr", "enable_publishing": false,
+                      "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
                       "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
                       "container_id": "tradingview_ixic"
                       });
