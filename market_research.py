@@ -6,7 +6,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 
 def fetch_investing_news(ticker):
-    """구글 뉴스 RSS를 우회하여 최신 글로벌 기사(Investing, 파트너십 등)를 긁어옵니다."""
+    """구글 뉴스 RSS를 우회하여 최신 글로벌 기사를 긁어옵니다."""
     try:
         query = urllib.parse.quote(f"{ticker} stock OR news")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
@@ -22,7 +22,6 @@ def fetch_investing_news(ticker):
         return "글로벌 뉴스 수집 실패"
 
 def fetch_saveticker_news(user_id, password):
-    """SaveTicker 뉴스 기능은 현재 사용하지 않으므로 Pass 합니다."""
     return "별도 뉴스 데이터 참조 생략"
 
 def fetch_financial_data(ticker_symbol):
@@ -30,7 +29,7 @@ def fetch_financial_data(ticker_symbol):
         session = requests.Session()
         session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+            "Accept": "application/json, text/plain, */*"
         })
         
         ticker = yf.Ticker(ticker_symbol, session=session)
@@ -58,7 +57,6 @@ def fetch_financial_data(ticker_symbol):
         v1q_p, v1q_pct = calc_return_html(60)
         v1y_p, v1y_pct = calc_return_html(250)
 
-        # EMA 계산
         hist_1d['EMA200_1D'] = hist_1d['Close'].ewm(span=200, adjust=False).mean()
         
         hist_1h = ticker.history(period="730d", interval="1h")
@@ -133,9 +131,9 @@ def fetch_financial_data(ticker_symbol):
         except: pass
         vol_text = "\n".join(volatility_events) if volatility_events else "최근 2개월 내 10% 이상 일일 급변동 없음."
 
+        # 💡 lxml 에러 원천 차단: 순수 JSON API 사용
         earnings_html = ""
         try:
-            # 💡 lxml 에러를 원천 차단하는 야후 숨겨진 JSON API 호출
             url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker_symbol}?modules=earningsTrend"
             res = session.get(url, timeout=5)
             data = res.json()
@@ -155,9 +153,8 @@ def fetch_financial_data(ticker_symbol):
                     end_date = t.get('endDate', '')
                     if not end_date: continue
                     
-                    # 7d, 30d 같은 쓸데없는 값 필터링
                     if 'y' not in end_date and 'q' not in end_date and '-' in end_date:
-                        date_str = str(end_date).split(' ')[0] # YYYY-MM-DD
+                        date_str = str(end_date).split(' ')[0] 
                         
                         eps_est = t.get('earningsEstimate', {}).get('avg', {}).get('raw', None)
                         eps_rep = t.get('epsActual', {}).get('raw', None)
@@ -168,18 +165,19 @@ def fetch_financial_data(ticker_symbol):
                         
                         surprise_html = "-"
                         if surp_pct is not None:
-                            surp_val = surp_pct * 100 # percentage
+                            surp_val = surp_pct * 100
                             scolor = "#ef4444" if surp_val < 0 else "#22c55e"
                             ssign = "+" if surp_val > 0 else ""
                             stxt = "상회" if surp_val > 0 else "하회"
                             surprise_html = f"<span style='color:{scolor}; font-weight:bold;'>{ssign}{surp_val:.1f}% {stxt}</span>"
                         
+                        # 미래 날짜 시각적 분리
                         row_bg = "background-color: #fffbeb;" if date_str > current_date_str else ""
                         date_icon = "⏳ " if date_str > current_date_str else ""
                         
                         edts_table += f"<tr style='{row_bg}'><td><b>{date_icon}{date_str}</b></td><td>{est_str}</td><td>{rep_str}</td><td>{surprise_html}</td></tr>"
                         valid_count += 1
-                        if valid_count >= 6: break # 최근 6개 분기만 표시
+                        if valid_count >= 6: break 
                         
                 edts_table += "</table>"
                 if valid_count > 0: earnings_html = edts_table
@@ -187,7 +185,7 @@ def fetch_financial_data(ticker_symbol):
             else:
                 earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다.</p>"
         except Exception as e: 
-            earnings_html = f"<p>실적 데이터 연동 일시 오류 (JSON API 실패)</p>"
+            earnings_html = f"<p>실적 데이터 연동 일시 오류 (데이터 제공사 응답 지연)</p>"
 
         try:
             news = ticker.news
@@ -235,12 +233,10 @@ def fetch_financial_data(ticker_symbol):
 
 def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_text=""):
     from api_utils import ask_gemini_dynamic
-    today_str = datetime.today().strftime('%Y-%m-%d')
     
     prompt = f"""
     당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 
-    아래 데이터를 바탕으로 보고서를 작성하되, **모든 항목은 절대 단답형으로 쓰지 말고 각 불릿포인트마다 3~5문장 이상의 깊이 있고 상세한 서술형으로 작성하세요.**
-    보고서 작성 기준일: {today_str}
+    아래 데이터를 바탕으로 보고서를 작성하세요. **모든 항목은 각 3~5줄 이상 매우 상세하고 깊이 있게 서술해야 합니다.**
 
     [분석 대상 데이터]
     - 종목명: {ticker} (섹터: {sector})
@@ -250,19 +246,21 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     {fin_data.get('raw_news')}
     - 유저 메모: {user_input}
     
-    [작성 목차 및 필수 지침]
-    1. 🏢 시장 위치 및 핵심 밸류체인 요약 (3~5줄 상세 서술)
+    [작성 목차 및 필수 지침] (이 4가지 목차와 마크다운 양식을 절대 깨트리지 마세요)
+
+    ### 1. 🏢 시장 위치 및 핵심 밸류체인 요약
+    (해당 기업이 시장에서 가지는 독점적 지위와 비즈니스 모델을 4줄 이상 길고 상세하게 적으세요.)
     
-    2. 🚨 최근 10% 이상 급변동 사유 팩트체크 (가장 중요)
-       - 위 '일일 급변동 팩트'에 날짜가 존재한다면, 반드시 표(Table)로 만들어서 보여주세요.
-       - 열 구성: | 발생 날짜 | 종목 등락률 | 나스닥 지수 등락률 | 구체적 촉매제 (팩트 기반 상세 서술) |
-       - [🔥초강력 경고]: 제공된 최신 뉴스에 과거(1~2달 전) 내용이 없다고 "데이터가 없다"고 변명하는 것을 엄격히 금지합니다! 당신이 학습한 방대한 내부 지식을 총동원하여 해당 날짜의 급등락 사유를 기필코 찾아 적으세요. 
-       - (예시: SNOW의 경우, 특정 실적발표일(5월 등)에 아마존(AWS) 파트너십 발표, CEO 교체, 또는 가이던스 상향 등의 구체적인 팩트가 있었다면 그것을 표 안의 '구체적 촉매제' 칸에 길고 자세하게 적어야 합니다.)
+    ### 2. 🚨 최근 10% 이상 급변동 사유 팩트체크 (가장 중요)
+    (제공된 급변동 날짜가 있다면 아래 마크다운 표를 무조건 생성하세요. 뉴스에 과거 내용이 없더라도, 당신이 가진 방대한 인터넷 사전 지식을 총동원하여 해당 날짜에 왜 급등락했는지(예: 실적 발표, 아마존 AWS 등 파트너십 발표, 어닝 쇼크 등) 구체적 촉매제 칸에 상세하게 적으세요. '알 수 없음' 금지.)
+    
+    | 발생 날짜 | 종목 등락률 | 나스닥 지수 등락률 | 구체적 촉매제 (팩트 상세 기재) |
+    |---|---|---|---|
        
-    3. 💰 실적(Earnings) 및 모멘텀 종합 의견 (3~5줄 상세 서술)
-       - 실적 발표 이후의 모멘텀과 섹터 내 자금 흐름을 깊이 있게 분석하세요.
+    ### 3. 💰 실적 및 모멘텀 종합 의견
+    (최근 실적의 강약점과 기술적 모멘텀을 4줄 이상 길게 서술하세요.)
        
-    4. 💡 기관 트레이딩 결론 (Actionable Insight)
-       - 롱/숏/관망 중 명확한 포지션과 그에 따른 기술적/펀더멘털 대응 전략을 상세히 서술하세요.
+    ### 4. 💡 기관 트레이딩 결론 (Actionable Insight)
+    (롱/숏/관망 중 명확한 포지션과 펀더멘털 대응 전략을 4줄 이상 상세하게 서술하세요.)
     """
     return ask_gemini_dynamic(prompt, [])
