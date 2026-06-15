@@ -135,9 +135,9 @@ def ask_gemini_dynamic(prompt, imgs):
                     return res.text
                 except Exception as e:
                     last_error = str(e)
-                    # 💡 구글 AI 안전 필터(finish_reason=1) 에러 방어 코드 추가
-                    if "finish_reason is 1" in last_error or "safety" in last_error.lower():
-                        return "{\"trend\": \"-\", \"key_level\": \"-\", \"momentum\": \"-\", \"volume\": \"-\", \"s_score\": 0, \"macro_news\": \"AI 안전 필터로 인해 내용 생략됨\", \"analysis\": \"구글 AI의 콘텐츠 안전 규정(금융/투자 직접 권유 방지)에 의해 상세 분석 생성이 차단되었습니다.\"}"
+                    # 💡 구글 AI 안전 필터(finish_reason=1) 에러 방어 코드 
+                    if "finish_reason is 1" in last_error or "safety" in last_error.lower() or "valid Part" in last_error:
+                        return "구글 AI의 콘텐츠 안전 규정(투자 직접 권유 방지)에 의해 상세 분석 생성이 차단되었습니다. 다른 종목을 시도해주세요."
                     if "429" in last_error or "quota" in last_error.lower(): break 
                     elif "404" in last_error or "not found" in last_error.lower(): continue 
                     else: break 
@@ -179,6 +179,10 @@ def render_ai_advice_block(title, ai_text):
     ai_data = parse_ai_json(ai_text)
     st.markdown(f"#### {title}")
     
+    if "trend" not in ai_data:
+        st.info(ai_text)
+        return
+        
     macro_news = ai_data.get('macro_news', '')
     if macro_news and macro_news not in ["-", "특이 동향 없음", "없음"]:
         st.error(f"🚨 **[급변동/이슈 감지]** {macro_news}")
