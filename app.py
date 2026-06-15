@@ -519,16 +519,14 @@ with tab6:
         df_sp100 = get_sp100_data()
         
         if not df_sp100.empty and 'Sector' in df_sp100.columns:
-            # 최초 페이지 로드 시 100개 목록 전체를 보여주는 빈 껍데기 표 출력
+            # 💡 100개 목록 전체를 보여주는 빈 껍데기 표 출력
             df_placeholder = st.empty()
             df_placeholder.dataframe(df_sp100, use_container_width=True, hide_index=True)
             
             symbols = df_sp100['Symbol'].tolist()
-            # 야후 파이낸스 특성상 BRK.B 같은 티커는 BRK-B로 치환해야 함 (100개까지만 자름)
             original_symbols = symbols[:100]
             yf_symbols = [s.replace('.', '-') for s in original_symbols]
             
-            # 25개씩 배열 나누기 (Chunking)
             chunks_orig = [original_symbols[i:i+25] for i in range(0, 100, 25)]
             chunks_yf = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
             labels = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
@@ -538,18 +536,15 @@ with tab6:
                 if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True):
                     with st.spinner(f"{labels[i]} 종목 데이터 수집 및 4H/1D 크로스 분석 중... (약 10~20초 소요)"):
                         try:
-                            # 야후에서 25개 묶음으로 1일봉, 1시간봉 동시 다운로드 (빠르고 안전함)
                             data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
                             data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
                             
-                            # 멀티 인덱스에서 Close(종가) 컬럼만 추출
                             if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                             else: data_1d = pd.DataFrame()
                                 
                             if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
                             else: data_1h = pd.DataFrame()
                                 
-                            # 야후 버그 방어: 만약 묶음이 아니라 1개만 다운로드되어 Series로 오면 DataFrame으로 강제 변환
                             if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks_yf[i][0])
                             if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks_yf[i][0])
                             
@@ -559,45 +554,38 @@ with tab6:
                                     cross_results.append({"Symbol": orig_sym, "크로스 상태 (4H/1D EMA200)": "데이터 없음", "크로스 날짜": "-", "크로스 당시 주가": "-"})
                                     continue
                                 
-                                # NA 결측치 제거
                                 df_sym_1d = data_1d[yf_sym].dropna()
                                 df_sym_1h = data_1h[yf_sym].dropna()
                                 
-                                # 데이터가 너무 짧으면 EMA 200 계산 불가
                                 if len(df_sym_1d) < 200 or len(df_sym_1h) < 200:
                                     cross_results.append({"Symbol": orig_sym, "크로스 상태 (4H/1D EMA200)": "데이터 부족", "크로스 날짜": "-", "크로스 당시 주가": "-"})
                                     continue
                                     
-                                # 1일봉 EMA 200 계산
                                 df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
                                 df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
                                 
-                                # 1시간봉 -> 4시간봉으로 압축(리샘플링) 후 4H EMA 200 계산
                                 df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
                                 df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
                                 df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
                                 
-                                # 타임존 UTC 강제 일치
-                                if df_1d_ma.index.tz is None: df_1d_ma.index = df_1d_ma.index.tz_localize('UTC')
-                                if df_4h_ma.index.tz is None: df_4h_ma.index = df_4h_ma.index.tz_localize('UTC')
+                                # 💡 타임존 병합 에러(incompatible merge keys) 방지를 위해 강제 UTC 통일
+                                df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
+                                df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
                                 
                                 df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
                                 df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
                                 
-                                # 4시간봉의 시간에 맞춰 1일봉(과거 방향) 병합
                                 merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
                                 
-                                # 이전 캔들의 EMA 값 비교를 위한 Shift
                                 merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
                                 merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
                                 
-                                # 골든크로스 / 데드크로스 순간 포착
                                 gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])]
                                 dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])]
                                 
                                 if not gc.empty or not dc.empty:
-                                    last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize(merged.index.tz)
-                                    last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize(merged.index.tz)
+                                    last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                    last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
                                     
                                     latest_idx = max(last_gc, last_dc)
                                     c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
@@ -613,12 +601,10 @@ with tab6:
                                     "크로스 당시 주가": c_price
                                 })
                                 
-                            # 클릭한 25개 종목만 추려서 표로 만듦
                             df_chunk = df_sp100[df_sp100['Symbol'].isin(chunks_orig[i])]
                             df_cross = pd.DataFrame(cross_results)
                             df_final = pd.merge(df_chunk, df_cross, on="Symbol", how="left")
                             
-                            # 기존 껍데기 표를 비우고 분석이 완료된 25개 리스트로 교체
                             df_placeholder.empty()
                             st.success(f"✅ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 기준, {labels[i]} 4H/1D 크로스 분석 완료!")
                             st.dataframe(df_final, use_container_width=True, hide_index=True)
