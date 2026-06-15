@@ -1067,14 +1067,21 @@ with tab6:
                 res = requests.get('https://en.wikipedia.org/wiki/S%26P_100', headers={"User-Agent": "Mozilla/5.0"})
                 tables = pd.read_html(io.StringIO(res.text))
                 for df in tables:
-                    if 'Symbol' in df.columns and 'Sector' in df.columns:
-                        return df[['Symbol', 'Name', 'Sector']]
-                return pd.DataFrame()
+                    if 'Symbol' in df.columns:
+                        # 위키피디아 컬럼명이 'Sector' 또는 'GICS Sector'일 경우 모두 완벽 대응
+                        if 'Sector' in df.columns:
+                            return df[['Symbol', 'Name', 'Sector']]
+                        elif 'GICS Sector' in df.columns:
+                            df = df.rename(columns={'GICS Sector': 'Sector'})
+                            return df[['Symbol', 'Name', 'Sector']]
+                return pd.DataFrame({"Error": ["위키피디아에서 종목 테이블을 찾을 수 없습니다."]})
             except Exception as e:
                 return pd.DataFrame({"Error": [str(e)]})
                 
         df_sp100 = get_sp100_data()
-        if not df_sp100.empty:
+        
+        # 💡 에러 방어벽: 데이터가 비어있지 않고, 'Sector' 컬럼이 확실히 존재할 때만 실행!
+        if not df_sp100.empty and 'Sector' in df_sp100.columns:
             sectors = ["전체"] + sorted(df_sp100['Sector'].dropna().unique().tolist())
             sel_sector = st.selectbox("섹터 필터링 (Top 100)", sectors)
             
@@ -1085,4 +1092,7 @@ with tab6:
                 
             st.dataframe(df_display, use_container_width=True, hide_index=True)
         else:
+            # 실패 시 앱이 뻗지 않고 자연스럽게 에러 원인 표기
             st.error("Top 100 데이터를 불러오는 중 오류가 발생했습니다.")
+            if 'Error' in df_sp100.columns:
+                st.info(f"상세 에러: {df_sp100['Error'].iloc[0]}")
