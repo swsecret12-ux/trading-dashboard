@@ -6,19 +6,22 @@ from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
 
+# 💡 야후 파이낸스의 봇 차단(Rate Limit)을 뚫어내는 강력한 우회 세션
 def get_robust_session():
     session = requests.Session()
-    # 💡 무한 로딩 원인 제거: 서버 차단 시 10분 넘게 재시도하며 뻗어버리는 로직(Retry)을 과감히 삭제!
-    # 실패하면 즉시 실패 처리하여 병목을 막고 쾌적하게 유지합니다.
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1"
     })
     return session
 
 def fetch_investing_news(ticker):
-    """구글 뉴스 RSS를 우회하여 최신 글로벌 기사를 긁어옵니다."""
+    """구글 뉴스 RSS를 우회하여 최신 글로벌 기사(Investing, 파트너십 등)를 긁어옵니다."""
     try:
-        query = urllib.parse.quote(f"{ticker} stock OR news")
+        query = urllib.parse.quote(f"{ticker} stock OR partnership OR earnings")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
@@ -54,6 +57,7 @@ def fetch_saveticker_news(user_id, password):
 
 def fetch_financial_data(ticker_symbol):
     try:
+        # 💡 일반 브라우저로 위장하여 야후 데이터 요청
         session = get_robust_session()
         ticker = yf.Ticker(ticker_symbol, session=session)
         info = ticker.info
@@ -64,8 +68,9 @@ def fetch_financial_data(ticker_symbol):
         elif market_cap > 1e6: mcap_str = f"{market_cap / 1e6:.2f}M (백만 달러)"
         else: mcap_str = "데이터 없음"
 
+        # 일봉 데이터 로드 (5년치)
         hist_1d = ticker.history(period="5y")
-        if hist_1d.empty: return {"error": "차트 데이터를 불러올 수 없습니다."}
+        if hist_1d.empty: return {"error": "야후 파이낸스 서버가 응답하지 않습니다 (일시적 차단). 잠시 후 다시 시도해주세요."}
         
         current_price = float(hist_1d['Close'].iloc[-1])
         
@@ -73,7 +78,7 @@ def fetch_financial_data(ticker_symbol):
             if len(hist_1d) > days:
                 past = float(hist_1d['Close'].iloc[-(days+1)])
                 pct = ((current_price - past)/past)*100
-                color = "#ef4444" if pct < 0 else "#22c55e"
+                color = "#ef4444" if pct < 0 else "#22c55e" 
                 sign = "+" if pct > 0 else ""
                 return f"${past:.2f} ➔ ${current_price:.2f}", f"<span style='color:{color}; font-weight:bold;'>{sign}{pct:.2f}%</span>"
             return "-", "-"
@@ -124,62 +129,7 @@ def fetch_financial_data(ticker_symbol):
             curr_4h_ema200 = "-"
             curr_1d_ema200 = f"${hist_1d['EMA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['EMA200_1D'].iloc[-1]) else "-"
 
-        earnings_html = ""
-        try:
-            try:
-                edts = ticker.get_earnings_dates(limit=12)
-            except Exception:
-                edts = ticker.earnings_dates
-                if edts is not None: edts = edts.head(12)
-                
-            if edts is not None and not edts.empty:
-                edts = edts.reset_index()
-                date_col = 'Earnings Date' if 'Earnings Date' in edts.columns else edts.columns[0]
-                
-                # 타임존 무시하고 텍스트로 잘라내어 미래 날짜 에러 완벽 차단
-                edts['Date'] = edts[date_col].astype(str).str[:10]
-                current_date_str = datetime.today().strftime('%Y-%m-%d')
-                
-                def get_earnings_price_change_safe(target_date_str):
-                    if target_date_str > current_date_str: return "-"
-                    try:
-                        target_dt = pd.to_datetime(target_date_str).tz_localize(hist_1d.index.tz) if hist_1d.index.tz else pd.to_datetime(target_date_str)
-                        idx_arr = hist_1d.index.get_indexer([target_dt], method='nearest')
-                        if len(idx_arr) > 0 and idx_arr[0] >= 0:
-                            idx = idx_arr[0]
-                            start_idx = max(0, idx - 1)
-                            end_idx = min(len(hist_1d) - 1, idx + 1)
-                            start_p = hist_1d['Close'].iloc[start_idx]
-                            end_p = hist_1d['Close'].iloc[end_idx]
-                            pct = ((end_p - start_p) / start_p) * 100
-                            color = "#ef4444" if pct < 0 else "#22c55e"
-                            sign = "+" if pct > 0 else ""
-                            return f"<span style='color:{color}; font-weight:bold;'>{sign}{pct:.1f}%</span><br><span style='font-size:0.8rem; color:#888;'>(${start_p:.2f} ➔ ${end_p:.2f})</span>"
-                    except: return "-"
-                    return "-"
-
-                edts_table = "<table class='ma-table' style='text-align:center;'><tr style='background-color:#f1f5f9;'><th>발표일 (분기)</th><th>시장 예상치</th><th>실제 발표치</th><th>서프라이즈</th><th>발표일 주가 등락</th></tr>"
-                for _, row in edts.iterrows():
-                    eps_est = row.get('EPS Estimate', None)
-                    eps_rep = row.get('Reported EPS', None)
-                    est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
-                    rep_str = f"{eps_rep:.2f}" if pd.notna(eps_rep) else "-"
-                    
-                    surprise_html = "-"
-                    if pd.notna(eps_est) and pd.notna(eps_rep) and eps_est != 0:
-                        surp_pct = ((eps_rep - eps_est) / abs(eps_est)) * 100
-                        scolor = "#ef4444" if surp_pct < 0 else "#22c55e"
-                        ssign = "+" if surp_pct > 0 else ""
-                        stxt = "상회" if surp_pct > 0 else "하회"
-                        surprise_html = f"<span style='color:{scolor}; font-weight:bold;'>{ssign}{surp_pct:.1f}% {stxt}</span>"
-                        
-                    price_chg_html = get_earnings_price_change_safe(row['Date'])
-                    edts_table += f"<tr><td><b>{row['Date']}</b></td><td>{est_str}</td><td>{rep_str}</td><td>{surprise_html}</td><td>{price_chg_html}</td></tr>"
-                edts_table += "</table>"
-                earnings_html = edts_table
-            else: earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다.</p>"
-        except Exception as e: earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
-
+        # 💡 최근 2달(60일) 일봉 기준 10% 이상 급변동 분석기 (나스닥 대조)
         volatility_events = []
         try:
             recent_hist = hist_1d.tail(60) 
@@ -200,9 +150,11 @@ def fetch_financial_data(ticker_symbol):
                     
                     if not ndx_hist.empty:
                         try:
+                            # 타임존 충돌 방지를 위해 강제로 UTC 통일 후 매칭
                             target_d_utc = pd.to_datetime(target_d, utc=True)
                             ndx_idx_utc = pd.to_datetime(ndx_hist.index, utc=True)
                             idx_arr = ndx_idx_utc.get_indexer([target_d_utc], method='nearest')
+                            
                             if len(idx_arr) > 0 and idx_arr[0] > 0:
                                 n_idx = idx_arr[0]
                                 n_prev = ndx_hist['Close'].iloc[n_idx-1]
@@ -212,7 +164,77 @@ def fetch_financial_data(ticker_symbol):
                         
                     volatility_events.append(f"- 날짜: {date_str} | 종목등락: {pct_change:+.1f}% (${prev_c:.2f}->${curr_c:.2f}) | 당일 나스닥등락: {ndx_pct_str}")
         except: pass
+        
         vol_text = "\n".join(volatility_events) if volatility_events else "최근 2개월 내 10% 이상 일일 급변동 없음."
+
+        # 미래 날짜 주가 계산을 방어하는 안전한 실적 분석 로직
+        def get_earnings_price_change_safe(target_date_str):
+            current_date_str = datetime.today().strftime('%Y-%m-%d')
+            # 💡 오늘보다 미래의 실적일이면 무조건 '-' 리턴 (오류 완벽 방어)
+            if target_date_str > current_date_str:
+                return "-"
+            
+            try:
+                target_dt = pd.to_datetime(target_date_str)
+                if hist_1d.index.tz is not None:
+                    target_dt = target_dt.tz_localize(hist_1d.index.tz) if target_dt.tzinfo is None else target_dt.tz_convert(hist_1d.index.tz)
+                
+                idx_arr = hist_1d.index.get_indexer([target_dt], method='nearest')
+                if len(idx_arr) > 0 and idx_arr[0] >= 0:
+                    idx = idx_arr[0]
+                    start_idx = max(0, idx - 1)
+                    end_idx = min(len(hist_1d) - 1, idx + 1)
+                    
+                    start_p = hist_1d['Close'].iloc[start_idx]
+                    end_p = hist_1d['Close'].iloc[end_idx]
+                    pct = ((end_p - start_p) / start_p) * 100
+                    color = "#ef4444" if pct < 0 else "#22c55e"
+                    sign = "+" if pct > 0 else ""
+                    return f"<span style='color:{color}; font-weight:bold;'>{sign}{pct:.1f}%</span><br><span style='font-size:0.8rem; color:#888;'>(${start_p:.2f} ➔ ${end_p:.2f})</span>"
+            except:
+                return "-"
+            return "-"
+
+        earnings_html = ""
+        try:
+            try: edts = ticker.get_earnings_dates(limit=12)
+            except: 
+                edts = ticker.earnings_dates
+                if edts is not None: edts = edts.head(12)
+                
+            if edts is not None and not edts.empty:
+                edts = edts.reset_index()
+                date_col = 'Earnings Date' if 'Earnings Date' in edts.columns else edts.columns[0]
+                
+                # 타임존 충돌 에러 방지를 위해 텍스트로 잘라냅니다.
+                edts['Date'] = edts[date_col].astype(str).str[:10]
+                
+                edts_table = """
+                <table class='ma-table' style='text-align:center;'>
+                  <tr style='background-color:#f1f5f9;'>
+                    <th>발표일 (분기)</th><th>시장 예상치</th><th>실제 발표치</th><th>서프라이즈</th><th>발표일 주가 등락</th>
+                  </tr>
+                """
+                for _, row in edts.iterrows():
+                    eps_est = row.get('EPS Estimate', None)
+                    eps_rep = row.get('Reported EPS', None)
+                    est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
+                    rep_str = f"{eps_rep:.2f}" if pd.notna(eps_rep) else "-"
+                    
+                    surprise_html = "-"
+                    if pd.notna(eps_est) and pd.notna(eps_rep) and eps_est != 0:
+                        surp_pct = ((eps_rep - eps_est) / abs(eps_est)) * 100
+                        scolor = "#ef4444" if surp_pct < 0 else "#22c55e"
+                        ssign = "+" if surp_pct > 0 else ""
+                        stxt = "상회" if surp_pct > 0 else "하회"
+                        surprise_html = f"<span style='color:{scolor}; font-weight:bold;'>{ssign}{surp_pct:.1f}% {stxt}</span>"
+                        
+                    price_chg_html = get_earnings_price_change_safe(row['Date'])
+                    edts_table += f"<tr><td><b>{row['Date']}</b></td><td>{est_str}</td><td>{rep_str}</td><td>{surprise_html}</td><td>{price_chg_html}</td></tr>"
+                edts_table += "</table>"
+                earnings_html = edts_table
+            else: earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다.</p>"
+        except Exception as e: earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
         try:
             news = ticker.news
@@ -262,26 +284,26 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     today_str = datetime.today().strftime('%Y-%m-%d')
     
     prompt = f"""
-    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다.
+    당신은 월스트리트의 최정상급 기관 수석 애널리스트입니다. 미사여구를 배제하고 깊이 있는 논리로 리포트를 작성하세요.
     보고서 작성 기준일: {today_str}
 
     [분석 대상 데이터]
     - 종목명: {ticker} (섹터: {sector})
     - 시가총액: {fin_data.get('market_cap')}
-    - 최근 2달 내 10% 이상 일일 급변동 발생일 팩트 (날짜/종목등락/나스닥등락):
+    - 최근 2달 내 10% 이상 일일 급변동 팩트 (날짜 / 종목등락 / 당일 나스닥 등락):
     {fin_data.get('vol_events_text')}
-    - 최신 글로벌 뉴스(협업, 실적 등 포함): {fin_data.get('raw_news')}
+    - 최신 글로벌 뉴스(협업, 실적 등): {fin_data.get('raw_news')}
     - 유저 메모: {user_input}
     
-    [작성 가이드라인]
-    1. 🏢 시장 위치 및 밸류체인 분석
+    [작성 목차]
+    1. 🏢 시장 위치 및 밸류체인 심층 분석
     2. 💰 실적(Earnings) 및 모멘텀 종합 의견
     
-    3. 🚨 최근 10% 이상 급변동 사유 분석 (매우 중요)
-       - 위 '일일 급변동 발생일 팩트' 데이터가 존재한다면 반드시 표(Table) 포맷으로 작성하세요.
-       - 열 구성: | 날짜 | 급등락(종목 변동률) | 나스닥 지수 변동률 | 급변동 촉매제(호재/악재 뉴스 요약) |
-       - 제공된 뉴스 내용(아마존 협업, 실적 쇼크 등)과 해당 날짜를 매칭시켜서 구체적인 이유를 반드시 적으세요.
+    3. 🚨 최근 10% 이상 급변동 사유 팩트체크 (가장 중요)
+       - 위 '일일 급변동 팩트'에 데이터가 존재한다면, 반드시 표(Table)로 만들어서 보여주세요.
+       - 열 구성: | 발생 날짜 | 종목 등락률 | 나스닥 지수 등락률 | 구체적 촉매제(호재/악재 뉴스, 예: 아마존 협업 발표, 실적 쇼크 등) |
+       - 만약 팩트 데이터가 없다면 "최근 2개월 내 10% 이상 일일 급변동이 발생하지 않았습니다." 라고 적으세요.
        
-    4. 💡 기관 트레이딩 결론 (Actionable Insight)
+    4. 💡 기관 트레이딩 결론 (Actionable Insight: 구체적 롱/숏 의견)
     """
     return ask_gemini_dynamic(prompt, [])
