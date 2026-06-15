@@ -112,6 +112,7 @@ def fetch_financial_data(ticker_symbol):
             curr_4h_ema200 = "-"
             curr_1d_ema200 = f"${hist_1d['EMA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['EMA200_1D'].iloc[-1]) else "-"
 
+        # 💡 최근 2달 이내 10% 이상 급변동 날짜 및 나스닥 등락률 추적 로직 추가
         volatility_events = []
         try:
             recent_hist = hist_1d.tail(60) 
@@ -146,6 +147,7 @@ def fetch_financial_data(ticker_symbol):
         except: pass
         vol_text = "\n".join(volatility_events) if volatility_events else "최근 2개월 내 10% 이상 일일 급변동 없음."
 
+        # 💡 실적 발표 데이터 (lxml 에러 방어 및 미래/과거 시각적 분리 적용)
         def get_earnings_price_change_safe(target_date_str):
             current_date_str = datetime.today().strftime('%Y-%m-%d')
             if target_date_str > current_date_str: return "-"
@@ -190,6 +192,8 @@ def fetch_financial_data(ticker_symbol):
                     <th>발표일 (분기)</th><th>시장 예상치</th><th>실제 발표치</th><th>서프라이즈</th><th>발표일 주가 등락</th>
                   </tr>
                 """
+                current_date_str = datetime.today().strftime('%Y-%m-%d')
+                
                 for _, row in edts.iterrows():
                     eps_est = row.get('EPS Estimate', None)
                     eps_rep = row.get('Reported EPS', None)
@@ -205,7 +209,12 @@ def fetch_financial_data(ticker_symbol):
                         surprise_html = f"<span style='color:{scolor}; font-weight:bold;'>{ssign}{surp_pct:.1f}% {stxt}</span>"
                         
                     price_chg_html = get_earnings_price_change_safe(row['Date'])
-                    edts_table += f"<tr><td><b>{row['Date']}</b></td><td>{est_str}</td><td>{rep_str}</td><td>{surprise_html}</td><td>{price_chg_html}</td></tr>"
+                    
+                    # 미래 실적발표일 강조 디자인 적용
+                    row_bg = "background-color: #fffbeb;" if row['Date'] > current_date_str else ""
+                    date_icon = "⏳ " if row['Date'] > current_date_str else ""
+                    
+                    edts_table += f"<tr style='{row_bg}'><td><b>{date_icon}{row['Date']}</b></td><td>{est_str}</td><td>{rep_str}</td><td>{surprise_html}</td><td>{price_chg_html}</td></tr>"
                 edts_table += "</table>"
                 earnings_html = edts_table
             else: earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다.</p>"
