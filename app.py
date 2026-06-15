@@ -590,7 +590,7 @@ with tab6:
                 use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
             )
             
-            if df_selected.get('selection', {}).get('rows', []):
+                if df_selected.get('selection', {}).get('rows', []):
                 st.divider()
                 stock_data = df_sector.iloc[df_selected['selection']['rows'][0]]
                 s_id = stock_data['id']
@@ -660,7 +660,7 @@ with tab6:
                 sector_data = scanned_df.groupby('Sector')['시가총액_num'].sum().reset_index()
                 fig = alt.Chart(sector_data).mark_arc(innerRadius=60).encode(
                     theta=alt.Theta(field="시가총액_num", type="quantitative"),
-                    color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title="섹터")),
+                    color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title="섹터", orient="right", labelLimit=0)),
                     tooltip=['Sector', alt.Tooltip('시가총액_num', format=",.0f", title="시가총액(USD)")]
                 ).properties(title="미국 주도 섹터 비중 (스캔된 종목 기준)", height=300)
                 st.altair_chart(fig, use_container_width=True)
@@ -674,17 +674,28 @@ with tab6:
                 ndx_df = pd.DataFrame([ndx_data])
                 def color_val(val):
                     color = '#ef4444' if val < 0 else '#22c55e'
-                    sign = '+' if val > 0 else ''
                     return f"color: {color}; font-weight: bold;"
-                st.dataframe(ndx_df.style.map(color_val), use_container_width=True, hide_index=True)
+                # 소수점 둘째자리 포맷팅
+                formatted_df = ndx_df.applymap(lambda x: f"{x:+.2f}%")
+                st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                 
-                # 💡 나스닥 1년치 일봉 차트 추가 (알테어 또는 스트림릿 내장 사용)
-                st.markdown("#### 📊 나스닥 최근 1년 흐름")
-                try:
-                    ndx_hist_chart = yf.Ticker("^IXIC").history(period="1y")['Close']
-                    st.line_chart(ndx_hist_chart, height=150)
-                except:
-                    st.caption("차트 로딩 실패")
+                # 💡 나스닥 1년치 일봉 캔들 차트 (TradingView 미니 위젯)
+                st.markdown("#### 📊 나스닥 최근 흐름 (일봉 캔들)")
+                ndx_tv_widget = """
+                <div class="tradingview-widget-container" style="height:250px;width:100%;">
+                  <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
+                  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                  <script type="text/javascript">
+                  new TradingView.widget({
+                  "autosize": true, "symbol": "IXIC", "interval": "D", "timezone": "Etc/UTC",
+                  "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+                  "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
+                  "container_id": "tradingview_ixic"
+                  });
+                  </script>
+                </div>
+                """
+                components.html(ndx_tv_widget, height=250)
             else:
                 st.write("나스닥 데이터를 불러오는 중입니다...")
 
