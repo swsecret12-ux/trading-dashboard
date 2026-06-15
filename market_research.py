@@ -5,24 +5,18 @@ import requests
 from bs4 import BeautifulSoup
 import urllib.parse
 import xml.etree.ElementTree as ET
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-# 💡 야후 파이낸스 무한 로딩 방지 (대기 시간 및 재시도 횟수 최적화)
 def get_robust_session():
     session = requests.Session()
-    # 기존 5번 재시도 -> 2번으로 줄여서 병목(무한 로딩) 방지
-    retry = Retry(connect=2, backoff_factor=0.5, status_forcelist=[429, 500, 502, 503, 504])
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
+    # 💡 무한 로딩 원인 제거: 서버 차단 시 10분 넘게 재시도하며 뻗어버리는 로직(Retry)을 과감히 삭제!
+    # 실패하면 즉시 실패 처리하여 병목을 막고 쾌적하게 유지합니다.
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     })
     return session
 
 def fetch_investing_news(ticker):
-    """구글 뉴스 RSS를 우회하여 최신 글로벌 기사(Investing, 파트너십 등)를 긁어옵니다."""
+    """구글 뉴스 RSS를 우회하여 최신 글로벌 기사를 긁어옵니다."""
     try:
         query = urllib.parse.quote(f"{ticker} stock OR news")
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
@@ -130,7 +124,6 @@ def fetch_financial_data(ticker_symbol):
             curr_4h_ema200 = "-"
             curr_1d_ema200 = f"${hist_1d['EMA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['EMA200_1D'].iloc[-1]) else "-"
 
-        # 💡 실적 처리 로직
         earnings_html = ""
         try:
             try:
@@ -143,29 +136,27 @@ def fetch_financial_data(ticker_symbol):
                 edts = edts.reset_index()
                 date_col = 'Earnings Date' if 'Earnings Date' in edts.columns else edts.columns[0]
                 
-                if edts[date_col].dt.tz is not None:
-                    edts[date_col] = edts[date_col].dt.tz_convert('America/New_York')
-                else:
-                    edts[date_col] = edts[date_col].dt.tz_localize('UTC').dt.tz_convert('America/New_York')
+                # 타임존 무시하고 텍스트로 잘라내어 미래 날짜 에러 완벽 차단
+                edts['Date'] = edts[date_col].astype(str).str[:10]
+                current_date_str = datetime.today().strftime('%Y-%m-%d')
                 
-                edts['Date'] = edts[date_col].dt.strftime('%Y-%m-%d')
-                current_time_ny = pd.Timestamp.now(tz='America/New_York')
-                
-                def get_earnings_price_change(target_date_str):
+                def get_earnings_price_change_safe(target_date_str):
+                    if target_date_str > current_date_str: return "-"
                     try:
-                        target_date = pd.to_datetime(target_date_str).tz_localize('America/New_York')
-                        if target_date > current_time_ny:
-                            return "-"
-                        idx = hist_1d.index.get_indexer([target_date], method='nearest')[0]
-                        start_idx = max(0, idx - 1)
-                        end_idx = min(len(hist_1d) - 1, idx + 1)
-                        start_p = hist_1d['Close'].iloc[start_idx]
-                        end_p = hist_1d['Close'].iloc[end_idx]
-                        pct = ((end_p - start_p) / start_p) * 100
-                        color = "#ef4444" if pct < 0 else "#22c55e"
-                        sign = "+" if pct > 0 else ""
-                        return f"<span style='color:{color}; font-weight:bold;'>{sign}{pct:.1f}%</span><br><span style='font-size:0.8rem; color:#888;'>(${start_p:.2f} ➔ ${end_p:.2f})</span>"
+                        target_dt = pd.to_datetime(target_date_str).tz_localize(hist_1d.index.tz) if hist_1d.index.tz else pd.to_datetime(target_date_str)
+                        idx_arr = hist_1d.index.get_indexer([target_dt], method='nearest')
+                        if len(idx_arr) > 0 and idx_arr[0] >= 0:
+                            idx = idx_arr[0]
+                            start_idx = max(0, idx - 1)
+                            end_idx = min(len(hist_1d) - 1, idx + 1)
+                            start_p = hist_1d['Close'].iloc[start_idx]
+                            end_p = hist_1d['Close'].iloc[end_idx]
+                            pct = ((end_p - start_p) / start_p) * 100
+                            color = "#ef4444" if pct < 0 else "#22c55e"
+                            sign = "+" if pct > 0 else ""
+                            return f"<span style='color:{color}; font-weight:bold;'>{sign}{pct:.1f}%</span><br><span style='font-size:0.8rem; color:#888;'>(${start_p:.2f} ➔ ${end_p:.2f})</span>"
                     except: return "-"
+                    return "-"
 
                 edts_table = "<table class='ma-table' style='text-align:center;'><tr style='background-color:#f1f5f9;'><th>발표일 (분기)</th><th>시장 예상치</th><th>실제 발표치</th><th>서프라이즈</th><th>발표일 주가 등락</th></tr>"
                 for _, row in edts.iterrows():
@@ -182,18 +173,16 @@ def fetch_financial_data(ticker_symbol):
                         stxt = "상회" if surp_pct > 0 else "하회"
                         surprise_html = f"<span style='color:{scolor}; font-weight:bold;'>{ssign}{surp_pct:.1f}% {stxt}</span>"
                         
-                    price_chg_html = get_earnings_price_change(row['Date'])
+                    price_chg_html = get_earnings_price_change_safe(row['Date'])
                     edts_table += f"<tr><td><b>{row['Date']}</b></td><td>{est_str}</td><td>{rep_str}</td><td>{surprise_html}</td><td>{price_chg_html}</td></tr>"
                 edts_table += "</table>"
                 earnings_html = edts_table
             else: earnings_html = "<p>최근 실적 데이터를 불러올 수 없습니다.</p>"
         except Exception as e: earnings_html = f"<p>실적 데이터 오류: {str(e)}</p>"
 
-        # 💡 급변동(10% 이상) 팩트체크 타임존 에러 완벽 해결
         volatility_events = []
         try:
             recent_hist = hist_1d.tail(60) 
-            # 나스닥 지수 로드 실패 시 무시하도록 처리
             try:
                 ndx_hist = yf.Ticker("^IXIC", session=session).history(period="1y")
             except:
@@ -211,10 +200,8 @@ def fetch_financial_data(ticker_symbol):
                     
                     if not ndx_hist.empty:
                         try:
-                            # 둘 다 타임존을 강제로 UTC로 통일하여 비교 (에러 원천 차단)
                             target_d_utc = pd.to_datetime(target_d, utc=True)
                             ndx_idx_utc = pd.to_datetime(ndx_hist.index, utc=True)
-                            
                             idx_arr = ndx_idx_utc.get_indexer([target_d_utc], method='nearest')
                             if len(idx_arr) > 0 and idx_arr[0] > 0:
                                 n_idx = idx_arr[0]
