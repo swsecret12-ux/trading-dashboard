@@ -21,9 +21,6 @@ def fetch_investing_news(ticker):
     except:
         return "글로벌 뉴스 수집 실패"
 
-def fetch_saveticker_news(user_id, password):
-    return "별도 뉴스 데이터 참조 생략"
-
 def fetch_financial_data(ticker_symbol):
     try:
         session = requests.Session()
@@ -97,9 +94,10 @@ def fetch_financial_data(ticker_symbol):
             curr_4h_ema200 = "-"
             curr_1d_ema200 = f"${hist_1d['EMA200_1D'].iloc[-1]:.2f}" if not pd.isna(hist_1d['EMA200_1D'].iloc[-1]) else "-"
 
+        # 🚨 10% 이상 일일 급변동 팩트 스캔 (나스닥 동기화)
         volatility_events = []
         try:
-            recent_hist = hist_1d.tail(60) 
+            recent_hist = hist_1d.tail(60) # 최근 2개월(약 60거래일)
             try: 
                 ndx_hist = yf.Ticker("^IXIC", session=session).history(period="6mo")
                 if ndx_hist.index.tz is None: ndx_hist.index = ndx_hist.index.tz_localize('UTC')
@@ -261,6 +259,1069 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_input="", saveticker_t
     (최근 실적의 강약점과 기술적 모멘텀을 4줄 이상 길게 서술하세요.)
        
     ### 4. 💡 기관 트레이딩 결론 (Actionable Insight)
-    (롱/숏/관망 중 명확한 포지션과 펀더멘털 대응 전략을 4줄 이상 상세하게 서술하세요.)
+    (롱/숏/관망 중 명확한 포지션과 대응 전략을 4줄 이상 상세하게 서술하세요.)
     """
     return ask_gemini_dynamic(prompt, [])
+```
+
+### 2️⃣ `app.py` (전체 덮어쓰기)
+*도넛 차트 범례가 2줄로 가지런히 배치되고, 나스닥 주봉 선 차트, 트레이딩뷰 EMA+RSI 지표가 완벽하게 적용되었습니다.*
+```python:Main App:app.py
+import streamlit as st
+import pandas as pd
+import requests
+import json
+import uuid
+import re
+import os
+import io
+import time
+import ccxt
+import altair as alt
+from datetime import datetime, timezone, timedelta
+from PIL import Image
+import google.generativeai as genai
+import streamlit.components.v1 as components
+
+# ==========================================
+# --- 1. 클라우드 및 AI 세팅 ---
+# ==========================================
+URL = st.secrets.get("SUPABASE_URL", "")
+KEY = st.secrets.get("SUPABASE_KEY", "")
+HEADERS = {
+    "apikey": KEY,
+    "Authorization": f"Bearer {KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
+
+if "GEMINI_API_KEY" in st.secrets:
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+
+def insert_db(table, data): return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
+def update_db(table, match_col, match_val, data): return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data)
+def delete_db(table, match_col, match_val): return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS)
+
+def upload_image_to_supabase(img_file, prefix="img"):
+    try:
+        file_ext = img_file.name.split('.')[-1]
+        file_name = f"{prefix}_{uuid.uuid4().hex[:8]}.{file_ext}"
+        file_bytes = img_file.getvalue()
+        if not file_bytes: return None
+        upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
+        img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": getattr(img_file, 'type', 'image/png')}
+        res = requests.post(upload_url, headers=img_headers, data=file_bytes)
+        if res.status_code == 200: return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
+        return None
+    except Exception: return None
+
+def load_trade_data():
+    res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
+    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    return pd.DataFrame(columns=["id", "date", "ticker", "timeframe", "setup_pattern", "position", "result", "rr_ratio", "profit", "chart_image_paths", "entry_basis", "exit_basis"])
+
+def load_archive_data():
+    res = requests.get(f"{URL}/rest/v1/analysis_archive?select=*&order=created_at.desc", headers=HEADERS)
+    if res.status_code == 200 and res.json():
+        df = pd.DataFrame(res.json())
+        if 'ai_advice_mapping' not in df.columns: df['ai_advice_mapping'] = "{}"
+        if 'ocr_text_mapping' not in df.columns: df['ocr_text_mapping'] = "{}"
+        return df
+    return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
+
+def get_recent_archive_context(ticker_search):
+    df = load_archive_data()
+    if df.empty or not ticker_search: return ""
+    recent_scraps = df[(df['ticker'].str.contains(ticker_search, case=False, na=False, regex=False)) & (df['category'] == '타인분석')].head(3)
+    if recent_scraps.empty: return ""
+    context = "[최근 아카이브 참조 데이터 (원작자/전문가 관점)]\n"
+    for _, row in recent_scraps.iterrows():
+        context += f"- 날짜: {row['date']} | 출처: {row['source_view']}\n"
+        context += f"  내용 요약(AI메모): {row['memo']}\n"
+        try:
+            ocr_map = json.loads(row['ocr_text_mapping']) if isinstance(row['ocr_text_mapping'], str) else row['ocr_text_mapping']
+            if ocr_map and isinstance(ocr_map, dict) and len(ocr_map) > 0:
+                context += f"  원작자 본문 일부: {list(ocr_map.values())[0][:300]}...\n"
+        except: pass
+    return context
+
+def load_sector_data():
+    res = requests.get(f"{URL}/rest/v1/sector_analysis?select=*&order=created_at.desc", headers=HEADERS)
+    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
+
+# 💡 미국 시총 100위 고정 데이터베이스 (위키피디아 의존성 100% 제거)
+TOP_100_STOCKS = [
+    {"Symbol": "MSFT", "Name": "Microsoft (마이크로소프트)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "AAPL", "Name": "Apple Inc. (애플)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "NVDA", "Name": "NVIDIA (엔비디아)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "GOOGL", "Name": "Alphabet Class A (구글)", "Sector": "Communication Services (커뮤니케이션)"},
+    {"Symbol": "AMZN", "Name": "Amazon (아마존)", "Sector": "Consumer Discretionary (자유소비재)"},
+    {"Symbol": "META", "Name": "Meta Platforms (메타/페이스북)", "Sector": "Communication Services (커뮤니케이션)"},
+    {"Symbol": "BRK-B", "Name": "Berkshire Hathaway (버크셔 해서웨이)", "Sector": "Financials (금융)"},
+    {"Symbol": "LLY", "Name": "Eli Lilly (일라이 릴리)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "TSLA", "Name": "Tesla (테슬라)", "Sector": "Consumer Discretionary (자유소비재)"},
+    {"Symbol": "AVGO", "Name": "Broadcom (브로드컴)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "V", "Name": "Visa (비자)", "Sector": "Financials (금융)"},
+    {"Symbol": "JPM", "Name": "JPMorgan Chase (JP모건)", "Sector": "Financials (금융)"},
+    {"Symbol": "WMT", "Name": "Walmart (월마트)", "Sector": "Consumer Staples (필수소비재)"},
+    {"Symbol": "UNH", "Name": "UnitedHealth (유나이티드헬스)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "MA", "Name": "Mastercard (마스터카드)", "Sector": "Financials (금융)"},
+    {"Symbol": "PG", "Name": "Procter & Gamble (P&G)", "Sector": "Consumer Staples (필수소비재)"},
+    {"Symbol": "JNJ", "Name": "Johnson & Johnson (존슨앤드존슨)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "HD", "Name": "Home Depot (홈디포)", "Sector": "Consumer Discretionary (자유소비재)"},
+    {"Symbol": "ORCL", "Name": "Oracle (오라클)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "MRK", "Name": "Merck & Co. (머크)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "COST", "Name": "Costco (코스트코)", "Sector": "Consumer Staples (필수소비재)"},
+    {"Symbol": "CVX", "Name": "Chevron (쉐브론)", "Sector": "Energy (에너지)"},
+    {"Symbol": "ABBV", "Name": "AbbVie (애브비)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "BAC", "Name": "Bank of America (뱅크오브아메리카)", "Sector": "Financials (금융)"},
+    {"Symbol": "CRM", "Name": "Salesforce (세일즈포스)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "AMD", "Name": "Advanced Micro Devices (AMD)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "NFLX", "Name": "Netflix (넷플릭스)", "Sector": "Communication Services (커뮤니케이션)"},
+    {"Symbol": "KO", "Name": "Coca-Cola (코카콜라)", "Sector": "Consumer Staples (필수소비재)"},
+    {"Symbol": "PEP", "Name": "PepsiCo (펩시코)", "Sector": "Consumer Staples (필수소비재)"},
+    {"Symbol": "TMO", "Name": "Thermo Fisher Scientific (써모피셔)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "LIN", "Name": "Linde (린데)", "Sector": "Materials (소재)"},
+    {"Symbol": "DIS", "Name": "Walt Disney (디즈니)", "Sector": "Communication Services (커뮤니케이션)"},
+    {"Symbol": "WFC", "Name": "Wells Fargo (웰스파고)", "Sector": "Financials (금융)"},
+    {"Symbol": "MCD", "Name": "McDonald's (맥도날드)", "Sector": "Consumer Discretionary (자유소비재)"},
+    {"Symbol": "CSCO", "Name": "Cisco Systems (시스코)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "ADBE", "Name": "Adobe (어도비)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "INTU", "Name": "Intuit (인튜이트)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "QCOM", "Name": "Qualcomm (퀄컴)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "AXP", "Name": "American Express (아메리칸 익스프레스)", "Sector": "Financials (금융)"},
+    {"Symbol": "IBM", "Name": "IBM (아이비엠)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "TXN", "Name": "Texas Instruments (텍사스 인스트루먼츠)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "AMAT", "Name": "Applied Materials (어플라이드 머티리얼즈)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "CAT", "Name": "Caterpillar (캐터필러)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "UBER", "Name": "Uber Technologies (우버)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "AMGN", "Name": "Amgen (암젠)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "PFE", "Name": "Pfizer (화이자)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "GE", "Name": "General Electric (GE)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "ISRG", "Name": "Intuitive Surgical (인튜이티브 서지컬)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "NOW", "Name": "ServiceNow (서비스나우)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "BA", "Name": "Boeing (보잉)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "PM", "Name": "Philip Morris (필립모리스)", "Sector": "Consumer Staples (필수소비재)"},
+    {"Symbol": "SPGI", "Name": "S&P Global (S&P 글로벌)", "Sector": "Financials (금융)"},
+    {"Symbol": "HON", "Name": "Honeywell (하니웰)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "UNP", "Name": "Union Pacific (유니언 퍼시픽)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "BKNG", "Name": "Booking Holdings (부킹홀딩스)", "Sector": "Consumer Discretionary (자유소비재)"},
+    {"Symbol": "SYK", "Name": "Stryker (스트라이커)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "COP", "Name": "ConocoPhillips (코노코필립스)", "Sector": "Energy (에너지)"},
+    {"Symbol": "GS", "Name": "Goldman Sachs (골드만삭스)", "Sector": "Financials (금융)"},
+    {"Symbol": "PLTR", "Name": "Palantir Technologies (팔란티어)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "ARM", "Name": "ARM Holdings (암 홀딩스)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "RTX", "Name": "RTX Corporation (레이시온)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "VRTX", "Name": "Vertex Pharmaceuticals (버텍스 파마)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "T", "Name": "AT&T (에이티앤티)", "Sector": "Communication Services (커뮤니케이션)"},
+    {"Symbol": "MS", "Name": "Morgan Stanley (모건스탠리)", "Sector": "Financials (금융)"},
+    {"Symbol": "LMT", "Name": "Lockheed Martin (록히드 마틴)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "BLK", "Name": "BlackRock (블랙록)", "Sector": "Financials (금융)"},
+    {"Symbol": "MDT", "Name": "Medtronic (메드트로닉)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "C", "Name": "Citigroup (씨티그룹)", "Sector": "Financials (금융)"},
+    {"Symbol": "PGR", "Name": "Progressive (프로그레시브)", "Sector": "Financials (금융)"},
+    {"Symbol": "ADP", "Name": "Automatic Data Processing (ADP)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "CB", "Name": "Chubb (처브)", "Sector": "Financials (금융)"},
+    {"Symbol": "ADI", "Name": "Analog Devices (아날로그 디바이스)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "MDLZ", "Name": "Mondelez (몬델리즈)", "Sector": "Consumer Staples (필수소비재)"},
+    {"Symbol": "MMC", "Name": "Marsh & McLennan (마쉬 앤 매클레넌)", "Sector": "Financials (금융)"},
+    {"Symbol": "CI", "Name": "Cigna (시그나)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "BMY", "Name": "Bristol-Myers Squibb (BMS)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "GILD", "Name": "Gilead Sciences (길리어드)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "DE", "Name": "Deere & Company (존디어)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "SBUX", "Name": "Starbucks (스타벅스)", "Sector": "Consumer Discretionary (자유소비재)"},
+    {"Symbol": "NKE", "Name": "Nike (나이키)", "Sector": "Consumer Discretionary (자유소비재)"},
+    {"Symbol": "ABT", "Name": "Abbott Laboratories (애보트)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "SNOW", "Name": "Snowflake (스노우플레이크)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "CRWD", "Name": "CrowdStrike (크라우드스트라이크)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "PANW", "Name": "Palo Alto Networks (팔로알토)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "MU", "Name": "Micron Technology (마이크론)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "SMCI", "Name": "Super Micro Computer (슈퍼마이크로)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "INTC", "Name": "Intel (인텔)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "MRNA", "Name": "Moderna (모더나)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "CVS", "Name": "CVS Health (CVS 헬스)", "Sector": "Health Care (헬스케어)"},
+    {"Symbol": "FI", "Name": "Fiserv (파이서브)", "Sector": "Financials (금융)"},
+    {"Symbol": "KLAC", "Name": "KLA Corp (KLA)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "SNPS", "Name": "Synopsys (시놉시스)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "CDNS", "Name": "Cadence Design Systems (케이던스)", "Sector": "Information Technology (정보기술)"},
+    {"Symbol": "CMCSA", "Name": "Comcast (컴캐스트)", "Sector": "Communication Services (커뮤니케이션)"},
+    {"Symbol": "GPN", "Name": "Global Payments (글로벌 페이먼츠)", "Sector": "Financials (금융)"},
+    {"Symbol": "VRT", "Name": "Vertiv (버티브)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "CEG", "Name": "Constellation Energy (콘스텔레이션 에너지)", "Sector": "Utilities (유틸리티)"},
+    {"Symbol": "GEV", "Name": "GE Vernova (GE 버노바)", "Sector": "Industrials (산업재)"},
+    {"Symbol": "SO", "Name": "Southern Company (서던 컴퍼니)", "Sector": "Utilities (유틸리티)"},
+    {"Symbol": "DUK", "Name": "Duke Energy (듀크 에너지)", "Sector": "Utilities (유틸리티)"}
+]
+
+def format_mcap_krw(usd_val):
+    if not usd_val or usd_val <= 0: return "-"
+    krw_val = usd_val * 1380
+    
+    if krw_val >= 1e12:
+        trillion = int(krw_val // 1e12)
+        billion = int((krw_val % 1e12) // 1e8)
+        if billion > 0: return f"{trillion:,}조 {billion:,}억원"
+        return f"{trillion:,}조원"
+    elif krw_val >= 1e8:
+        return f"{int(krw_val // 1e8):,}억원"
+    return "-"
+
+import yfinance as yf
+def get_robust_session():
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    })
+    return session
+
+@st.cache_data(ttl=3600)
+def get_nasdaq_performance():
+    try:
+        ndx = yf.Ticker("^IXIC").history(period="4y")
+        curr = ndx['Close'].iloc[-1]
+        def ret(days):
+            if len(ndx) > days: return (curr - ndx['Close'].iloc[-(days+1)]) / ndx['Close'].iloc[-(days+1)] * 100
+            return 0
+        return {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
+    except: return {}
+
+from api_utils import (
+    get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, 
+    get_real_ai_advice, render_ai_advice_block, render_blog_image_html, 
+    render_crisp_image_html, get_file_group_info, execute_survival_trade, load_theory_db
+)
+from market_research import fetch_financial_data, analyze_sector_with_ai
+
+st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
+
+st.markdown("""
+<style>
+div[data-testid="stInfo"] p { font-size: 1.1rem; } 
+div[data-testid="stError"] p { font-size: 1.1rem; }
+div[data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
+.info-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 25px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+.info-card h4 { color: #1e40af; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 1.3rem; }
+.ma-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 1.05rem; }
+.ma-table th, .ma-table td { border: 1px solid #cbd5e1; padding: 12px 15px; text-align: left; }
+.ma-table th { background-color: #e2e8f0; font-weight: bold; color: #1e293b; text-align: center; }
+.ma-table tr:nth-child(even) { background-color: #f8fafc; }
+.ma-table tr:hover { background-color: #f1f5f9; }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("📈 나만의 클라우드 매매 복기 & 자동 AI 분석 시스템")
+
+if "ai_analysis_done" not in st.session_state:
+    st.session_state.ai_analysis_done = False
+    st.session_state.ai_result = ""
+    st.session_state.ai_view_text = ""
+    st.session_state.ai_img_files = [] 
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0 
+if "sp100_state_df" not in st.session_state:
+    st.session_state.sp100_state_df = pd.DataFrame()
+
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
+
+# --- Tab 1 ~ Tab 5 (기존 유지) ---
+with tab1:
+    st.header("📝 매매 기록 보관지")
+    df_trade = load_trade_data()
+    if not df_trade.empty: df_trade = df_trade.sort_values(by='date', ascending=False).reset_index(drop=True)
+    
+    with st.expander("➕ 새로운 매매 기록 추가하기", expanded=True):
+        uploaded_images = st.file_uploader("차트 캡처 업로드", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="trade_uploader")
+        st.markdown("#### 📝 1. 기본 정보")
+        with st.container(border=True):
+            col1, col2, col3, col4 = st.columns(4)
+            with col1: date = st.date_input("날짜", datetime.today())
+            with col2: ticker = st.text_input("종목명 (예: BTC)").upper()
+            with col3: timeframe = st.selectbox("타임프레임", ["1m", "5m", "15m", "1H", "4H", "1D"])
+            with col4: setup_pattern = st.text_input("셋업/패턴")
+            
+        st.markdown("#### 💰 2. 포지션 및 수익 계산")
+        with st.container(border=True):
+            col5, col6, col7, col8, col9 = st.columns(5)
+            with col5: position = st.selectbox("포지션", ["Long", "Short"])
+            with col6: leverage = st.number_input("레버리지 (x)", min_value=1, value=10, step=1)
+            with col7: margin = st.number_input("투자 원금 ($)", min_value=0.0, value=1000.0, step=100.0)
+            with col8: entry_price = st.number_input("진입 가격", min_value=0.0, value=0.0, format="%.4f")
+            with col9: exit_price = st.number_input("종료 가격", min_value=0.0, value=0.0, format="%.4f")
+            
+            profit_calc = 0.0
+            if entry_price > 0 and exit_price > 0:
+                if position == "Long": profit_calc = ((exit_price - entry_price) / entry_price) * margin * leverage
+                else: profit_calc = ((entry_price - exit_price) / entry_price) * margin * leverage
+            
+            if profit_calc > 0: auto_res = "승"
+            elif profit_calc < 0: auto_res = "패"
+            else: auto_res = "무"
+            st.info(f"**💡 자동 계산된 수익금:** `${profit_calc:,.2f}` &nbsp;&nbsp;|&nbsp;&nbsp; **ROE (수익률):** `{profit_calc/margin*100 if margin>0 else 0:,.2f}%`")
+            
+        st.markdown("#### 📊 3. 결과 및 근거")
+        with st.container(border=True):
+            col10, col11 = st.columns(2)
+            idx_res = ["승", "무", "패"].index(auto_res) if (entry_price > 0 and exit_price > 0) else 0
+            with col10: result = st.selectbox("최종 결과", ["승", "무", "패"], index=idx_res)
+            with col11: rr_ratio = st.text_input("손익비 (예: 1:2)")
+            entry_basis = st.text_area("🟢 진입 근거", height=80)
+            exit_basis = st.text_area("🔴 종료 근거", height=80)
+            
+        if st.button("☁️ 클라우드에 기록 저장", type="primary", use_container_width=True):
+            if not ticker: st.error("종목명을 입력해주세요!")
+            else:
+                saved_urls = [upload_image_to_supabase(img, "trade") for img in (uploaded_images or [])]
+                saved_urls = [u for u in saved_urls if u]
+                detailed_entry = f"[진입가: {entry_price} | 레버리지: {leverage}x | 원금: ${margin}]\n{entry_basis}"
+                detailed_exit = f"[종료가: {exit_price}]\n{exit_basis}"
+                insert_db("trade_history", {
+                    "date": date.strftime("%Y-%m-%d"), "ticker": ticker, "timeframe": timeframe, 
+                    "setup_pattern": setup_pattern, "position": position, "result": result, 
+                    "rr_ratio": rr_ratio, "profit": round(profit_calc, 2), "chart_image_paths": "|".join(saved_urls), 
+                    "entry_basis": detailed_entry, "exit_basis": detailed_exit
+                })
+                st.success("성공적으로 저장되었습니다!"); time.sleep(1); st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 📋 전체 매매 내역")
+    if not df_trade.empty:
+        display_cols = ["date", "ticker", "timeframe", "setup_pattern", "position", "rr_ratio", "result", "profit"]
+        selected_event = st.dataframe(df_trade[display_cols], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
+        
+        if selected_event.get('selection', {}).get('rows', []):
+            st.divider()
+            trade_data = df_trade.iloc[selected_event['selection']['rows'][0]]
+            trade_id = trade_data['id']
+            
+            col_t, col_d = st.columns([8.5, 1.5])
+            with col_t: st.markdown(f"## 🧐 {trade_data['date']} | {trade_data['ticker']} 복기")
+            with col_d:
+                if st.button("🗑️ 삭제", type="primary", use_container_width=True, key=f"del_tr_{trade_id}"):
+                    delete_db("trade_history", "id", trade_id); st.rerun()
+            
+            c_chart, c_memo = st.columns([6, 4], gap="large")
+            with c_chart:
+                for u in str(trade_data.get("chart_image_paths", "")).split("|"):
+                    if u: st.markdown(render_crisp_image_html(u), unsafe_allow_html=True)
+            with c_memo:
+                with st.form(f"edit_tr_{trade_id}"):
+                    e_entry = st.text_area("🟢 진입 근거", value=trade_data.get("entry_basis", ""), height=150)
+                    e_exit = st.text_area("🔴 종료 근거", value=trade_data.get("exit_basis", ""), height=150)
+                    if st.form_submit_button("📝 내용 업데이트"):
+                        update_db("trade_history", "id", trade_id, {"entry_basis": e_entry, "exit_basis": e_exit}); st.rerun()
+
+with tab2:
+    st.header("🔍 AI 차트 분석 및 관점 피드백 (아카이브 지식 연동)")
+    st.info("차트 스크린샷을 올리면, 아카이브(Tab 5)에 저장된 해당 종목의 최신 전문가 관점을 스스로 찾아내어 함께 분석합니다.")
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        view_uploaded_files = st.file_uploader("📷 차트 이미지 업로드 (여러 장 드래그 가능)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="view_uploader")
+        if view_uploaded_files:
+            for img in view_uploaded_files: st.image(img, caption=img.name, use_container_width=True)
+    with col2:
+        ticker_input = st.text_input("분석할 티커 입력 (예: BTC, NDX)").upper()
+        user_view = st.text_area("✍️ 현재 나의 관점 (예: 1시간봉 전저점 스윕 확인, 롱 진입 대기중)", height=100)
+        if st.button("🚀 아카이브 기반 AI 관점 분석 요청", type="primary", use_container_width=True):
+            keys = get_gemini_keys()
+            if not keys: st.error("Gemini API 키가 설정되지 않았습니다.")
+            elif view_uploaded_files and ticker_input:
+                with st.spinner('아카이브에서 관련 자료를 찾고 분석하는 중... 🤖'):
+                    try:
+                        archive_context = get_recent_archive_context(ticker_input)
+                        img_bytes_list, img_objs = [], []
+                        for f in view_uploaded_files:
+                            b = f.getvalue()
+                            img_bytes_list.append({"bytes": b, "name": f.name, "type": getattr(f, 'type', 'image/png')})
+                            img_objs.append(Image.open(io.BytesIO(b)))
+                        
+                        analysis_prompt = f"""
+                        당신은 월스트리트 출신의 전문 트레이더입니다. 
+                        [종목]: {ticker_input}
+                        [나의 관점]: {user_view}
+                        {archive_context}
+                        반드시 JSON 형식으로만 출력하세요.
+                        {{ "trend": "...", "key_level": "...", "momentum": "...", "volume": "...", "s_score": 3, "macro_news": "...", "analysis": "..." }}
+                        """
+                        analysis_result = ask_gemini_dynamic(analysis_prompt, img_objs)
+                        st.session_state.ai_analysis_done = True
+                        st.session_state.ai_result = analysis_result
+                        st.session_state.ai_view_text = user_view
+                        st.session_state.ai_img_files = img_bytes_list
+                        st.rerun()
+                    except Exception as e: st.error(f"분석 중 오류가 발생했습니다: {e}")
+            else: st.warning("⚠️ 차트 이미지와 티커를 입력해주세요.")
+
+    if st.session_state.ai_analysis_done:
+        st.success("✅ 아카이브 연동 AI 분석 완료!")
+        render_ai_advice_block("🤖 AI 멘토의 정밀 피드백", st.session_state.ai_result)
+        st.divider()
+        with st.expander("💾 이 관점을 '나의 관점(Watchlist)'에 저장하기", expanded=True):
+            with st.form("save_watchlist_form"):
+                col_w1, col_w2 = st.columns(2)
+                with col_w1: w_ticker = st.text_input("종목명", value=ticker_input).upper()
+                with col_w2: w_date = st.date_input("저장 날짜", datetime.today())
+                if st.form_submit_button("🚀 나의 관점(Watchlist)에 저장", type="primary", use_container_width=True):
+                    if w_ticker:
+                        with st.spinner("클라우드 보관 중..."):
+                            class DummyFile:
+                                def __init__(self, b, n, t): self.b = b; self.name = n; self.type = t
+                                def getvalue(self): return self.b
+                            saved_urls = []
+                            for file_data in st.session_state.ai_img_files:
+                                dummy_img = DummyFile(file_data['bytes'], file_data['name'], file_data['type'])
+                                img_url = upload_image_to_supabase(dummy_img, "watchlist")
+                                if img_url: saved_urls.append(img_url)
+                            insert_db("analysis_archive", {
+                                "date": w_date.strftime("%Y-%m-%d"), "ticker": w_ticker, "category": "나의관점", 
+                                "source_view": st.session_state.ai_view_text, "chart_image_paths": "|".join(saved_urls), 
+                                "detail_image_paths": "", "memo": st.session_state.ai_result, 
+                                "ai_advice_mapping": "{}", "ocr_text_mapping": "{}"
+                            })
+                            st.session_state.ai_analysis_done = False; st.session_state.ai_img_files = []
+                            st.success("✅ Watchlist 저장 완료!"); st.rerun()
+
+with tab3:
+    st.header("📚 나의 매매 기준 & 기본 이론 DB")
+    theory_db = load_theory_db()
+    col_l, col_r = st.columns([3, 7], gap="large")
+
+    with col_l:
+        st.subheader("📑 목차")
+        cats = list(theory_db.keys())
+        cats.sort()
+        sel_cat = st.selectbox("카테고리 선택", cats + ["➕ 새 카테고리 추가"])
+        if sel_cat == "➕ 새 카테고리 추가":
+            new_cat_name = st.text_input("새 카테고리명 입력")
+            sel_title = None
+        else:
+            titles = list(theory_db[sel_cat].keys())
+            sel_title = st.radio("세부 이론 선택", titles) if titles else None
+
+        st.divider()
+        with st.expander("📝 새로운 이론 등록/덮어쓰기", expanded=False):
+            with st.form("add_th_form", clear_on_submit=True):
+                target_cat = sel_cat if sel_cat != "➕ 새 카테고리 추가" else new_cat_name
+                th_title = st.text_input("이론 제목 (목차 이름과 동일하게 입력)")
+                th_cont = st.text_area("상세 내용", height=200)
+                th_imgs = st.file_uploader("참고 차트 업로드 (선택)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
+                if st.form_submit_button("☁️ 클라우드 저장", type="primary"):
+                    if th_title and th_cont:
+                        img_urls = [upload_image_to_supabase(i, "theory") for i in (th_imgs or [])]
+                        insert_db("theory_db", {"category": target_cat, "title": th_title, "content": th_cont, "image_paths": "|".join([u for u in img_urls if u])})
+                        st.rerun()
+
+    with col_r:
+        if sel_title and theory_db[sel_cat][sel_title].get("id") is not None:
+            data = theory_db[sel_cat][sel_title]
+            st.markdown(f"## 📖 {sel_title}")
+            st.divider(); st.markdown(data['content'])
+            if data['images']:
+                st.markdown("<br>### 🖼️ 참고 차트 캡처", unsafe_allow_html=True)
+                for u in data['images']:
+                    if u: st.markdown(render_crisp_image_html(u), unsafe_allow_html=True)
+            if data['id'] != "default":
+                with st.expander("⚙️ 이 내용 수정 / 삭제하기", expanded=False):
+                    with st.form(f"ed_th_{data['id']}"):
+                        ed_cont = st.text_area("내용 수정", value=data['content'], height=250)
+                        c_s, c_d = st.columns([7, 3])
+                        if c_s.form_submit_button("📝 수정 내용 저장", type="primary", use_container_width=True):
+                            update_db("theory_db", "id", data['id'], {"content": ed_cont}); st.rerun()
+                        if c_d.form_submit_button("🗑️ 이 이론 삭제", use_container_width=True):
+                            delete_db("theory_db", "id", data['id']); st.rerun()
+
+with tab4:
+    st.header("🤖 자동매매 사령실 (컨트롤 패널)")
+    col_status1, col_status2, col_status3, col_status4 = st.columns(4)
+    with col_status1:
+        bot_on = st.toggle("🚀 봇 가동 스위치 (마스터)", value=False)
+    with col_status2: st.metric("오늘의 예상 수익", "+$0.00", "0.0%")
+    with col_status3: st.metric("승률 (최근 10건)", "0.0%", "-")
+    with col_status4: st.metric("현재 포지션", "대기 중 (Flat)", "")
+    st.divider()
+
+    bot_tab1, bot_tab2, bot_tab3, bot_tab4 = st.tabs(["⚙️ 기본 세팅 (API)", "🛡️ 반자동 생존 매매", "🧠 매매 전략 & 웹훅", "📋 실시간 작동 로그"])
+    with bot_tab1:
+        with st.form("bot_basic_form", border=True):
+            c1, c2 = st.columns(2)
+            with c1:
+                api_key = st.text_input("Bitget API Key", type="password", value=st.session_state.get('bg_api', ''))
+                secret_key = st.text_input("Bitget Secret Key", type="password", value=st.session_state.get('bg_secret', ''))
+            with c2:
+                api_passphrase = st.text_input("API Passphrase", type="password", value=st.session_state.get('bg_pass', ''))
+                risk_limit = st.slider("1회 진입 허용 리스크 (%)", 0.1, 5.0, 1.0, 0.1)
+            if st.form_submit_button("세션 저장", type="primary"):
+                st.session_state.update({'bg_api': api_key, 'bg_secret': secret_key, 'bg_pass': api_passphrase, 'bg_risk': risk_limit})
+                st.success("API 세팅 완료!")
+    with bot_tab2:
+        with st.form("survival_trade_form"):
+            col_s1, col_s2, col_s3 = st.columns(3)
+            with col_s1: sv_symbol = st.text_input("종목명", value="BTC/USDT:USDT")
+            with col_s2: sv_side = st.selectbox("포지션", ["buy (Long)", "sell (Short)"])
+            with col_s3: sv_sl_percent = st.number_input("손절 비율 (%)", 0.1, 10.0, 2.0, 0.1)
+            sv_reason = st.text_area("진입 근거", placeholder="예: 스윕 확인 후 진입")
+            if st.form_submit_button("🚀 진입 및 스탑로스 자동 세팅", type="primary", use_container_width=True):
+                if not st.session_state.get('bg_api'): st.error("API 키를 저장해주세요.")
+                else:
+                    success, msg = execute_survival_trade(st.session_state['bg_api'], st.session_state['bg_secret'], st.session_state['bg_pass'], sv_symbol, "buy" if "buy" in sv_side else "sell", sv_sl_percent, sv_reason, st.session_state.get('bg_risk', 1.0))
+                    if success: st.success(msg)
+                    else: st.error(msg)
+    with bot_tab3:
+        st.code("[https://youngwoo-trading.streamlit.app/api/webhook](https://youngwoo-trading.streamlit.app/api/webhook)", language="text")
+    with bot_tab4:
+        st.code("[System] 봇 모듈 준비 완료...", language="bash")
+
+with tab5:
+    st.header("📁 분석 자료 아카이브 (AI 자동화)")
+    df_archive = load_archive_data()
+    sub_tab_a, sub_tab_b = st.tabs(["👨‍🏫 타인 분석 스크랩", "👀 나의 관점 (Watchlist)"])
+    
+    with sub_tab_a:
+        with st.expander("➕ 새로운 스크랩 추가하기", expanded=False):
+            with st.form("archive_form_others", clear_on_submit=True):
+                col1, col2, col3 = st.columns(3)
+                with col1: arch_date1 = st.date_input("스크랩 날짜", datetime.today())
+                with col2: arch_ticker1 = st.text_input("종목명").upper()
+                with col3: arch_source1 = st.text_input("출처/제목")
+                if st.form_submit_button("저장", type="primary"):
+                    insert_db("analysis_archive", {
+                        "date": arch_date1.strftime("%Y-%m-%d"), "ticker": arch_ticker1, "category": "타인분석", 
+                        "source_view": arch_source1, "chart_image_paths": "", "detail_image_paths": "", "memo": "",
+                        "ai_advice_mapping": "{}", "ocr_text_mapping": "{}"
+                    })
+                    st.rerun()
+
+        df_others = df_archive[df_archive['category'] == '타인분석'].copy()
+        if not df_others.empty:
+            df_others = df_others.sort_values(by='date', ascending=False).reset_index(drop=True)
+            selected_other = st.dataframe(df_others[["date", "ticker", "source_view"]], use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
+            if selected_other.get('selection', {}).get('rows', []):
+                arch_id_current = df_others.iloc[selected_other['selection']['rows'][0]]['id']
+                if st.button("🗑️ 삭제", key=f"del_arch_{arch_id_current}"):
+                    delete_db("analysis_archive", "id", arch_id_current); st.rerun()
+
+    with sub_tab_b:
+        st.markdown("### 👀 나의 관점 (Watchlist)")
+
+# --- Tab 6: 섹터 & 주도주 맵 ---
+with tab6:
+    st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
+    st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
+    
+    sub_tab_research, sub_tab_top100 = st.tabs(["🏢 내 종목 리서치", "🇺🇸 미국 시총 Top 100 맵"])
+    
+    with sub_tab_research:
+        with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
+            with st.form("new_sector_stock"):
+                c1, c2 = st.columns(2)
+                s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, SNOW)")
+                s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
+                s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
+                
+                if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
+                    if s_ticker:
+                        with st.spinner("데이터 수집 및 크로스체크 심층 분석 중... (최대 10초)"):
+                            try:
+                                fin_data = fetch_financial_data(s_ticker.strip())
+                                st_news_content = "별도 뉴스 생략"
+                                
+                                if "error" in fin_data: 
+                                    st.error(f"데이터 수집 실패: {fin_data['error']}")
+                                else:
+                                    ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
+                                    left_column_html = f"""
+                                    <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
+                                    <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
+                                    <div class='info-card'><h4>💰 분기 실적 (Earnings)</h4>{fin_data.get('earnings_html', '')}</div>
+                                    <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
+                                    """
+                                    insert_db("sector_analysis", {
+                                        "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', 0),
+                                        "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
+                                        "vol_1m": "", "vol_1q": "", "vol_1y": "",
+                                        "issue": left_column_html, "detail_data": fin_data.get('raw_news', ''), "ai_analysis": ai_res
+                                    })
+                                    st.success("리서치 리포트 등록 완료!"); time.sleep(1); st.rerun()
+                            except Exception as e:
+                                st.error(f"분석 중 치명적 오류 발생: {str(e)}")
+
+        df_sector = load_sector_data()
+        if not df_sector.empty:
+            filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
+            if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
+                
+            disp_cols = ["ticker", "sector", "market_cap", "vol_1d", "vol_1w"]
+            df_selected = st.dataframe(
+                df_sector[disp_cols],
+                column_config={"ticker": "티커", "sector": "섹터", "market_cap": "시가총액", "vol_1d": "EMA 크로스 (4H/1D)", "vol_1w": "크로스 발생일"},
+                use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
+            )
+            
+            if df_selected.get('selection', {}).get('rows', []):
+                st.divider()
+                stock_data = df_sector.iloc[df_selected['selection']['rows'][0]]
+                s_id = stock_data['id']
+                mcap_str = format_mcap_krw(float(stock_data['market_cap'])) if pd.notna(stock_data['market_cap']) and str(stock_data['market_cap']).replace('.','',1).isdigit() else stock_data['market_cap']
+                
+                col_st1, col_st2 = st.columns([8, 2])
+                with col_st1:
+                    st.markdown(f"## 🏢 {stock_data['ticker']} 심층 리서치 리포트")
+                    st.caption(f"섹터: {stock_data['sector']} | 시총: {mcap_str}")
+                with col_st2:
+                    if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
+                
+                # 💡 트레이딩뷰 위젯: EMA (MAExp) + RSI 적용
+                st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
+                tv_widget = f"""
+                <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
+                  <div id="tradingview_{stock_data['ticker']}" style="height:calc(100% - 32px);width:100%"></div>
+                  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                  <script type="text/javascript">
+                  new TradingView.widget({{
+                  "autosize": true, "symbol": "{stock_data['ticker']}", "interval": "D", "timezone": "Etc/UTC",
+                  "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+                  "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
+                  "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
+                  "studies": ["MAExp@tv-basicstudies", "RSI@tv-basicstudies"],
+                  "container_id": "tradingview_{stock_data['ticker']}"
+                  }});
+                  </script>
+                </div>
+                """
+                components.html(tv_widget, height=650)
+                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
+                
+                st.markdown("---")
+                c_left, c_right = st.columns([4, 6], gap="large")
+                with c_left:
+                    st.markdown(stock_data['issue'], unsafe_allow_html=True)
+                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (파트너십, 실적 등)", expanded=False):
+                        st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
+                with c_right:
+                    if stock_data.get('ai_analysis'):
+                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트")
+                        st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
+
+    with sub_tab_top100:
+        st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실제 데이터 기준)")
+        st.info("💡 **알림:** 이제 S&P 100 편입 기준과 무관하게, **미국 시장에 상장된 실제 시가총액 최상위 100개 기업**(테슬라, ARM, 팔란티어 등 포함)을 조회합니다.")
+
+        if st.session_state.sp100_state_df.empty:
+            df_init = pd.DataFrame(TOP_100_STOCKS)
+            df_init.insert(0, '순위', range(1, 1 + len(df_init)))
+            df_init.insert(1, '시총', "-")
+            df_init['시가총액_num'] = 0.0
+            df_init['섹터 순위'] = "-"
+            df_init['크로스 상태 (4H/1D EMA200)'] = "대기 중"
+            df_init['크로스 날짜'] = "-"
+            df_init['크로스 당시 주가'] = "-"
+            df_init['업데이트 날짜'] = "-"
+            st.session_state.sp100_state_df = df_init
+
+        # 💡 레이아웃 비율 [6:4] 조절 및 쌍둥이 도넛 차트
+        col_pie, col_ndx = st.columns([6, 4], gap="large")
+        
+        with col_pie:
+            scanned_df = st.session_state.sp100_state_df[st.session_state.sp100_state_df['시가총액_num'] > 0]
+            if not scanned_df.empty:
+                st.markdown("#### 🍩 미국 주도 섹터 비중 (스캔된 종목 기준)")
+                c_p1, c_p2 = st.columns(2)
+                
+                with c_p1:
+                    sector_count = scanned_df['Sector'].value_counts().reset_index()
+                    sector_count.columns = ['Sector', 'Count']
+                    # 범례 아래 배치 및 2열 정렬로 짤림 방지
+                    fig_count = alt.Chart(sector_count).mark_arc(innerRadius=45).encode(
+                        theta=alt.Theta(field="Count", type="quantitative"),
+                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=2, labelLimit=250)),
+                        tooltip=['Sector', alt.Tooltip('Count', title="포함 종목 수")]
+                    ).properties(title="[종목 개수 기준]", height=380)
+                    st.altair_chart(fig_count, use_container_width=True)
+                
+                with c_p2:
+                    sector_mcap = scanned_df.groupby('Sector')['시가총액_num'].sum().reset_index()
+                    fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=45).encode(
+                        theta=alt.Theta(field="시가총액_num", type="quantitative"),
+                        color=alt.Color(field="Sector", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=2, labelLimit=250)),
+                        tooltip=['Sector', alt.Tooltip('시가총액_num', format=",.0f", title="시가총액(USD)")]
+                    ).properties(title="[종합 시가총액 기준]", height=380)
+                    st.altair_chart(fig_mcap, use_container_width=True)
+            else:
+                st.info("👇 아래의 스캔 버튼을 눌러 데이터를 불러오면 이곳에 '섹터별 주도 비중(쌍둥이 도넛 그래프)'이 나타납니다.")
+        
+        with col_ndx:
+            st.markdown("#### 📈 나스닥(^IXIC) 기간별 수익률 지표")
+            ndx_data = get_nasdaq_performance()
+            if ndx_data:
+                ndx_df = pd.DataFrame([ndx_data])
+                def color_val(val):
+                    color = '#ef4444' if val < 0 else '#22c55e'
+                    return f"color: {color}; font-weight: bold;"
+                # 소수점 둘째자리 포맷팅
+                formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
+                st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
+                
+                # 💡 나스닥 1년 흐름 (OANDA NAS100USD 실시간 주봉 영역 차트)
+                st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉)")
+                ndx_tv_widget = """
+                <div class="tradingview-widget-container" style="height:280px;width:100%;">
+                  <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
+                  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                  <script type="text/javascript">
+                  new TradingView.widget({
+                  "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
+                  "theme": "light", "style": "3", "locale": "kr", "enable_publishing": false,
+                  "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
+                  "container_id": "tradingview_ixic"
+                  });
+                  </script>
+                </div>
+                """
+                components.html(ndx_tv_widget, height=280)
+            else:
+                st.write("나스닥 데이터를 불러오는 중입니다...")
+
+        st.markdown("---")
+
+        if not st.session_state.sp100_state_df.empty:
+            symbols = st.session_state.sp100_state_df['Symbol'].tolist()
+            chunks = [symbols[i:i+25] for i in range(0, 100, 25)]
+            labels = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
+            
+            cols = st.columns(4)
+            for i in range(4):
+                if i < len(chunks):
+                    if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True):
+                        with st.spinner(f"{labels[i]} 실시간 시총 및 크로스 데이터 스캔 중... (약 5초)"):
+                            try:
+                                session = get_robust_session()
+                                data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False)
+                                data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False)
+                                
+                                if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
+                                else: data_1d = data_1d_raw
+                                    
+                                if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
+                                else: data_1h = data_1h_raw
+                                    
+                                if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks[i][0])
+                                if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks[i][0])
+                                
+                                current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                
+                                for sym in chunks[i]:
+                                    try: 
+                                        tk = yf.Ticker(sym, session=session)
+                                        mcap = tk.fast_info.get('marketCap', 0)
+                                    except: mcap = 0
+
+                                    if sym not in data_1d.columns or sym not in data_1h.columns:
+                                        c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                    else:
+                                        df_sym_1d = data_1d[sym].dropna()
+                                        df_sym_1h = data_1h[sym].dropna()
+                                        
+                                        if len(df_sym_1d) < 150 or len(df_sym_1h) < 150:
+                                            c_type, c_date, c_price = "상장기간 부족", "-", "-"
+                                        else:
+                                            df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
+                                            df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
+                                            
+                                            df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
+                                            df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
+                                            df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
+                                            
+                                            df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
+                                            df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
+                                            
+                                            df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
+                                            df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
+                                            
+                                            merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
+                                            
+                                            merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
+                                            merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
+                                            
+                                            gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])]
+                                            dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])]
+                                            
+                                            if not gc.empty or not dc.empty:
+                                                last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                                last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                                latest_idx = max(last_gc, last_dc)
+                                                
+                                                c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
+                                                days_diff = (datetime.now(timezone.utc) - latest_idx).days
+                                                if days_diff <= 90: c_type = f"🔥 {c_type}"
+                                                    
+                                                c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
+                                                c_price = f"${merged.loc[latest_idx, 'Close']:.2f}"
+                                            else:
+                                                c_type, c_date, c_price = "최근 1년 내 크로스 없음", "-", "-"
+                                    
+                                    mask = st.session_state.sp100_state_df['Symbol'] == sym
+                                    st.session_state.sp100_state_df.loc[mask, '크로스 상태 (4H/1D EMA200)'] = c_type
+                                    st.session_state.sp100_state_df.loc[mask, '크로스 날짜'] = c_date
+                                    st.session_state.sp100_state_df.loc[mask, '크로스 당시 주가'] = c_price
+                                    st.session_state.sp100_state_df.loc[mask, '업데이트 날짜'] = current_update_time
+                                    st.session_state.sp100_state_df.loc[mask, '시가총액_num'] = mcap
+                                    st.session_state.sp100_state_df.loc[mask, '시총'] = format_mcap_krw(mcap)
+                                
+                                scanned_mask = st.session_state.sp100_state_df['시가총액_num'] > 0
+                                if scanned_mask.any():
+                                    st.session_state.sp100_state_df.loc[scanned_mask, '섹터 내 순위'] = \
+                                        st.session_state.sp100_state_df[scanned_mask].groupby('Sector')['시가총액_num'].rank(ascending=False, method='min')
+                                    def format_rank(r): return f"섹터 {int(r)}위" if pd.notna(r) else "-"
+                                    st.session_state.sp100_state_df['섹터 순위'] = st.session_state.sp100_state_df['섹터 내 순위'].apply(format_rank)
+
+                                st.success(f"✅ {current_update_time} 기준, {labels[i]} 분석 완료!")
+                                st.rerun() 
+                                
+                            except Exception as e:
+                                st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
+
+            display_cols = ['순위', '시총', 'Symbol', 'Name', 'Sector', '섹터 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
+            st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=500)
+```
+
+### 3️⃣ `api_utils.py` (전체 덮어쓰기)
+*AI 에러(finish_reason = 1) 원천 차단 로직이 적용되었습니다.*
+```python:API Utils:api_utils.py
+import streamlit as st
+import pandas as pd
+import requests
+import json
+import uuid
+import re
+import io
+import time
+import ccxt
+from PIL import Image
+import google.generativeai as genai
+from datetime import datetime
+from theory_data import get_base_theory_dict
+
+URL = st.secrets.get("SUPABASE_URL", "")
+KEY = st.secrets.get("SUPABASE_KEY", "")
+HEADERS = {
+    "apikey": KEY,
+    "Authorization": f"Bearer {KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
+
+def insert_db(table, data): return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
+def update_db(table, match_col, match_val, data): return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data)
+def delete_db(table, match_col, match_val): return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS)
+
+def upload_image_to_supabase(img_file, prefix="img"):
+    try:
+        file_ext = img_file.name.split('.')[-1]
+        file_name = f"{prefix}_{uuid.uuid4().hex[:8]}.{file_ext}"
+        file_bytes = img_file.getvalue()
+        if not file_bytes: return None
+        upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
+        img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": getattr(img_file, 'type', 'image/png')}
+        res = requests.post(upload_url, headers=img_headers, data=file_bytes)
+        if res.status_code == 200: return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
+        return None
+    except: return None
+
+def load_trade_data():
+    res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
+    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    return pd.DataFrame(columns=["id", "date", "ticker", "timeframe", "setup_pattern", "position", "result", "rr_ratio", "profit", "chart_image_paths", "entry_basis", "exit_basis"])
+
+def load_archive_data():
+    res = requests.get(f"{URL}/rest/v1/analysis_archive?select=*&order=created_at.desc", headers=HEADERS)
+    if res.status_code == 200 and res.json():
+        df = pd.DataFrame(res.json())
+        if 'ai_advice_mapping' not in df.columns: df['ai_advice_mapping'] = "{}"
+        if 'ocr_text_mapping' not in df.columns: df['ocr_text_mapping'] = "{}"
+        return df
+    return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
+
+def load_sector_data():
+    res = requests.get(f"{URL}/rest/v1/sector_analysis?select=*&order=created_at.desc", headers=HEADERS)
+    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
+
+def load_theory_db():
+    db_dict = get_base_theory_dict()
+    res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS)
+    if res.status_code == 200 and res.json():
+        for row in res.json():
+            cat, title = row['category'], row['title']
+            if cat not in db_dict: db_dict[cat] = {}
+            db_dict[cat][title] = {"id": row.get('id'), "content": row.get('content', ''), "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []}
+    return db_dict
+
+def get_recent_archive_context(ticker_search):
+    df = load_archive_data()
+    if df.empty or not ticker_search: return ""
+    recent_scraps = df[(df['ticker'].str.contains(ticker_search, case=False, na=False, regex=False)) & (df['category'] == '타인분석')].head(3)
+    if recent_scraps.empty: return ""
+    
+    context = "[최근 아카이브 참조 데이터 (원작자/전문가 관점)]\n"
+    for _, row in recent_scraps.iterrows():
+        context += f"- 날짜: {row['date']} | 출처: {row['source_view']}\n"
+        context += f"  내용 요약(AI메모): {row['memo']}\n"
+        try:
+            ocr_map = json.loads(row['ocr_text_mapping']) if isinstance(row['ocr_text_mapping'], str) else row['ocr_text_mapping']
+            if ocr_map and isinstance(ocr_map, dict) and len(ocr_map) > 0:
+                context += f"  원작자 본문 일부: {list(ocr_map.values())[0][:300]}...\n"
+        except: pass
+    return context
+
+def get_gemini_keys():
+    keys = []
+    if "GEMINI_API_KEY" in st.secrets: keys.append(st.secrets["GEMINI_API_KEY"])
+    for k in st.secrets:
+        if k.startswith("GEMINI_API_KEY_") and st.secrets[k]: keys.append(st.secrets[k])
+    return list(set(keys))
+
+def parse_ai_json(text):
+    if not isinstance(text, str): text = str(text) if text is not None else ""
+    try:
+        clean_text = text.strip()
+        mark_j = chr(96) * 3 + "json"
+        mark_e = chr(96) * 3
+        
+        if mark_j in clean_text: 
+            clean_text = clean_text.split(mark_j)[1].split(mark_e)[0].strip()
+        elif mark_e in clean_text: 
+            clean_text = clean_text.split(mark_e)[1].split(mark_e)[0].strip()
+            
+        if clean_text.startswith("{") and clean_text.endswith("}"): 
+            return json.loads(clean_text)
+        else: 
+            raise Exception("Not a JSON")
+    except:
+        return {"trend": "-", "key_level": "-", "momentum": "-", "volume": "-", "s_score": 0, "macro_news": "-", "analysis": text}
+
+def ask_gemini_dynamic(prompt, imgs):
+    keys = get_gemini_keys()
+    if not keys: return "Gemini API 키가 설정되지 않았습니다."
+    if not isinstance(imgs, list): imgs = [imgs]
+    payload = [prompt] + imgs
+    
+    last_error = ""
+    for key in keys:
+        genai.configure(api_key=key)
+        try:
+            available_models = [m.name.replace('models/', '') for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            flash_models = [m for m in available_models if '1.5-flash' in m.lower()]
+            pro_models = [m for m in available_models if '1.5-pro' in m.lower()]
+            if not flash_models: flash_models = [m for m in available_models if 'flash' in m.lower()]
+            if not pro_models: pro_models = [m for m in available_models if 'pro' in m.lower()]
+            models_to_try = flash_models + pro_models
+            if not models_to_try: models_to_try = available_models
+            
+            for model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    res = model.generate_content(payload)
+                    return res.text
+                except Exception as e:
+                    last_error = str(e)
+                    # 💡 구글 AI 안전 필터(finish_reason=1) 에러 방어 코드 
+                    if "finish_reason is 1" in last_error or "safety" in last_error.lower() or "valid Part" in last_error:
+                        return "구글 AI의 콘텐츠 안전 규정(투자 직접 권유 방지)에 의해 상세 분석 생성이 차단되었습니다. 다른 종목을 시도해주세요."
+                    if "429" in last_error or "quota" in last_error.lower(): break 
+                    elif "404" in last_error or "not found" in last_error.lower(): continue 
+                    else: break 
+        except Exception as e:
+            last_error = str(e)
+            continue
+    return f"모든 API 키 한도 소진 또는 오류 발생.\n에러: {last_error}"
+
+def get_real_ocr_text(image_url):
+    try:
+        res = requests.get(image_url)
+        img = Image.open(io.BytesIO(res.content))
+        prompt = "이 이미지에서 차트 숫자 등은 무시하고 오직 차트 위/아래에 작성된 블로그 본문 설명글만 정확하게 추출해. 줄바꿈 유지할 것."
+        return ask_gemini_dynamic(prompt, img) 
+    except Exception as e: return f"이미지 다운로드 실패: {e}"
+
+def get_real_ai_advice(image_url, ticker, reference_text=""):
+    try:
+        res = requests.get(image_url)
+        img = Image.open(io.BytesIO(res.content))
+        prompt = f"""
+        이 차트 이미지를 바탕으로 [{ticker}] 종목 기술적 분석을 수행해.
+        반드시 JSON 형식으로 답변해.
+        {{
+          "trend": "상승/하락/횡보",
+          "key_level": "핵심 지지/저항",
+          "momentum": "모멘텀 요약",
+          "volume": "거래량 요약",
+          "s_score": "0~4 정수",
+          "macro_news": "급등락 시 매크로 뉴스 추론. 특이사항 없으면 '특이 동향 없음'",
+          "analysis": "종목 명시 및 조언 3~4줄"
+        }}
+        """
+        if reference_text: prompt += f"\n[원작자 관점]\n{reference_text}\n"
+        return ask_gemini_dynamic(prompt, img) 
+    except Exception as e: return f"이미지 다운로드 실패: {e}"
+
+def render_ai_advice_block(title, ai_text):
+    ai_data = parse_ai_json(ai_text)
+    st.markdown(f"#### {title}")
+    
+    if "trend" not in ai_data:
+        st.info(ai_text)
+        return
+        
+    macro_news = ai_data.get('macro_news', '')
+    if macro_news and macro_news not in ["-", "특이 동향 없음", "없음"]:
+        st.error(f"🚨 **[급변동/이슈 감지]** {macro_news}")
+        
+    m1, m2 = st.columns(2)
+    m1.metric("📈 추세 (Trend)", ai_data.get('trend', '-'))
+    m2.metric("🎯 중요 레벨", ai_data.get('key_level', '-'))
+    m3, m4 = st.columns(2)
+    m3.metric("⚡ 모멘텀", ai_data.get('momentum', '-'))
+    m4.metric("📊 거래량", ai_data.get('volume', '-'))
+    
+    score = ai_data.get('s_score', 0)
+    try: score_val = max(0, min(4, int(score)))
+    except: score_val = 0
+    st.markdown(f"**🔥 S급 셋업 판독 점수: {score_val} / 4**")
+    st.progress(score_val / 4.0)
+    st.success(ai_data.get('analysis', ''))
+
+def render_blog_image_html(url): 
+    return f'<div style="width: 100%; display: flex; justify-content: center; margin-bottom: 5px;"><img src="{url}" style="max-width: 100%; max-height: 70vh; width: auto; height: auto; object-fit: contain; border: 1px solid #ddd; padding: 2px;" /></div>'
+
+def render_crisp_image_html(url): 
+    return f'<div style="width: 100%; display: flex; justify-content: flex-start; margin-bottom: 10px;"><img src="{url}" style="max-width: 100%; max-height: 80vh; width: auto; height: auto; object-fit: contain; image-rendering: crisp-edges; border: 2px solid #4a90e2; padding: 2px; box-shadow: 2px 2px 8px rgba(0,0,0,0.1);" /></div>'
+
+def get_file_group_info(filename):
+    name_without_ext = os.path.splitext(filename)[0]
+    matches = re.findall(r'(\d+)(?:-(\d+))?', name_without_ext)
+    if matches: return matches[-1][0], int(matches[-1][1] if matches[-1][1] else '0')
+    return str(uuid.uuid4().hex[:4]), 0
+
+def execute_survival_trade(api_key, secret_key, passphrase, symbol, side, sl_percent, reason, risk_limit_percent):
+    try:
+        exchange = ccxt.bitget({'apiKey': api_key, 'secret': secret_key, 'password': passphrase, 'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+        ticker = exchange.fetch_ticker(symbol)
+        current_price = ticker['last']
+        total_usdt = exchange.fetch_balance()['USDT']['free']
+        
+        max_loss_usdt = total_usdt * (risk_limit_percent / 100.0)
+        loss_per_coin = current_price * (sl_percent / 100.0)
+        amount = round(max_loss_usdt / loss_per_coin, 3) 
+        
+        if amount <= 0: return False, f"❌ 진입 가능 수량이 0입니다."
+        stop_loss_price = current_price * (1 - sl_percent/100.0) if side == 'buy' else current_price * (1 + sl_percent/100.0)
+        
+        exchange.create_order(symbol, 'market', side, amount)
+        sl_side = 'sell' if side == 'buy' else 'buy'
+        exchange.create_order(symbol, 'market', sl_side, amount, params={'stopPrice': stop_loss_price, 'triggerPrice': stop_loss_price, 'reduceOnly': True})
+
+        insert_db("trade_history", {"date": datetime.today().strftime("%Y-%m-%d"), "ticker": symbol.split('/')[0], "timeframe": "Auto", "setup_pattern": "생존매매", "position": "Long" if side == 'buy' else "Short", "result": "진입완료", "rr_ratio": "-", "profit": 0, "entry_basis": reason, "exit_basis": f"자동 스탑로스 설정: {stop_loss_price}"})
+        return True, f"✅ 진입 성공! 평단: {current_price} | 수량: {amount} | 스탑로스: {stop_loss_price}"
+    except Exception as e: return False, f"❌ 오류 발생: {str(e)}"
