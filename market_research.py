@@ -194,17 +194,32 @@ def fetch_financial_data(ticker_symbol):
         
         earnings_html = get_earnings_html_via_api(ticker_symbol, df_1d, ndx)
         
-        # 💡 최신 뉴스 소스 및 퍼블리셔 정밀 파싱
+        # 💡 최신 뉴스 소스 및 퍼블리셔 정밀 파싱 (개편된 구조 반영)
         news_items = ticker.news
         news_lines = []
         if news_items:
             for n in news_items[:10]:
                 title = n.get('title', '')
                 if not title: title = n.get('content', {}).get('title', '')
+                
                 pub_time = n.get('providerPublishTime', 0)
-                date_str = pd.to_datetime(pub_time, unit='s').strftime('%Y-%m-%d') if pub_time else "날짜미상"
-                publisher = n.get('publisher', '알 수 없음')
+                if not pub_time: pub_time = n.get('content', {}).get('pubDate', '')
+                
+                date_str = "날짜미상"
+                if isinstance(pub_time, (int, float)) and pub_time > 0:
+                    date_str = pd.to_datetime(pub_time, unit='s').strftime('%Y-%m-%d')
+                elif isinstance(pub_time, str) and pub_time:
+                    try:
+                        date_str = pd.to_datetime(pub_time).strftime('%Y-%m-%d')
+                    except:
+                        date_str = pub_time[:10]
+                        
+                publisher = n.get('publisher', '')
+                if not publisher: publisher = n.get('content', {}).get('provider', {}).get('displayName', '알 수 없음')
+                if not publisher: publisher = "알 수 없음"
+                
                 if title: news_lines.append(f"- [{date_str} / 출처: {publisher}] {title}")
+                
         raw_news = "\n".join(news_lines) if news_lines else "최근 제공된 뉴스가 없습니다."
 
         return {
