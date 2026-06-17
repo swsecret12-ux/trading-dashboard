@@ -520,24 +520,12 @@ with tab6:
                                     st.error(f"데이터 수집 실패: {fin_data['error']}")
                                 else:
                                     ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
-                                    left_column_html = (
-                                        "<div class='info-card'>"
-                                        "<h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>"
-                                        f"{fin_data.get('ma_html', '')}"
-                                        "</div>"
-                                        "<div class='info-card'>"
-                                        "<h4>📊 가격 및 거래량 모멘텀</h4>"
-                                        f"{fin_data.get('momentum_html', '')}"
-                                        "</div>"
-                                        "<div class='info-card'>"
-                                        "<h4>💰 분기 실적 (Earnings)</h4>"
-                                        f"{fin_data.get('earnings_html', '')}"
-                                        "</div>"
-                                        "<div class='info-card'>"
-                                        "<h4>🔥 나의 투자 관점</h4>"
-                                        f"<p>{s_issue}</p>"
-                                        "</div>"
-                                    )
+                                    left_column_html = f"""
+                                    <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
+                                    <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
+                                    <div class='info-card'><h4>💰 분기 실적 (Earnings)</h4>{fin_data.get('earnings_html', '')}</div>
+                                    <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
+                                    """
                                     insert_db("sector_analysis", {
                                         "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', 0),
                                         "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
@@ -594,16 +582,17 @@ with tab6:
                 </div>
                 """
                 components.html(tv_widget, height=650)
+                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
                 
                 st.markdown("---")
                 c_left, c_right = st.columns([4, 6], gap="large")
                 with c_left:
                     st.markdown(stock_data['issue'], unsafe_allow_html=True)
-                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (출처 명확 표기)", expanded=False):
+                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (파트너십, 실적 등)", expanded=False):
                         st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
                 with c_right:
                     if stock_data.get('ai_analysis'):
-                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트 (비판적 시각 적용)")
+                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트")
                         st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
 
     with sub_tab_top100:
@@ -611,7 +600,7 @@ with tab6:
         st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 최상위 100개' 명단을 즉시 스캔하여 줄을 세웁니다.")
 
         if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary"):
-            with st.spinner("중복 주식(우선주/파생주) 및 장외주식을 완벽히 컷오프하며 100위를 선별 중입니다... (약 2초 소요)"):
+            with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
                 try:
                     url = "https://scanner.tradingview.com/america/scan"
                     payload = {
@@ -634,7 +623,6 @@ with tab6:
                     df_list = []
                     seen_tickers = set()
                     
-                    # 💡 7대 금융/IT 철통 방어 필터
                     target_exact = ['JPM', 'ORCL', 'BAC', 'MS', 'GS', 'WFC', 'C']
                     
                     for item in data.get('data', []):
@@ -652,8 +640,11 @@ with tab6:
                             if sym != base_ticker: 
                                 continue 
                                 
-                        if base_ticker in ['GOOG', 'GOOGL', 'GOOGM', 'GOOGN']: base_ticker = 'GOOG'
-                        if base_ticker in ['BRK']: base_ticker = 'BRK' 
+                        if base_ticker in ['GOOG', 'GOOGL', 'GOOGM', 'GOOGN']: 
+                            base_ticker = 'GOOG'
+                            if sym not in ['GOOG', 'GOOGL']: continue
+                            
+                        if base_ticker in ['BRK.A', 'BRK.B', 'BRK']: base_ticker = 'BRK' 
                         if base_ticker in ['FOXA', 'FOX']: base_ticker = 'FOX'
                         if base_ticker in ['NWSA', 'NWS']: base_ticker = 'NWS'
                         if base_ticker in ['UAA', 'UA']: base_ticker = 'UA'
@@ -685,7 +676,7 @@ with tab6:
                     new_df = new_df.drop(columns=['분야 내 순위'])
                     
                     st.session_state.sp100_state_df = new_df
-                    st.success("✅ 불순물(파생주/장외주) 제거 및 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
+                    st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
                 except Exception as e:
                     st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
@@ -742,7 +733,7 @@ with tab6:
                       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
                       <script type="text/javascript">
                       new TradingView.widget({
-                      "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
+                      "autosize": true, "symbol": "NASDAQ:NDX", "interval": "W", "timezone": "Etc/UTC",
                       "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
                       "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
                       "container_id": "tradingview_ixic"
