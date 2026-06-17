@@ -128,13 +128,15 @@ def fetch_financial_data(ticker_symbol):
         momentum_html += f"<li><b>1개월 변동:</b> {ret_1m:+.2f}%</li>"
         momentum_html += f"<li><b>3개월 변동:</b> {ret_3m:+.2f}%</li></ul>"
 
+        # Pandas 버전 업데이트 대응: .last('90D') 대신 인덱스 슬라이싱 사용 (에러 완벽 해결)
         df_1d.index = df_1d.index.normalize()
         ndx.index = ndx.index.normalize()
         
         df_1d['Daily_Return'] = df_1d['Close'].pct_change() * 100
         ndx['Daily_Return'] = ndx['Close'].pct_change() * 100
         
-        last_90_days = df_1d.last('90D')
+        cutoff_date = df_1d.index[-1] - pd.Timedelta(days=90)
+        last_90_days = df_1d[df_1d.index >= cutoff_date]
         big_moves_df = last_90_days[abs(last_90_days['Daily_Return']) >= 10.0]
         
         move_records = []
