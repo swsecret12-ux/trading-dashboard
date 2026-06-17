@@ -131,7 +131,8 @@ INDUSTRY_GROUPING = {
     "Beverages: Non-Alcoholic": "식음료 (음료 전문)",
     "Restaurants": "식음료 (F&B 프랜차이즈)",
     "Household/Personal Care": "가정용품 및 개인위생",
-    "Industrial Machinery": "산업 기계 및 인프라 구축"
+    "Industrial Machinery": "산업 기계 및 인프라 구축",
+    "Specialty Telecommunications": "우주항공 & 통신 기기"
 }
 
 NAME_TRANSLATIONS = {
@@ -148,7 +149,9 @@ NAME_TRANSLATIONS = {
     "INTC": "Intel (인텔)", "ARM": "ARM Holdings (암 홀딩스)", "PLTR": "Palantir (팔란티어)", 
     "RTX": "RTX Corporation (레이시온)", "PFE": "Pfizer (화이자)", "ORCL": "Oracle (오라클)", 
     "BAC": "Bank of America (뱅크오브아메리카)", "MS": "Morgan Stanley (모건스탠리)", 
-    "GS": "Goldman Sachs (골드만삭스)", "WFC": "Wells Fargo (웰스파고)", "C": "Citigroup (씨티그룹)"
+    "GS": "Goldman Sachs (골드만삭스)", "WFC": "Wells Fargo (웰스파고)", "C": "Citigroup (씨티그룹)",
+    "MU": "Micron Technology (마이크론)", "TSM": "Taiwan Semiconductor (TSMC)",
+    "SPCX": "Space Exploration ETF (스페이스X/우주항공)"
 }
 
 def get_robust_session():
@@ -631,6 +634,7 @@ with tab6:
                     df_list = []
                     seen_tickers = set()
                     
+                    # 💡 7대 금융/IT 철통 방어 필터
                     target_exact = ['JPM', 'ORCL', 'BAC', 'MS', 'GS', 'WFC', 'C']
                     
                     for item in data.get('data', []):
