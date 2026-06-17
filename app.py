@@ -212,19 +212,27 @@ from market_research import fetch_financial_data, analyze_sector_with_ai
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
+# 💡 리서치 왼쪽 패널(info-card)을 프리미엄 SaaS 스타일로 전면 개조
 st.markdown("""
 <style>
 div[data-testid="stInfo"] p { font-size: 1.1rem; } 
 div[data-testid="stError"] p { font-size: 1.1rem; }
 div[data-testid="stMetricValue"] { font-size: 1.2rem !important; }
 div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
-.info-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 25px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-.info-card h4 { color: #1e40af; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 1.3rem; }
-.ma-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 1.05rem; }
-.ma-table th, .ma-table td { border: 1px solid #cbd5e1; padding: 12px 15px; text-align: left; }
-.ma-table th { background-color: #e2e8f0; font-weight: bold; color: #1e293b; text-align: center; }
-.ma-table tr:nth-child(even) { background-color: #f8fafc; }
-.ma-table tr:hover { background-color: #f1f5f9; }
+
+/* 🌟 왼쪽 정보 카드 업그레이드 */
+.info-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); }
+.info-card h4 { color: #0f172a; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 1.15rem; font-weight: 700; margin-bottom: 16px;}
+.info-card ul { list-style-type: none; padding: 0; margin: 0; }
+.info-card li { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #cbd5e1; font-size: 1.05rem; }
+.info-card li:last-child { border-bottom: none; }
+.info-card li b { color: #64748b; font-weight: 600; }
+.info-card p { color: #334155; line-height: 1.6; margin: 0; font-size: 1.05rem; }
+
+.ma-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; }
+.ma-table th, .ma-table td { border: 1px solid #cbd5e1; padding: 10px 12px; text-align: left; }
+.ma-table th { background-color: #f8fafc; font-weight: bold; color: #1e293b; text-align: center; }
+.ma-table tr:nth-child(even) { background-color: #fbfbfc; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -531,7 +539,7 @@ with tab6:
             with st.form("new_sector_stock"):
                 c1, c2 = st.columns(2)
                 s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, SNOW)")
-                s_sector = c2.selectbox("섹터 분류", ["반도체", "소프트웨어", "IT 하드웨어", "이커머스", "제약바이오", "은행금융", "기타"])
+                s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
                 s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
                 
                 if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
@@ -546,10 +554,22 @@ with tab6:
                                 else:
                                     ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
                                     left_column_html = f"""
-                                    <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
-                                    <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
-                                    <div class='info-card'><h4>💰 분기 실적 (Earnings)</h4>{fin_data.get('earnings_html', '')}</div>
-                                    <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
+                                    <div class='info-card'>
+                                        <h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>
+                                        {fin_data.get('ma_html', '')}
+                                    </div>
+                                    <div class='info-card'>
+                                        <h4>📊 가격 및 거래량 모멘텀</h4>
+                                        {fin_data.get('momentum_html', '')}
+                                    </div>
+                                    <div class='info-card'>
+                                        <h4>💰 분기 실적 (Earnings)</h4>
+                                        {fin_data.get('earnings_html', '')}
+                                    </div>
+                                    <div class='info-card'>
+                                        <h4>🔥 나의 투자 관점</h4>
+                                        <p>{s_issue}</p>
+                                    </div>
                                     """
                                     insert_db("sector_analysis", {
                                         "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', 0),
@@ -632,14 +652,14 @@ with tab6:
                         "filter": [
                             {"left": "market_cap_basic", "operation": "nempty"},
                             {"left": "type", "operation": "in_range", "right": ["stock", "dr"]},
-                            {"left": "exchange", "operation": "in_range", "right": ["AMEX", "NASDAQ", "NYSE"]} # 정규장 필터 복구
+                            {"left": "exchange", "operation": "in_range", "right": ["AMEX", "NASDAQ", "NYSE"]} 
                         ],
                         "options": {"lang": "en"},
                         "markets": ["america"],
                         "symbols": {"query": {"types": []}, "tickers": []},
                         "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                        "range": [0, 200] # 여유있게 가져와서 필터링 후 100개 컷
+                        "range": [0, 200] 
                     }
                     headers = {"User-Agent": "Mozilla/5.0"}
                     res = requests.post(url, json=payload, headers=headers)
@@ -656,7 +676,6 @@ with tab6:
                         ind_raw = item['d'][3]
                         mcap = item['d'][4]
                         
-                        # 파생주/우선주/중복 클래스 완벽 필터링
                         base_ticker = sym.split('-')[0]
                         if base_ticker in ['GOOG', 'GOOGL', 'GOOGM', 'GOOGN']: base_ticker = 'GOOG'
                         if base_ticker in ['BRK']: base_ticker = 'BRK' 
@@ -707,7 +726,6 @@ with tab6:
                     sector_count['Percentage'] = (sector_count['Count'] / sector_count['Count'].sum() * 100).round(1).astype(str) + '%'
                     sector_count['LegendLabel'] = sector_count['Industry'] + " (" + sector_count['Percentage'] + ")"
                     
-                    # 💡 도넛 차트 크기 확대 및 범례 세로 정렬
                     fig_count = alt.Chart(sector_count).mark_arc(innerRadius=60, outerRadius=140).encode(
                         theta=alt.Theta(field="Count", type="quantitative"),
                         color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=1, symbolLimit=50, labelFontSize=12)),
@@ -717,15 +735,17 @@ with tab6:
                 
                 with c_p2:
                     sector_mcap = st.session_state.sp100_state_df.groupby('산업군(Industry)')['시가총액_num'].sum().reset_index()
+                    # 🚨 해결된 KeyError 로직:
+                    sector_mcap.columns = ['산업군(Industry)', '시가총액_num']
                     total_mcap = sector_mcap['시가총액_num'].sum()
                     sector_mcap['Percentage'] = (sector_mcap['시가총액_num'] / total_mcap * 100).round(1).astype(str) + '%'
                     sector_mcap['Formatted_Mcap'] = sector_mcap['시가총액_num'].apply(format_mcap_krw)
-                    sector_mcap['LegendLabel'] = sector_mcap['Industry'] + " (" + sector_mcap['Percentage'] + ")"
+                    sector_mcap['LegendLabel'] = sector_mcap['산업군(Industry)'] + " (" + sector_mcap['Percentage'] + ")"
                     
                     fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=60, outerRadius=140).encode(
                         theta=alt.Theta(field="시가총액_num", type="quantitative"),
                         color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=1, symbolLimit=50, labelFontSize=12)),
-                        tooltip=['Industry', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
+                        tooltip=['산업군(Industry)', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
                     ).properties(title="[종합 시가총액 기준]", height=450)
                     st.altair_chart(fig_mcap, use_container_width=True)
             
@@ -741,7 +761,6 @@ with tab6:
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                     
                     st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들 차트)")
-                    # 💡 주봉(Weekly) 캔들 차트로 원상복구
                     ndx_tv_widget = """
                     <div class="tradingview-widget-container" style="height:320px;width:100%;">
                       <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
