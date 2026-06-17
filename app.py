@@ -576,7 +576,7 @@ with tab6:
 
     with sub_tab_top100:
         st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실시간 데이터 기준)")
-        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 1위~100위' 명단을 즉시 스캔하여 줄을 세웁니다.")
+        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 1~100위' 명단을 즉시 스캔하여 줄을 세웁니다.")
 
         if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary"):
             with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
@@ -592,24 +592,34 @@ with tab6:
                         "symbols": {"query": {"types": []}, "tickers": []},
                         "columns": ["name", "description", "sector", "market_cap_basic"],
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                        "range": [0, 100]
+                        "range": [0, 150]
                     }
                     headers = {"User-Agent": "Mozilla/5.0"}
                     res = requests.post(url, json=payload, headers=headers)
                     data = res.json()
                     
                     df_list = []
-                    for i, item in enumerate(data.get('data', [])):
+                    skip_tickers = {'GOOG', 'GOOGM', 'GOOGN', 'BRK-A', 'BRK.A'}
+                    seen_names = set()
+                    
+                    for item in data.get('data', []):
+                        if len(df_list) >= 100: break
+                        
                         sym = item['d'][0].replace('.', '-')
                         name_raw = item['d'][1]
                         sec_raw = item['d'][2]
                         mcap = item['d'][3]
                         
+                        base_name = name_raw.split()[0].upper()
+                        if sym in skip_tickers: continue
+                        if base_name in ['ALPHABET', 'BERKSHIRE'] and base_name in seen_names: continue
+                        seen_names.add(base_name)
+                        
                         sec_trans = SECTOR_TRANSLATIONS.get(sec_raw, f"{sec_raw} (기타)")
                         name_trans = NAME_TRANSLATIONS.get(sym, name_raw)
                         
                         df_list.append({
-                            '순위': i + 1,
+                            '순위': len(df_list) + 1,
                             '시총': format_mcap_krw(mcap),
                             'Symbol': sym,
                             'Name': name_trans,
@@ -647,7 +657,7 @@ with tab6:
                     
                     fig_count = alt.Chart(sector_count).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="Count", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (종목 수)", orient="bottom", columns=1, labelLimit=500)),
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (종목 수)", orient="bottom", columns=2, labelLimit=500)),
                         tooltip=['Sector', alt.Tooltip('Count', title="포함 종목 수"), alt.Tooltip('Percentage', title="비중")]
                     ).properties(title="[종목 개수 기준]", height=450)
                     st.altair_chart(fig_count, use_container_width=True)
@@ -661,7 +671,7 @@ with tab6:
                     
                     fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="시가총액_num", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (시총 합산)", orient="bottom", columns=1, labelLimit=500)),
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (시총 합산)", orient="bottom", columns=2, labelLimit=500)),
                         tooltip=['Sector', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
                     ).properties(title="[종합 시가총액 기준]", height=450)
                     st.altair_chart(fig_mcap, use_container_width=True)
