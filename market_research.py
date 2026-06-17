@@ -13,16 +13,26 @@ def get_robust_session():
     return session
 
 def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
-    """lxml 에러를 원천 차단하고, 야후 JSON API에서 실적 데이터를 파싱한 뒤 주가 등락률을 계산합니다."""
+    """lxml 에러를 완벽하게 피하기 위해 야후 내부 JSON API에서 실적 데이터를 직접 파싱합니다."""
     try:
-        url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker_symbol}?modules=earningsHistory"
+        url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker_symbol}?modules=earningsHistory,calendarEvents"
         session = get_robust_session()
         res = session.get(url, timeout=5)
         data = res.json()
         
-        history = data.get('quoteSummary', {}).get('result', [{}])[0].get('earningsHistory', {}).get('history', [])
-        
         rows = []
+        
+        # 1. 미래 실적 (예정일)
+        calendar = data.get('quoteSummary', {}).get('result', [{}])[0].get('calendarEvents', {}).get('earnings', {})
+        earnings_dates = calendar.get('earningsDate', [])
+        if earnings_dates:
+            future_date = earnings_dates[0].get('fmt', '')
+            if future_date:
+                est = calendar.get('earningsAverage', {}).get('raw', '')
+                rows.append(f"<tr style='background-color:#fffbea;'><td>⏳ {future_date} (예정)</td><td>{est if est else '-'}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>")
+        
+        # 2. 과거 실적 히스토리
+        history = data.get('quoteSummary', {}).get('result', [{}])[0].get('earningsHistory', {}).get('history', [])
         for item in reversed(history): 
             date_str = item.get('quarter', {}).get('fmt', '')
             if not date_str: continue
@@ -34,16 +44,12 @@ def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
             surp_html = "-"
             if isinstance(surp, (int, float)):
                 color = "#22c55e" if surp > 0 else "#ef4444"
-                surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp*100:.1f}%</span>"
+                surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp*100:.1f}% {'상회' if surp > 0 else '하회'}</span>"
             
-            # 주가 및 나스닥 등락률 매칭 로직
             stock_chg = "-"
             ndx_chg = "-"
-            
             try:
-                # date_str (예: '2024-03-31') 을 datetime 객체로 변환하여 1D 데이터에서 검색
                 dt = pd.to_datetime(date_str).tz_localize('UTC')
-                # 정확한 날짜가 없으면 가장 가까운 다음 평일을 찾음
                 if dt not in df_1d.index:
                     future_dates = df_1d.index[df_1d.index >= dt]
                     if not future_dates.empty: dt = future_dates[0]
@@ -51,7 +57,6 @@ def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
                 if dt in df_1d.index:
                     s_ret = df_1d.loc[dt, 'Daily_Return']
                     n_ret = ndx.loc[dt, 'Daily_Return']
-                    
                     if isinstance(s_ret, pd.Series): s_ret = s_ret.iloc[0]
                     if isinstance(n_ret, pd.Series): n_ret = n_ret.iloc[0]
                     
@@ -60,17 +65,15 @@ def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
                     
                     stock_chg = f"<span style='color:{s_color}; font-weight:bold;'>{s_ret:+.2f}%</span>"
                     ndx_chg = f"<span style='color:{n_color}; font-weight:bold;'>{n_ret:+.2f}%</span>"
-            except Exception:
-                pass
+            except Exception: pass
             
             rows.append(f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>{stock_chg}</td><td>{ndx_chg}</td></tr>")
             
         if not rows:
-            return f"<div style='padding: 10px; color: #64748b;'>데이터 제공사(Yahoo)에서 해당 종목의 과거 실적 데이터를 제공하지 않습니다.</div>"
+            return "<div style='padding: 10px; color: #64748b;'>데이터 제공사에서 해당 종목의 과거 실적 데이터를 제공하지 않습니다.</div>"
             
-        html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상치</th><th>실측치</th><th>서프라이즈</th><th>발표일 주가 변동</th><th>나스닥 변동</th></tr>"
-        html += "".join(rows)
-        html += "</table>"
+        # UI 깨짐 방지를 위해 들여쓰기 싹 제거!
+        html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상치</th><th>실측치</th><th>서프라이즈</th><th>발표일 주가 등락</th><th>나스닥 등락</th></tr>" + "".join(rows) + "</table>"
         return html
     except Exception as e:
         return f"<div style='padding: 10px; color: #ef4444;'>실적 데이터 파싱 오류: {str(e)}</div>"
@@ -82,7 +85,6 @@ def fetch_financial_data(ticker_symbol):
         info = ticker.info
         market_cap = info.get('marketCap', 0)
         
-        # 5년치 데이터를 불러와서 과거 실적 발표일 매칭에 활용
         df_1d = ticker.history(period="5y", interval="1d")
         ndx = yf.Ticker("^IXIC").history(period="5y", interval="1d")
         df_1h = ticker.history(period="730d", interval="1h")
@@ -90,7 +92,6 @@ def fetch_financial_data(ticker_symbol):
         if df_1d.empty or df_1h.empty:
             return {"error": "차트 데이터를 가져올 수 없습니다."}
             
-        # Daily Return 계산 (실적 매칭 및 급변동 스캔용)
         df_1d.index = pd.to_datetime(df_1d.index, utc=True).normalize()
         ndx.index = pd.to_datetime(ndx.index, utc=True).normalize()
         
@@ -99,7 +100,6 @@ def fetch_financial_data(ticker_symbol):
             
         current_price = df_1d['Close'].iloc[-1]
         
-        # 4H vs 1D EMA 200 크로스 계산
         df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
         df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
         
@@ -122,7 +122,7 @@ def fetch_financial_data(ticker_symbol):
         last_cross_type = "최근 1년 내 크로스 없음"
         last_cross_date = "-"
         
-        # 💡 고민 3번 한 디자인: Flexbox UI Row 구조 적용
+        # UI 깨짐 방지를 위해 들여쓰기 싹 제거한 평면적인 문자열!
         ma_html = "<div class='metric-row'><span class='metric-label'>상태</span><span class='metric-value'>크로스 없음</span></div>"
         
         if not gc.empty or not dc.empty:
@@ -136,42 +136,15 @@ def fetch_financial_data(ticker_symbol):
                 
             last_cross_type = cross_name
             last_cross_date = latest_idx.strftime('%Y-%m-%d %H:%M')
-            
             color = "#22c55e" if "골든" in cross_name else "#ef4444"
-            ma_html = f"""
-            <div class='metric-row'>
-                <span class='metric-label'>상태</span>
-                <span class='metric-value' style='color:{color};'>{cross_name}</span>
-            </div>
-            <div class='metric-row'>
-                <span class='metric-label'>발생일</span>
-                <span class='metric-value'>{last_cross_date}</span>
-            </div>
-            <div class='metric-row'>
-                <span class='metric-label'>당시 주가</span>
-                <span class='metric-value'>${merged.loc[latest_idx, 'Close']:.2f}</span>
-            </div>
-            """
+            
+            ma_html = f"<div class='metric-row'><span class='metric-label'>상태</span><span class='metric-value' style='color:{color};'>{cross_name}</span></div><div class='metric-row'><span class='metric-label'>발생일</span><span class='metric-value'>{last_cross_date}</span></div><div class='metric-row'><span class='metric-label'>당시 주가</span><span class='metric-value'>${merged.loc[latest_idx, 'Close']:.2f}</span></div>"
             
         ret_1m = ((current_price - df_1d['Close'].iloc[-21]) / df_1d['Close'].iloc[-21]) * 100 if len(df_1d) > 21 else 0
         ret_3m = ((current_price - df_1d['Close'].iloc[-63]) / df_1d['Close'].iloc[-63]) * 100 if len(df_1d) > 63 else 0
         
-        momentum_html = f"""
-        <div class='metric-row'>
-            <span class='metric-label'>현재가</span>
-            <span class='metric-value'>${current_price:.2f}</span>
-        </div>
-        <div class='metric-row'>
-            <span class='metric-label'>1개월 변동</span>
-            <span class='metric-value' style='color: {'#22c55e' if ret_1m>0 else '#ef4444'};'>{ret_1m:+.2f}%</span>
-        </div>
-        <div class='metric-row'>
-            <span class='metric-label'>3개월 변동</span>
-            <span class='metric-value' style='color: {'#22c55e' if ret_3m>0 else '#ef4444'};'>{ret_3m:+.2f}%</span>
-        </div>
-        """
+        momentum_html = f"<div class='metric-row'><span class='metric-label'>현재가</span><span class='metric-value'>${current_price:.2f}</span></div><div class='metric-row'><span class='metric-label'>1개월 변동</span><span class='metric-value' style='color: {'#22c55e' if ret_1m>0 else '#ef4444'};'>{ret_1m:+.2f}%</span></div><div class='metric-row'><span class='metric-label'>3개월 변동</span><span class='metric-value' style='color: {'#22c55e' if ret_3m>0 else '#ef4444'};'>{ret_3m:+.2f}%</span></div>"
 
-        # 최근 90일 급변동(10% 이상) 스캔
         cutoff_date = df_1d.index[-1] - pd.Timedelta(days=90)
         last_90_days = df_1d[df_1d.index >= cutoff_date]
         big_moves_df = last_90_days[abs(last_90_days['Daily_Return']) >= 10.0]
@@ -183,19 +156,11 @@ def fetch_financial_data(ticker_symbol):
             try:
                 ndx_move = ndx.loc[date]['Daily_Return']
                 if isinstance(ndx_move, pd.Series): ndx_move = ndx_move.iloc[0]
-            except Exception:
-                ndx_move = 0.0
-                
-            move_records.append({
-                "date": date_str,
-                "ticker_move": f"{move_pct:+.1f}%",
-                "ndx_move": f"{ndx_move:+.1f}%"
-            })
+            except Exception: ndx_move = 0.0
+            move_records.append({"date": date_str, "ticker_move": f"{move_pct:+.1f}%", "ndx_move": f"{ndx_move:+.1f}%"})
         
-        # 실적 테이블 (LXML 없이 순수 JSON 우회 + 변동률 계산 적용)
         earnings_html = get_earnings_html_via_api(ticker_symbol, df_1d, ndx)
         
-        # 뉴스 데이터 수집
         news_items = ticker.news
         news_lines = []
         if news_items:
@@ -209,14 +174,9 @@ def fetch_financial_data(ticker_symbol):
         raw_news = "\n".join(news_lines) if news_lines else "최근 뉴스가 없습니다."
 
         return {
-            "market_cap": market_cap,
-            "last_cross_type": last_cross_type,
-            "last_cross_date": last_cross_date,
-            "ma_html": ma_html,
-            "momentum_html": momentum_html,
-            "earnings_html": earnings_html,
-            "raw_news": raw_news,
-            "big_moves": move_records
+            "market_cap": market_cap, "last_cross_type": last_cross_type, "last_cross_date": last_cross_date,
+            "ma_html": ma_html, "momentum_html": momentum_html, "earnings_html": earnings_html,
+            "raw_news": raw_news, "big_moves": move_records
         }
     except Exception as e:
         return {"error": str(e)}
@@ -228,10 +188,8 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     moves_text = ""
     moves = fin_data.get("big_moves", [])
     if moves:
-        for m in moves:
-            moves_text += f"- 발생일: {m['date']}, 종목 등락률: {m['ticker_move']}, 나스닥 등락률: {m['ndx_move']}\n"
-    else:
-        moves_text = "최근 3개월 내 10% 이상 일일 급변동 없음."
+        for m in moves: moves_text += f"- 발생일: {m['date']}, 종목 등락률: {m['ticker_move']}, 나스닥 등락률: {m['ndx_move']}\n"
+    else: moves_text = "최근 3개월 내 10% 이상 일일 급변동 없음."
 
     prompt = f"""
     당신은 월스트리트의 수석 기관 애널리스트입니다. 아래 데이터를 바탕으로 완벽한 투자 분석 보고서를 작성하세요.
