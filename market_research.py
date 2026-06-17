@@ -38,7 +38,7 @@ def get_earnings_html_via_api(ticker):
         
         # 2. 과거 실적 히스토리
         history = data.get('quoteSummary', {}).get('result', [{}])[0].get('earningsHistory', {}).get('history', [])
-        for item in reversed(history): # 최근 발표가 위로 오도록 뒤집기
+        for item in reversed(history): 
             date_str = item.get('quarter', {}).get('fmt', '')
             if not date_str: continue
             
@@ -54,15 +54,14 @@ def get_earnings_html_via_api(ticker):
             rows.append(f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>-</td></tr>")
             
         if not rows:
-            return "<p>최근 실적 데이터를 불러올 수 없습니다.</p>"
+            return f"<ul><li><b>최근 실적 데이터</b> <span>야후 파이낸스 제공 지연 중</span></li></ul>"
             
-        # 테이블 HTML 조립
         html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>시장 예상치</th><th>실제 발표치</th><th>서프라이즈</th><th>발표일 주가 등락</th></tr>"
         html += "".join(rows)
         html += "</table>"
         return html
     except Exception as e:
-        return f"<p style='color:#ef4444;'>최근 실적 데이터를 불러올 수 없습니다.</p>"
+        return f"<ul><li><b>실적 데이터 조회 실패</b> <span>JSON 데이터 통신 오류</span></li></ul>"
 
 def fetch_financial_data(ticker_symbol):
     """야후 파이낸스 데이터를 크롤링하고 지표를 계산합니다."""
@@ -102,7 +101,7 @@ def fetch_financial_data(ticker_symbol):
         
         last_cross_type = "최근 1년 내 크로스 없음"
         last_cross_date = "-"
-        ma_html = "<p>최근 1년 내 4H/1D EMA 200 크로스가 없습니다.</p>"
+        ma_html = "<ul><li><b>상태</b> <span>최근 1년 내 크로스 없음</span></li></ul>"
         
         if not gc.empty or not dc.empty:
             last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
@@ -117,16 +116,18 @@ def fetch_financial_data(ticker_symbol):
             last_cross_date = latest_idx.strftime('%Y-%m-%d %H:%M')
             
             color = "#22c55e" if "골든" in cross_name else "#ef4444"
-            ma_html = f"<ul><li><b>상태:</b> <span style='color:{color}; font-weight:bold;'>{cross_name}</span></li>"
-            ma_html += f"<li><b>발생일:</b> {last_cross_date}</li>"
-            ma_html += f"<li><b>당시 주가:</b> ${merged.loc[latest_idx, 'Close']:.2f}</li></ul>"
+            # 💡 새롭게 적용된 Flexbox 스타일을 위한 HTML 구조 변경
+            ma_html = f"<ul><li><b>상태</b> <span style='color:{color}; font-weight:bold;'>{cross_name}</span></li>"
+            ma_html += f"<li><b>발생일</b> <span>{last_cross_date}</span></li>"
+            ma_html += f"<li><b>당시 주가</b> <span>${merged.loc[latest_idx, 'Close']:.2f}</span></li></ul>"
             
         ret_1m = ((current_price - df_1d['Close'].iloc[-21]) / df_1d['Close'].iloc[-21]) * 100 if len(df_1d) > 21 else 0
         ret_3m = ((current_price - df_1d['Close'].iloc[-63]) / df_1d['Close'].iloc[-63]) * 100 if len(df_1d) > 63 else 0
         
-        momentum_html = f"<ul><li><b>현재가:</b> ${current_price:.2f}</li>"
-        momentum_html += f"<li><b>1개월 변동:</b> {ret_1m:+.2f}%</li>"
-        momentum_html += f"<li><b>3개월 변동:</b> {ret_3m:+.2f}%</li></ul>"
+        # 💡 새롭게 적용된 Flexbox 스타일을 위한 HTML 구조 변경
+        momentum_html = f"<ul><li><b>현재가</b> <span>${current_price:.2f}</span></li>"
+        momentum_html += f"<li><b>1개월 변동</b> <span style='color: {'#22c55e' if ret_1m>0 else '#ef4444'}; font-weight:bold;'>{ret_1m:+.2f}%</span></li>"
+        momentum_html += f"<li><b>3개월 변동</b> <span style='color: {'#22c55e' if ret_3m>0 else '#ef4444'}; font-weight:bold;'>{ret_3m:+.2f}%</span></li></ul>"
 
         # Pandas 버전 업데이트 대응: .last('90D') 대신 인덱스 슬라이싱 사용 (에러 완벽 해결)
         df_1d.index = df_1d.index.normalize()
@@ -135,6 +136,7 @@ def fetch_financial_data(ticker_symbol):
         df_1d['Daily_Return'] = df_1d['Close'].pct_change() * 100
         ndx['Daily_Return'] = ndx['Close'].pct_change() * 100
         
+        # 최근 90일 데이터 필터링 (안전한 방식)
         cutoff_date = df_1d.index[-1] - pd.Timedelta(days=90)
         last_90_days = df_1d[df_1d.index >= cutoff_date]
         big_moves_df = last_90_days[abs(last_90_days['Daily_Return']) >= 10.0]
