@@ -98,50 +98,57 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
+# 한국 현업 트레이더들이 사용하는 가장 자연스럽고 정밀한 산업군 매핑
 INDUSTRY_GROUPING = {
-    "Semiconductors": "반도체 및 장비", "Computer Processing Hardware": "IT 하드웨어 & 장비",
-    "Computer Communications": "IT 하드웨어 & 장비", "Electronic Equipment/Instruments": "IT 하드웨어 & 장비",
-    "Telecommunications Equipment": "IT 하드웨어 & 장비", "Packaged Software": "소프트웨어 & 클라우드",
-    "Internet Software/Services": "소프트웨어 & 클라우드", "Information Technology Services": "IT 서비스 & 컨설팅",
-    "Data Processing Services": "IT 서비스 & 컨설팅", "Internet Retail": "이커머스 & 유통",
-    "Apparel/Footwear Retail": "이커머스 & 유통", "Specialty Stores": "이커머스 & 유통",
-    "Discount Stores": "이커머스 & 유통", "Home Improvement Chains": "이커머스 & 유통",
-    "Food Retail": "이커머스 & 유통", "Pharmaceuticals: Major": "제약 & 바이오",
-    "Biotechnology": "제약 & 바이오", "Medical Specialties": "의료 기기 & 서비스",
-    "Managed Health Care": "의료 기기 & 서비스", "Hospital/Nursing Management": "의료 기기 & 서비스",
-    "Medical/Nursing Services": "의료 기기 & 서비스", "Major Banks": "대형 은행",
-    "Regional Banks": "은행 & 금융지주", "Financial Conglomerates": "은행 & 금융지주",
-    "Investment Banks/Brokers": "투자은행 & 증권", "Investment Managers": "투자은행 & 증권",
-    "Finance/Rental/Leasing": "여신 & 신용", "Property/Casualty Insurance": "보험",
-    "Life/Health Insurance": "보험", "Real Estate Investment Trusts": "리츠 (REITs)",
-    "Broadcasting": "미디어 & 엔터", "Movies/Entertainment": "미디어 & 엔터",
-    "Cable/Satellite TV": "미디어 & 엔터", "Auto Manufacturing": "자동차 & 모빌리티",
-    "Aerospace & Defense": "항공우주 & 국방", "Trucking": "운송 & 물류",
-    "Air Freight/Couriers": "운송 & 물류", "Railroads": "운송 & 물류",
-    "Integrated Oil": "에너지 (석유/가스)", "Oil & Gas Production": "에너지 (석유/가스)",
-    "Oil Refining/Marketing": "에너지 (석유/가스)", "Electric Utilities": "전력 & 유틸리티",
-    "Beverages: Non-Alcoholic": "식음료 (F&B)", "Food: Major Diversified": "식음료 (F&B)",
-    "Food: Specialty/Candy": "식음료 (F&B)", "Restaurants": "식음료 (F&B)",
-    "Household/Personal Care": "가정 & 개인용품", "Industrial Machinery": "산업 기계"
+    "Semiconductors": "반도체 및 반도체 장비", 
+    "Computer Processing Hardware": "IT 하드웨어 & 컴퓨터 장비",
+    "Computer Communications": "네트워크 통신 장비",
+    "Electronic Equipment/Instruments": "IT 부품 및 전자기기",
+    "Packaged Software": "소프트웨어 & 클라우드",
+    "Internet Software/Services": "소프트웨어 & 클라우드",
+    "Information Technology Services": "IT 서비스 & 컨설팅",
+    "Internet Retail": "이커머스 & 온라인 유통",
+    "Apparel/Footwear Retail": "의류 및 소비재 유통",
+    "Specialty Stores": "전문 유통 채널",
+    "Discount Stores": "대형 할인마트",
+    "Pharmaceuticals: Major": "제약 & 바이오 (대형 제약사)",
+    "Biotechnology": "제약 & 바이오 (바이오테크)",
+    "Medical Specialties": "의료 기기 & 장비",
+    "Major Banks": "대형 은행",
+    "Regional Banks": "지역 은행 및 금융지주",
+    "Investment Banks/Brokers": "투자은행 & 증권",
+    "Finance/Rental/Leasing": "여신 전문 & 신용카드",
+    "Property/Casualty Insurance": "손해보험",
+    "Life/Health Insurance": "생명/건강보험",
+    "Real Estate Investment Trusts": "리츠 (REITs)",
+    "Broadcasting": "미디어 & 방송망",
+    "Movies/Entertainment": "미디어 & 엔터테인먼트",
+    "Auto Manufacturing": "자동차 & 모빌리티 제조",
+    "Aerospace & Defense": "항공우주 & 국방",
+    "Air Freight/Couriers": "항공 물류 & 택배",
+    "Integrated Oil": "에너지 (대형 석유/가스)",
+    "Electric Utilities": "전력 & 에너지 유틸리티",
+    "Beverages: Non-Alcoholic": "식음료 (음료 전문)",
+    "Restaurants": "식음료 (F&B 프랜차이즈)",
+    "Household/Personal Care": "가정용품 및 개인위생",
+    "Industrial Machinery": "산업 기계 및 인프라 구축"
 }
 
 NAME_TRANSLATIONS = {
-    "AAPL": "Apple Inc. (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
-    "GOOGL": "Alphabet Class A (구글)", "GOOG": "Alphabet Class C (구글)", "AMZN": "Amazon (아마존)",
-    "META": "Meta Platforms (메타)", "BRK.A": "Berkshire Hathaway (버크셔)", "BRK.B": "Berkshire Hathaway (버크셔)",
-    "LLY": "Eli Lilly (일라이 릴리)", "TSLA": "Tesla (테슬라)", "AVGO": "Broadcom (브로드컴)", 
-    "V": "Visa (비자)", "JPM": "JPMorgan Chase (JP모건)", "WMT": "Walmart (월마트)", 
-    "UNH": "UnitedHealth (유나이티드헬스)", "MA": "Mastercard (마스터카드)", "PG": "Procter & Gamble (P&G)", 
-    "JNJ": "Johnson & Johnson (존슨앤드존슨)", "HD": "Home Depot (홈디포)", "COST": "Costco (코스트코)", 
-    "MRK": "Merck & Co. (머크)", "ABBV": "AbbVie (애브비)", "CRM": "Salesforce (세일즈포스)", 
-    "AMD": "Advanced Micro Devices (AMD)", "NFLX": "Netflix (넷플릭스)", "KO": "Coca-Cola (코카콜라)", 
-    "PEP": "PepsiCo (펩시코)", "DIS": "Walt Disney (디즈니)", "CSCO": "Cisco Systems (시스코)", 
-    "ADBE": "Adobe (어도비)", "QCOM": "Qualcomm (퀄컴)", "INTC": "Intel (인텔)", 
-    "ARM": "ARM Holdings (암 홀딩스)", "PLTR": "Palantir (팔란티어)", "RTX": "RTX Corporation (레이시온)", 
-    "PFE": "Pfizer (화이자)", "ORCL": "Oracle (오라클)", "BAC": "Bank of America (뱅크오브아메리카)", 
-    "MS": "Morgan Stanley (모건스탠리)", "GS": "Goldman Sachs (골드만삭스)", "WFC": "Wells Fargo (웰스파고)", 
-    "C": "Citigroup (씨티그룹)", "TMUS": "T-Mobile (T모바일)", "TXN": "Texas Instruments (텍사스 인스트루먼트)",
-    "PM": "Philip Morris (필립 모리스)", "BA": "Boeing (보잉)", "INTU": "Intuit (인튜이트)"
+    "AAPL": "Apple (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
+    "GOOGL": "Alphabet Class A (구글)", "AMZN": "Amazon (아마존)", "META": "Meta Platforms (메타)", 
+    "BRK.B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)", "TSLA": "Tesla (테슬라)", 
+    "AVGO": "Broadcom (브로드컴)", "V": "Visa (비자)", "JPM": "JPMorgan Chase (JP모건)", 
+    "WMT": "Walmart (월마트)", "UNH": "UnitedHealth (유나이티드헬스)", "MA": "Mastercard (마스터카드)", 
+    "PG": "Procter & Gamble (P&G)", "JNJ": "Johnson & Johnson (존슨앤드존슨)", "HD": "Home Depot (홈디포)", 
+    "COST": "Costco (코스트코)", "MRK": "Merck & Co. (머크)", "ABBV": "AbbVie (애브비)", 
+    "CRM": "Salesforce (세일즈포스)", "AMD": "Advanced Micro Devices (AMD)", "NFLX": "Netflix (넷플릭스)", 
+    "KO": "Coca-Cola (코카콜라)", "PEP": "PepsiCo (펩시코)", "DIS": "Walt Disney (디즈니)", 
+    "CSCO": "Cisco Systems (시스코)", "ADBE": "Adobe (어도비)", "QCOM": "Qualcomm (퀄컴)", 
+    "INTC": "Intel (인텔)", "ARM": "ARM Holdings (암 홀딩스)", "PLTR": "Palantir (팔란티어)", 
+    "RTX": "RTX Corporation (레이시온)", "PFE": "Pfizer (화이자)", "ORCL": "Oracle (오라클)", 
+    "BAC": "Bank of America (뱅크오브아메리카)", "MS": "Morgan Stanley (모건스탠리)", 
+    "GS": "Goldman Sachs (골드만삭스)", "WFC": "Wells Fargo (웰스파고)", "C": "Citigroup (씨티그룹)"
 }
 
 def get_robust_session():
@@ -178,7 +185,7 @@ div[data-testid="stError"] p { font-size: 1.1rem; }
 div[data-testid="stMetricValue"] { font-size: 1.2rem !important; }
 div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
 
-/* 🌟 왼쪽 정보 카드 업그레이드 (마크다운 버그 원천 차단) */
+/* 리서치 카드 Flexbox 뷰 적용 */
 .info-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); }
 .info-card h4 { color: #0f172a; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 1.15rem; font-weight: 700; margin-bottom: 16px;}
 .metric-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #cbd5e1; font-size: 1.05rem; }
@@ -510,7 +517,6 @@ with tab6:
                                     st.error(f"데이터 수집 실패: {fin_data['error']}")
                                 else:
                                     ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
-                                    # 🌟 마크다운 렌더링 붕괴 버그를 원천 차단하기 위해 띄어쓰기(들여쓰기) 완전 제거 후 문자열 직접 결합!
                                     left_column_html = (
                                         "<div class='info-card'>"
                                         "<h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>"
@@ -585,12 +591,10 @@ with tab6:
                 </div>
                 """
                 components.html(tv_widget, height=650)
-                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
                 
                 st.markdown("---")
                 c_left, c_right = st.columns([4, 6], gap="large")
                 with c_left:
-                    # 마크다운 렌더링 버그 방어 코드 (unsafe_allow_html 적용 시 들여쓰기 무시)
                     st.markdown(stock_data['issue'], unsafe_allow_html=True)
                     with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (출처 명확 표기)", expanded=False):
                         st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
@@ -618,7 +622,7 @@ with tab6:
                         "symbols": {"query": {"types": []}, "tickers": []},
                         "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                        "range": [0, 250] # 넉넉하게 불러와서 파생주식을 쳐냅니다.
+                        "range": [0, 250] 
                     }
                     headers = {"User-Agent": "Mozilla/5.0"}
                     res = requests.post(url, json=payload, headers=headers)
@@ -627,29 +631,23 @@ with tab6:
                     df_list = []
                     seen_tickers = set()
                     
-                    # 🌟 7대 핵심 기업 하드코딩 필터 (BAC, GS, JPM, MS, WFC, ORCL, C)
                     target_exact = ['JPM', 'ORCL', 'BAC', 'MS', 'GS', 'WFC', 'C']
                     
                     for item in data.get('data', []):
                         if len(df_list) >= 100: break
                         
-                        sym = item['d'][0] # 예: BAC/PB, JPM-C
+                        sym = item['d'][0] 
                         name_raw = item['d'][1]
                         ind_raw = item['d'][3]
                         mcap = item['d'][4]
                         
-                        # 티커에 섞인 슬래시(/), 닷(.), 대시(-)를 기준으로 자르고 가장 앞의 진짜 본주 티커만 추출!
                         base_ticker = re.split(r'[-/.]', sym)[0]
-                        
-                        # BML(Bank of America Dep Shares) 등 불필요한 파생 대장주 아예 삭제
                         if base_ticker == 'BML': continue
 
-                        # 사용자가 요청한 7대 종목이라면? 오직 본주 딱 1개(예: BAC)만 통과시키고 꼬리표 붙은 건 싹 다 날림!
                         if base_ticker in target_exact:
                             if sym != base_ticker: 
-                                continue # BAC/PB 등은 여기서 컷오프!
+                                continue 
                                 
-                        # 버크셔, 구글 우선주 스마트 필터링
                         if base_ticker in ['GOOG', 'GOOGL', 'GOOGM', 'GOOGN']: base_ticker = 'GOOG'
                         if base_ticker in ['BRK']: base_ticker = 'BRK' 
                         if base_ticker in ['FOXA', 'FOX']: base_ticker = 'FOX'
@@ -659,11 +657,9 @@ with tab6:
                         if base_ticker in seen_tickers: continue
                         seen_tickers.add(base_ticker)
                         
-                        # 야후 조회를 위해 심볼의 '.' 이나 '/'를 '-'로 통일
                         sym_clean = sym.replace('.', '-').replace('/', '-')
-                        
                         ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) 
-                        name_trans = NAME_TRANSLATIONS.get(sym_clean, f"{name_raw} (미국 기업)") 
+                        name_trans = NAME_TRANSLATIONS.get(sym_clean, name_raw) 
                         
                         df_list.append({
                             '순위': len(df_list) + 1,
