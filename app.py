@@ -103,36 +103,27 @@ def format_mcap_krw(usd_val):
 
 # 💡 세부 산업군(Industry) 초정밀 번역 및 그룹핑
 INDUSTRY_GROUPING = {
-    # 반도체 및 하드웨어
     "Semiconductors": "반도체 및 장비",
     "Computer Processing Hardware": "IT 하드웨어 & 장비",
     "Computer Communications": "IT 하드웨어 & 장비",
     "Electronic Equipment/Instruments": "IT 하드웨어 & 장비",
     "Telecommunications Equipment": "IT 하드웨어 & 장비",
-    
-    # 소프트웨어 및 클라우드
     "Packaged Software": "소프트웨어 & 클라우드",
     "Internet Software/Services": "소프트웨어 & 클라우드",
     "Information Technology Services": "IT 서비스 & 컨설팅",
     "Data Processing Services": "IT 서비스 & 컨설팅",
-    
-    # 유통 및 이커머스
     "Internet Retail": "이커머스 & 유통",
     "Apparel/Footwear Retail": "이커머스 & 유통",
     "Specialty Stores": "이커머스 & 유통",
     "Discount Stores": "이커머스 & 유통",
     "Home Improvement Chains": "이커머스 & 유통",
     "Food Retail": "이커머스 & 유통",
-    
-    # 바이오 헬스케어
     "Pharmaceuticals: Major": "제약 & 바이오",
     "Biotechnology": "제약 & 바이오",
     "Medical Specialties": "의료 기기 & 서비스",
     "Managed Health Care": "의료 기기 & 서비스",
     "Hospital/Nursing Management": "의료 기기 & 서비스",
     "Medical/Nursing Services": "의료 기기 & 서비스",
-    
-    # 금융
     "Major Banks": "대형 은행",
     "Regional Banks": "은행 & 금융지주",
     "Financial Conglomerates": "은행 & 금융지주",
@@ -142,13 +133,9 @@ INDUSTRY_GROUPING = {
     "Property/Casualty Insurance": "보험",
     "Life/Health Insurance": "보험",
     "Real Estate Investment Trusts": "리츠 (REITs)",
-    
-    # 미디어 및 엔터
     "Broadcasting": "미디어 & 엔터",
     "Movies/Entertainment": "미디어 & 엔터",
     "Cable/Satellite TV": "미디어 & 엔터",
-    
-    # 제조, 모빌리티, 에너지
     "Auto Manufacturing": "자동차 & 모빌리티",
     "Aerospace & Defense": "항공우주 & 국방",
     "Trucking": "운송 & 물류",
@@ -158,31 +145,32 @@ INDUSTRY_GROUPING = {
     "Oil & Gas Production": "에너지 (석유/가스)",
     "Oil Refining/Marketing": "에너지 (석유/가스)",
     "Electric Utilities": "전력 & 유틸리티",
-    
-    # 소비재
     "Beverages: Non-Alcoholic": "식음료 (F&B)",
     "Food: Major Diversified": "식음료 (F&B)",
     "Food: Specialty/Candy": "식음료 (F&B)",
     "Restaurants": "식음료 (F&B)",
     "Household/Personal Care": "가정 & 개인용품",
-    
-    # 기타
     "Industrial Machinery": "산업 기계"
 }
 
+# 💡 모든 100위권 종목에 대한 완벽한 한글 매핑 및 JPM, ORCL 등 1개만 남기기 위한 대장주 선별
 NAME_TRANSLATIONS = {
     "AAPL": "Apple Inc. (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
-    "GOOGL": "Alphabet (구글)", "GOOG": "Alphabet (구글)", "AMZN": "Amazon (아마존)",
-    "META": "Meta Platforms (메타)", "BRK.B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)",
-    "TSLA": "Tesla (테슬라)", "AVGO": "Broadcom (브로드컴)", "V": "Visa (비자)",
-    "JPM": "JPMorgan Chase (JP모건)", "WMT": "Walmart (월마트)", "UNH": "UnitedHealth (유나이티드헬스)",
-    "MA": "Mastercard (마스터카드)", "PG": "Procter & Gamble (P&G)", "JNJ": "Johnson & Johnson (존슨앤드존슨)",
-    "HD": "Home Depot (홈디포)", "COST": "Costco (코스트코)", "MRK": "Merck & Co. (머크)",
-    "ABBV": "AbbVie (애브비)", "CRM": "Salesforce (세일즈포스)", "AMD": "Advanced Micro Devices (AMD)",
-    "NFLX": "Netflix (넷플릭스)", "KO": "Coca-Cola (코카콜라)", "PEP": "PepsiCo (펩시코)",
-    "DIS": "Walt Disney (디즈니)", "CSCO": "Cisco Systems (시스코)", "ADBE": "Adobe (어도비)",
-    "QCOM": "Qualcomm (퀄컴)", "INTC": "Intel (인텔)", "ARM": "ARM Holdings (암 홀딩스)",
-    "PLTR": "Palantir (팔란티어)", "RTX": "RTX Corporation (레이시온)", "PFE": "Pfizer (화이자)"
+    "GOOGL": "Alphabet Class A (구글)", "GOOG": "Alphabet Class C (구글)", "AMZN": "Amazon (아마존)",
+    "META": "Meta Platforms (메타)", "BRK.A": "Berkshire Hathaway (버크셔)", "BRK.B": "Berkshire Hathaway (버크셔)",
+    "LLY": "Eli Lilly (일라이 릴리)", "TSLA": "Tesla (테슬라)", "AVGO": "Broadcom (브로드컴)", 
+    "V": "Visa (비자)", "JPM": "JPMorgan Chase (JP모건)", "WMT": "Walmart (월마트)", 
+    "UNH": "UnitedHealth (유나이티드헬스)", "MA": "Mastercard (마스터카드)", "PG": "Procter & Gamble (P&G)", 
+    "JNJ": "Johnson & Johnson (존슨앤드존슨)", "HD": "Home Depot (홈디포)", "COST": "Costco (코스트코)", 
+    "MRK": "Merck & Co. (머크)", "ABBV": "AbbVie (애브비)", "CRM": "Salesforce (세일즈포스)", 
+    "AMD": "Advanced Micro Devices (AMD)", "NFLX": "Netflix (넷플릭스)", "KO": "Coca-Cola (코카콜라)", 
+    "PEP": "PepsiCo (펩시코)", "DIS": "Walt Disney (디즈니)", "CSCO": "Cisco Systems (시스코)", 
+    "ADBE": "Adobe (어도비)", "QCOM": "Qualcomm (퀄컴)", "INTC": "Intel (인텔)", 
+    "ARM": "ARM Holdings (암 홀딩스)", "PLTR": "Palantir (팔란티어)", "RTX": "RTX Corporation (레이시온)", 
+    "PFE": "Pfizer (화이자)", "ORCL": "Oracle (오라클)", "BAC": "Bank of America (뱅크오브아메리카)", 
+    "MS": "Morgan Stanley (모건스탠리)", "GS": "Goldman Sachs (골드만삭스)", "WFC": "Wells Fargo (웰스파고)", 
+    "C": "Citigroup (씨티그룹)", "TMUS": "T-Mobile (T모바일)", "TXN": "Texas Instruments (텍사스 인스트루먼트)",
+    "PM": "Philip Morris (필립 모리스)", "BA": "Boeing (보잉)", "INTU": "Intuit (인튜이트)"
 }
 
 def get_robust_session():
@@ -212,7 +200,7 @@ from market_research import fetch_financial_data, analyze_sector_with_ai
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
-# 💡 리서치 왼쪽 패널(info-card)을 프리미엄 SaaS 스타일로 전면 개조
+# 💡 리서치 왼쪽 패널(info-card)을 프리미엄 SaaS 스타일로 전면 개조 (Flexbox 적용)
 st.markdown("""
 <style>
 div[data-testid="stInfo"] p { font-size: 1.1rem; } 
@@ -223,11 +211,10 @@ div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
 /* 🌟 왼쪽 정보 카드 업그레이드 */
 .info-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); }
 .info-card h4 { color: #0f172a; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 1.15rem; font-weight: 700; margin-bottom: 16px;}
-.info-card ul { list-style-type: none; padding: 0; margin: 0; }
-.info-card li { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #cbd5e1; font-size: 1.05rem; }
-.info-card li:last-child { border-bottom: none; }
-.info-card li b { color: #64748b; font-weight: 600; }
-.info-card p { color: #334155; line-height: 1.6; margin: 0; font-size: 1.05rem; }
+.metric-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #cbd5e1; font-size: 1.05rem; }
+.metric-row:last-child { border-bottom: none; }
+.metric-label { color: #64748b; font-weight: 600; }
+.metric-value { font-weight: 700; color: #0f172a; }
 
 .ma-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; }
 .ma-table th, .ma-table td { border: 1px solid #cbd5e1; padding: 10px 12px; text-align: left; }
@@ -633,11 +620,11 @@ with tab6:
                 c_left, c_right = st.columns([4, 6], gap="large")
                 with c_left:
                     st.markdown(stock_data['issue'], unsafe_allow_html=True)
-                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (파트너십, 실적 등)", expanded=False):
+                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (출처 명확 표기)", expanded=False):
                         st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
                 with c_right:
                     if stock_data.get('ai_analysis'):
-                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트")
+                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트 (비판적 시각 적용)")
                         st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
 
     with sub_tab_top100:
@@ -668,6 +655,9 @@ with tab6:
                     df_list = []
                     seen_tickers = set()
                     
+                    # 영우 님의 특별 지정 티커
+                    target_exact = ['JPM', 'ORCL', 'BAC', 'MS', 'GS', 'WFC', 'C']
+                    
                     for item in data.get('data', []):
                         if len(df_list) >= 100: break
                         
@@ -677,6 +667,12 @@ with tab6:
                         mcap = item['d'][4]
                         
                         base_ticker = sym.split('-')[0]
+                        
+                        # 하드코딩 필터링: JPM, ORCL 등 꼬리표 붙은 주식 쳐내기
+                        if base_ticker in target_exact:
+                            if sym != base_ticker: continue
+                            
+                        # 버크셔, 구글 우선주 필터링
                         if base_ticker in ['GOOG', 'GOOGL', 'GOOGM', 'GOOGN']: base_ticker = 'GOOG'
                         if base_ticker in ['BRK']: base_ticker = 'BRK' 
                         if base_ticker in ['FOXA', 'FOX']: base_ticker = 'FOX'
@@ -687,7 +683,7 @@ with tab6:
                         seen_tickers.add(base_ticker)
                         
                         ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) 
-                        name_trans = NAME_TRANSLATIONS.get(sym, name_raw)
+                        name_trans = NAME_TRANSLATIONS.get(sym, f"{name_raw} (미국 기업)") # 병행표기 무조건 적용
                         
                         df_list.append({
                             '순위': len(df_list) + 1,
@@ -717,36 +713,36 @@ with tab6:
             col_pie, col_ndx = st.columns([6, 4], gap="large")
             
             with col_pie:
-                st.markdown("#### 🍩 미국 주도 산업 비중 (정밀 분석)")
+                # 💡 원형 차트 대신 100% 세로형 막대(Bar) 차트로 교체하여 잘림 현상 박멸
+                st.markdown("#### 📊 미국 주도 산업 비중 순위 (막대 차트)")
                 c_p1, c_p2 = st.columns(2)
                 
                 with c_p1:
                     sector_count = st.session_state.sp100_state_df['산업군(Industry)'].value_counts().reset_index()
-                    sector_count.columns = ['Industry', 'Count']
+                    sector_count.columns = ['Sector', 'Count']
                     sector_count['Percentage'] = (sector_count['Count'] / sector_count['Count'].sum() * 100).round(1).astype(str) + '%'
-                    sector_count['LegendLabel'] = sector_count['Industry'] + " (" + sector_count['Percentage'] + ")"
                     
-                    fig_count = alt.Chart(sector_count).mark_arc(innerRadius=60, outerRadius=140).encode(
-                        theta=alt.Theta(field="Count", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=1, symbolLimit=50, labelFontSize=12)),
-                        tooltip=['Industry', alt.Tooltip('Count', title="포함 종목 수"), alt.Tooltip('Percentage', title="비중")]
-                    ).properties(title="[종목 개수 기준]", height=450)
+                    fig_count = alt.Chart(sector_count).mark_bar(cornerRadiusEnd=4).encode(
+                        x=alt.X('Count:Q', title='종목 개수 (개)'),
+                        y=alt.Y('Sector:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300, labelFontSize=12)),
+                        color=alt.Color('Sector:N', legend=None, scale=alt.Scale(scheme='tableau20')),
+                        tooltip=['Sector', alt.Tooltip('Count', title='종목 수'), alt.Tooltip('Percentage', title='비중')]
+                    ).properties(title="[섹터별 종목 개수 순위]", height=500)
                     st.altair_chart(fig_count, use_container_width=True)
                 
                 with c_p2:
                     sector_mcap = st.session_state.sp100_state_df.groupby('산업군(Industry)')['시가총액_num'].sum().reset_index()
-                    # 🚨 해결된 KeyError 로직:
-                    sector_mcap.columns = ['산업군(Industry)', '시가총액_num']
+                    sector_mcap.columns = ['Sector', '시가총액_num']
                     total_mcap = sector_mcap['시가총액_num'].sum()
                     sector_mcap['Percentage'] = (sector_mcap['시가총액_num'] / total_mcap * 100).round(1).astype(str) + '%'
                     sector_mcap['Formatted_Mcap'] = sector_mcap['시가총액_num'].apply(format_mcap_krw)
-                    sector_mcap['LegendLabel'] = sector_mcap['산업군(Industry)'] + " (" + sector_mcap['Percentage'] + ")"
                     
-                    fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=60, outerRadius=140).encode(
-                        theta=alt.Theta(field="시가총액_num", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=1, symbolLimit=50, labelFontSize=12)),
-                        tooltip=['산업군(Industry)', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
-                    ).properties(title="[종합 시가총액 기준]", height=450)
+                    fig_mcap = alt.Chart(sector_mcap).mark_bar(cornerRadiusEnd=4).encode(
+                        x=alt.X('시가총액_num:Q', title='시가총액 합산 ($)'),
+                        y=alt.Y('Sector:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300, labelFontSize=12)),
+                        color=alt.Color('Sector:N', legend=None, scale=alt.Scale(scheme='tableau20')),
+                        tooltip=['Sector', alt.Tooltip('Formatted_Mcap', title='시가총액 합산'), alt.Tooltip('Percentage', title='비중')]
+                    ).properties(title="[섹터별 시가총액 합산 순위]", height=500)
                     st.altair_chart(fig_mcap, use_container_width=True)
             
             with col_ndx:
@@ -762,7 +758,7 @@ with tab6:
                     
                     st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들 차트)")
                     ndx_tv_widget = """
-                    <div class="tradingview-widget-container" style="height:320px;width:100%;">
+                    <div class="tradingview-widget-container" style="height:350px;width:100%;">
                       <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
                       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
                       <script type="text/javascript">
@@ -775,7 +771,7 @@ with tab6:
                       </script>
                     </div>
                     """
-                    components.html(ndx_tv_widget, height=320)
+                    components.html(ndx_tv_widget, height=350)
                 else:
                     st.write("나스닥 데이터를 불러오는 중입니다...")
 
