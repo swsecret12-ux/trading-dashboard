@@ -87,39 +87,61 @@ def format_mcap_krw(usd_val):
         val = float(usd_val)
         if val <= 0: return "-"
         krw_val = val * 1380
-        if krw_val >= 1e12: # 조 단위
+        if krw_val >= 1e12: 
             trillion = krw_val / 1e12
-            # 1조 미만의 단위를 억으로 환산하여 표현 (예: 1.3조 -> 1조 3,000억원)
             t_part = int(trillion)
             b_part = int((trillion - t_part) * 10000)
             if t_part == 0: return f"{b_part:,}억원"
             if b_part == 0: return f"{t_part:,}조원"
             return f"{t_part:,}조 {b_part:,}억원"
-        elif krw_val >= 1e8: # 억 단위
+        elif krw_val >= 1e8: 
             billion = krw_val / 1e8
             return f"{int(billion):,}억원"
         return "-"
     except:
         return usd_val
 
-SECTOR_TRANSLATIONS = {
-    "Technology Services": "Information Technology (정보기술)",
-    "Electronic Technology": "Information Technology (정보기술)",
-    "Health Technology": "Health Care (헬스케어)",
-    "Health Services": "Health Care (헬스케어)",
-    "Finance": "Financials (금융)",
-    "Consumer Non-Durables": "Consumer Staples (필수소비재)",
-    "Consumer Durables": "Consumer Discretionary (자유소비재)",
-    "Consumer Services": "Consumer Discretionary (자유소비재)",
-    "Retail Trade": "Consumer Discretionary (자유소비재)",
-    "Energy Minerals": "Energy (에너지)",
-    "Non-Energy Minerals": "Materials (소재)",
-    "Producer Manufacturing": "Industrials (산업재)",
-    "Industrial Services": "Industrials (산업재)",
-    "Transportation": "Industrials (산업재)",
-    "Utilities": "Utilities (유틸리티)",
-    "Communications": "Communication Services (커뮤니케이션)",
-    "Commercial Services": "Communication Services (커뮤니케이션)"
+# 세부 산업군(Industry) 번역 맵핑
+INDUSTRY_TRANSLATIONS = {
+    "Semiconductors": "반도체",
+    "Packaged Software": "소프트웨어",
+    "Internet Software/Services": "인터넷/클라우드 서비스",
+    "Major Banks": "대형 은행",
+    "Pharmaceuticals: Major": "대형 제약사",
+    "Biotechnology": "바이오테크",
+    "Internet Retail": "이커머스 (온라인 소매)",
+    "Apparel/Footwear Retail": "의류/신발",
+    "Computer Processing Hardware": "컴퓨터 하드웨어",
+    "Aerospace & Defense": "항공우주/국방",
+    "Telecommunications Equipment": "통신 장비",
+    "Auto Manufacturing": "자동차 제조",
+    "Beverages: Non-Alcoholic": "음료",
+    "Restaurants": "외식업",
+    "Medical Specialties": "의료 기기",
+    "Financial Conglomerates": "종합 금융",
+    "Oil & Gas Production": "석유/가스",
+    "Broadcasting": "방송/미디어",
+    "Movies/Entertainment": "영화/엔터테인먼트",
+    "Home Improvement Chains": "주택 개선 소매",
+    "Discount Stores": "할인 마트",
+    "Food Retail": "식품 소매",
+    "Specialty Stores": "전문 소매",
+    "Household/Personal Care": "가정/개인 용품",
+    "Trucking": "운송/물류",
+    "Integrated Oil": "통합 석유",
+    "Industrial Machinery": "산업 기계",
+    "Electronic Equipment/Instruments": "전자 장비",
+    "Property/Casualty Insurance": "손해보험",
+    "Life/Health Insurance": "생명보험",
+    "Real Estate Investment Trusts": "리츠 (REITs)",
+    "Electric Utilities": "전력 유틸리티",
+    "Regional Banks": "지역 은행",
+    "Information Technology Services": "IT 서비스",
+    "Data Processing Services": "데이터 처리",
+    "Computer Communications": "네트워크 통신",
+    "Managed Health Care": "건강 관리",
+    "Hospital/Nursing Management": "병원/간호",
+    "Medical/Nursing Services": "의료/간호 서비스"
 }
 
 NAME_TRANSLATIONS = {
@@ -518,7 +540,6 @@ with tab6:
             filter_sec = st.selectbox("섹터 필터링", ["전체"] + list(df_sector['sector'].unique()))
             if filter_sec != "전체": df_sector = df_sector[df_sector['sector'] == filter_sec]
                 
-            # 리서치 탭 테이블 렌더링 시 시가총액을 format_mcap_krw로 즉시 변환
             df_display = df_sector.copy()
             df_display['market_cap_formatted'] = df_display['market_cap'].apply(lambda x: format_mcap_krw(float(x)) if pd.notna(x) and str(x).replace('.','',1).isdigit() else x)
             
@@ -542,7 +563,6 @@ with tab6:
                 with col_st2:
                     if st.button("🗑️ 삭제", type="primary", use_container_width=True): delete_db("sector_analysis", "id", s_id); st.rerun()
                 
-                # 💡 트레이딩뷰 위젯: EMA (MAExp) + RSI 적용
                 st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
                 tv_widget = f"""
                 <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
@@ -576,7 +596,7 @@ with tab6:
 
     with sub_tab_top100:
         st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실시간 데이터 기준)")
-        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 1~100위' 명단을 즉시 스캔하여 줄을 세웁니다.")
+        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 1위~100위' 명단을 즉시 스캔하여 줄을 세웁니다.")
 
         if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary"):
             with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
@@ -585,22 +605,22 @@ with tab6:
                     payload = {
                         "filter": [
                             {"left": "market_cap_basic", "operation": "nempty"},
-                            {"left": "type", "operation": "in_range", "right": ["stock", "dr"]}
+                            {"left": "type", "operation": "in_range", "right": ["stock", "dr"]},
+                            {"left": "exchange", "operation": "in_range", "right": ["AMEX", "NASDAQ", "NYSE"]}
                         ],
                         "options": {"lang": "en"},
                         "markets": ["america"],
                         "symbols": {"query": {"types": []}, "tickers": []},
-                        "columns": ["name", "description", "sector", "market_cap_basic"],
+                        "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                        "range": [0, 150]
+                        "range": [0, 200]
                     }
                     headers = {"User-Agent": "Mozilla/5.0"}
                     res = requests.post(url, json=payload, headers=headers)
                     data = res.json()
                     
                     df_list = []
-                    skip_tickers = {'GOOG', 'GOOGM', 'GOOGN', 'BRK-A', 'BRK.A'}
-                    seen_names = set()
+                    seen_tickers = set()
                     
                     for item in data.get('data', []):
                         if len(df_list) >= 100: break
@@ -608,14 +628,14 @@ with tab6:
                         sym = item['d'][0].replace('.', '-')
                         name_raw = item['d'][1]
                         sec_raw = item['d'][2]
-                        mcap = item['d'][3]
+                        ind_raw = item['d'][3]
+                        mcap = item['d'][4]
                         
-                        base_name = name_raw.split()[0].upper()
-                        if sym in skip_tickers: continue
-                        if base_name in ['ALPHABET', 'BERKSHIRE'] and base_name in seen_names: continue
-                        seen_names.add(base_name)
+                        base_ticker = sym.split('-')[0]
+                        if base_ticker in seen_tickers: continue
+                        seen_tickers.add(base_ticker)
                         
-                        sec_trans = SECTOR_TRANSLATIONS.get(sec_raw, f"{sec_raw} (기타)")
+                        ind_trans = INDUSTRY_TRANSLATIONS.get(ind_raw, ind_raw)
                         name_trans = NAME_TRANSLATIONS.get(sym, name_raw)
                         
                         df_list.append({
@@ -623,9 +643,9 @@ with tab6:
                             '시총': format_mcap_krw(mcap),
                             'Symbol': sym,
                             'Name': name_trans,
-                            'Sector': sec_trans,
+                            'Industry': ind_trans,
                             '시가총액_num': mcap,
-                            '섹터 순위': "-",
+                            '산업 순위': "-",
                             '크로스 상태 (4H/1D EMA200)': "대기 중",
                             '크로스 날짜': "-",
                             '크로스 당시 주가': "-",
@@ -633,8 +653,8 @@ with tab6:
                         })
                     
                     new_df = pd.DataFrame(df_list)
-                    new_df['섹터 내 순위'] = new_df.groupby('Sector')['시가총액_num'].rank(ascending=False, method='min')
-                    new_df['섹터 순위'] = new_df['섹터 내 순위'].apply(lambda x: f"섹터 {int(x)}위" if pd.notna(x) else "-")
+                    new_df['섹터 내 순위'] = new_df.groupby('Industry')['시가총액_num'].rank(ascending=False, method='min')
+                    new_df['산업 순위'] = new_df['섹터 내 순위'].apply(lambda x: f"산업 {int(x)}위" if pd.notna(x) else "-")
                     new_df = new_df.drop(columns=['섹터 내 순위'])
                     
                     st.session_state.sp100_state_df = new_df
@@ -650,29 +670,29 @@ with tab6:
                 c_p1, c_p2 = st.columns(2)
                 
                 with c_p1:
-                    sector_count = st.session_state.sp100_state_df['Sector'].value_counts().reset_index()
-                    sector_count.columns = ['Sector', 'Count']
+                    sector_count = st.session_state.sp100_state_df['Industry'].value_counts().reset_index()
+                    sector_count.columns = ['Industry', 'Count']
                     sector_count['Percentage'] = (sector_count['Count'] / sector_count['Count'].sum() * 100).round(1).astype(str) + '%'
-                    sector_count['LegendLabel'] = sector_count['Sector'] + " (" + sector_count['Percentage'] + ")"
+                    sector_count['LegendLabel'] = sector_count['Industry'] + " (" + sector_count['Percentage'] + ")"
                     
                     fig_count = alt.Chart(sector_count).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="Count", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (종목 수)", orient="bottom", columns=2, labelLimit=500)),
-                        tooltip=['Sector', alt.Tooltip('Count', title="포함 종목 수"), alt.Tooltip('Percentage', title="비중")]
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="세부 산업 (종목 수)", orient="bottom", columns=2, labelLimit=500)),
+                        tooltip=['Industry', alt.Tooltip('Count', title="포함 종목 수"), alt.Tooltip('Percentage', title="비중")]
                     ).properties(title="[종목 개수 기준]", height=450)
                     st.altair_chart(fig_count, use_container_width=True)
                 
                 with c_p2:
-                    sector_mcap = st.session_state.sp100_state_df.groupby('Sector')['시가총액_num'].sum().reset_index()
+                    sector_mcap = st.session_state.sp100_state_df.groupby('Industry')['시가총액_num'].sum().reset_index()
                     total_mcap = sector_mcap['시가총액_num'].sum()
                     sector_mcap['Percentage'] = (sector_mcap['시가총액_num'] / total_mcap * 100).round(1).astype(str) + '%'
                     sector_mcap['Formatted_Mcap'] = sector_mcap['시가총액_num'].apply(format_mcap_krw)
-                    sector_mcap['LegendLabel'] = sector_mcap['Sector'] + " (" + sector_mcap['Percentage'] + ")"
+                    sector_mcap['LegendLabel'] = sector_mcap['Industry'] + " (" + sector_mcap['Percentage'] + ")"
                     
                     fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=45).encode(
                         theta=alt.Theta(field="시가총액_num", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="섹터 (시총 합산)", orient="bottom", columns=2, labelLimit=500)),
-                        tooltip=['Sector', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="세부 산업 (시총 합산)", orient="bottom", columns=2, labelLimit=500)),
+                        tooltip=['Industry', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
                     ).properties(title="[종합 시가총액 기준]", height=450)
                     st.altair_chart(fig_mcap, use_container_width=True)
             
@@ -687,7 +707,7 @@ with tab6:
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                     
-                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들 차트)")
+                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 선 차트)")
                     ndx_tv_widget = """
                     <div class="tradingview-widget-container" style="height:320px;width:100%;">
                       <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
@@ -695,7 +715,7 @@ with tab6:
                       <script type="text/javascript">
                       new TradingView.widget({
                       "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
-                      "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+                      "theme": "light", "style": "3", "locale": "kr", "enable_publishing": false,
                       "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
                       "container_id": "tradingview_ixic"
                       });
@@ -790,5 +810,5 @@ with tab6:
                             except Exception as e:
                                 st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
-            display_cols = ['순위', '시총', 'Symbol', 'Name', 'Sector', '섹터 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
+            display_cols = ['순위', '시총', 'Symbol', 'Name', 'Industry', '산업 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
             st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=600)
