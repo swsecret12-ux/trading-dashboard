@@ -14,23 +14,36 @@ def get_robust_session():
     return session
 
 def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
-    """야후 파이낸스 실적 발표일의 주가/나스닥 변동치를 완벽하게 추적하는 테이블 렌더러"""
+    """야후 파이낸스 실적 발표일의 주가/나스닥 변동치를 완벽하게 추적하는 테이블 렌더러 (JSON API 직결)"""
     try:
-        # lxml 의존성을 피해가기 위해 yfinance 내부 캘린더 모듈이 아닌, 자체 순수 JSON 크롤링을 시도하거나 가장 안전한 함수만 사용합니다.
-        ticker = yf.Ticker(ticker_symbol)
-        ed = ticker.earnings_dates
+        url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker_symbol}?modules=earningsHistory,calendarEvents"
+        session = get_robust_session()
+        res = session.get(url, timeout=5)
+        data = res.json()
         
-        if ed is None or ed.empty:
-            return "<div style='padding: 10px; color: #ef4444;'>해당 종목의 실적 데이터가 업데이트되지 않았습니다.</div>"
-            
         rows = []
         now = pd.Timestamp.utcnow()
         
-        for dt, row in ed.iterrows():
-            date_str = dt.strftime('%Y-%m-%d')
-            eps_est = row.get('EPS Estimate', float('nan'))
-            eps_act = row.get('Reported EPS', float('nan'))
-            surp = row.get('Surprise(%)', float('nan'))
+        # 1. 미래 실적 (예정일)
+        calendar = data.get('quoteSummary', {}).get('result', [{}])[0].get('calendarEvents', {}).get('earnings', {})
+        earnings_dates = calendar.get('earningsDate', [])
+        if earnings_dates:
+            future_date_str = earnings_dates[0].get('fmt', '')
+            if future_date_str:
+                est = calendar.get('earningsAverage', {}).get('raw', float('nan'))
+                est_str = f"{est:.2f}" if pd.notna(est) else "-"
+                rows.append(f"<tr style='background-color:#fffbea;'><td>⏳ {future_date_str} (예정)</td><td>{est_str}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>")
+        
+        # 2. 과거 실적 히스토리 (최근 4분기)
+        history = data.get('quoteSummary', {}).get('result', [{}])[0].get('earningsHistory', {}).get('history', [])
+        
+        for item in reversed(history): # 최근 분기가 위로 오도록
+            date_str = item.get('quarter', {}).get('fmt', '')
+            if not date_str: continue
+            
+            eps_est = item.get('epsEstimate', {}).get('raw', float('nan'))
+            eps_act = item.get('epsActual', {}).get('raw', float('nan'))
+            surp = item.get('surprisePercent', {}).get('raw', float('nan'))
             
             eps_est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
             eps_act_str = f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
@@ -44,8 +57,11 @@ def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
             stock_chg = "-"
             ndx_chg = "-"
             
-            if dt < now:
+            # 주가 등락률 계산을 위한 날짜 매칭
+            try:
+                dt = pd.to_datetime(date_str).tz_localize('UTC')
                 search_dt = dt.normalize()
+                
                 if search_dt in df_1d.index:
                     s_ret = df_1d.loc[search_dt, 'Daily_Return']
                     if isinstance(s_ret, pd.Series): s_ret = s_ret.iloc[0]
@@ -57,10 +73,10 @@ def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
                     if isinstance(n_ret, pd.Series): n_ret = n_ret.iloc[0]
                     n_color = "#22c55e" if n_ret > 0 else "#ef4444"
                     ndx_chg = f"<span style='color:{n_color}; font-weight:bold;'>{n_ret:+.2f}%</span>"
-                    
-                rows.append(f"<tr><td>{date_str}</td><td>{eps_est_str}</td><td>{eps_act_str}</td><td>{surp_str}</td><td>{stock_chg}</td><td>{ndx_chg}</td></tr>")
-            else:
-                rows.append(f"<tr style='background-color:#fffbea;'><td>⏳ {date_str} (예정)</td><td>{eps_est_str}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>")
+            except:
+                pass
+                
+            rows.append(f"<tr><td>{date_str}</td><td>{eps_est_str}</td><td>{eps_act_str}</td><td>{surp_str}</td><td>{stock_chg}</td><td>{ndx_chg}</td></tr>")
                 
         html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>종목 발표일 등락</th><th>나스닥 발표일 등락</th></tr>"
         html += "".join(rows[:8])
@@ -135,7 +151,7 @@ def fetch_financial_data(ticker_symbol):
         gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])]
         dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])]
         
-        # 최대 3연속 크로스 추출 로직
+        # 💡 최대 3연속 크로스 추출 로직
         gc_dates = gc.index.tolist()
         dc_dates = dc.index.tolist()
         
@@ -178,7 +194,7 @@ def fetch_financial_data(ticker_symbol):
         
         earnings_html = get_earnings_html_via_api(ticker_symbol, df_1d, ndx)
         
-        # 최신 뉴스 소스 및 퍼블리셔 정밀 파싱
+        # 💡 최신 뉴스 소스 및 퍼블리셔 정밀 파싱
         news_items = ticker.news
         news_lines = []
         if news_items:
