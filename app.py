@@ -101,53 +101,79 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
-# 세부 산업군(Industry) 번역 맵핑
-INDUSTRY_TRANSLATIONS = {
-    "Semiconductors": "반도체",
-    "Packaged Software": "소프트웨어",
-    "Internet Software/Services": "인터넷/클라우드 서비스",
+# 💡 세부 산업군(Industry) 초정밀 번역 및 그룹핑
+INDUSTRY_GROUPING = {
+    # 반도체 및 하드웨어
+    "Semiconductors": "반도체 및 장비",
+    "Computer Processing Hardware": "IT 하드웨어 & 장비",
+    "Computer Communications": "IT 하드웨어 & 장비",
+    "Electronic Equipment/Instruments": "IT 하드웨어 & 장비",
+    "Telecommunications Equipment": "IT 하드웨어 & 장비",
+    
+    # 소프트웨어 및 클라우드
+    "Packaged Software": "소프트웨어 & 클라우드",
+    "Internet Software/Services": "소프트웨어 & 클라우드",
+    "Information Technology Services": "IT 서비스 & 컨설팅",
+    "Data Processing Services": "IT 서비스 & 컨설팅",
+    
+    # 유통 및 이커머스
+    "Internet Retail": "이커머스 & 유통",
+    "Apparel/Footwear Retail": "이커머스 & 유통",
+    "Specialty Stores": "이커머스 & 유통",
+    "Discount Stores": "이커머스 & 유통",
+    "Home Improvement Chains": "이커머스 & 유통",
+    "Food Retail": "이커머스 & 유통",
+    
+    # 바이오 헬스케어
+    "Pharmaceuticals: Major": "제약 & 바이오",
+    "Biotechnology": "제약 & 바이오",
+    "Medical Specialties": "의료 기기 & 서비스",
+    "Managed Health Care": "의료 기기 & 서비스",
+    "Hospital/Nursing Management": "의료 기기 & 서비스",
+    "Medical/Nursing Services": "의료 기기 & 서비스",
+    
+    # 금융
     "Major Banks": "대형 은행",
-    "Pharmaceuticals: Major": "대형 제약사",
-    "Biotechnology": "바이오테크",
-    "Internet Retail": "이커머스 (온라인 소매)",
-    "Apparel/Footwear Retail": "의류/신발",
-    "Computer Processing Hardware": "컴퓨터 하드웨어",
-    "Aerospace & Defense": "항공우주/국방",
-    "Telecommunications Equipment": "통신 장비",
-    "Auto Manufacturing": "자동차 제조",
-    "Beverages: Non-Alcoholic": "음료",
-    "Restaurants": "외식업",
-    "Medical Specialties": "의료 기기",
-    "Financial Conglomerates": "종합 금융",
-    "Oil & Gas Production": "석유/가스",
-    "Broadcasting": "방송/미디어",
-    "Movies/Entertainment": "영화/엔터테인먼트",
-    "Home Improvement Chains": "주택 개선 소매",
-    "Discount Stores": "할인 마트",
-    "Food Retail": "식품 소매",
-    "Specialty Stores": "전문 소매",
-    "Household/Personal Care": "가정/개인 용품",
-    "Trucking": "운송/물류",
-    "Integrated Oil": "통합 석유",
-    "Industrial Machinery": "산업 기계",
-    "Electronic Equipment/Instruments": "전자 장비",
-    "Property/Casualty Insurance": "손해보험",
-    "Life/Health Insurance": "생명보험",
+    "Regional Banks": "은행 & 금융지주",
+    "Financial Conglomerates": "은행 & 금융지주",
+    "Investment Banks/Brokers": "투자은행 & 증권",
+    "Investment Managers": "투자은행 & 증권",
+    "Finance/Rental/Leasing": "여신 & 신용",
+    "Property/Casualty Insurance": "보험",
+    "Life/Health Insurance": "보험",
     "Real Estate Investment Trusts": "리츠 (REITs)",
-    "Electric Utilities": "전력 유틸리티",
-    "Regional Banks": "지역 은행",
-    "Information Technology Services": "IT 서비스",
-    "Data Processing Services": "데이터 처리",
-    "Computer Communications": "네트워크 통신",
-    "Managed Health Care": "건강 관리",
-    "Hospital/Nursing Management": "병원/간호",
-    "Medical/Nursing Services": "의료/간호 서비스"
+    
+    # 미디어 및 엔터
+    "Broadcasting": "미디어 & 엔터",
+    "Movies/Entertainment": "미디어 & 엔터",
+    "Cable/Satellite TV": "미디어 & 엔터",
+    
+    # 제조, 모빌리티, 에너지
+    "Auto Manufacturing": "자동차 & 모빌리티",
+    "Aerospace & Defense": "항공우주 & 국방",
+    "Trucking": "운송 & 물류",
+    "Air Freight/Couriers": "운송 & 물류",
+    "Railroads": "운송 & 물류",
+    "Integrated Oil": "에너지 (석유/가스)",
+    "Oil & Gas Production": "에너지 (석유/가스)",
+    "Oil Refining/Marketing": "에너지 (석유/가스)",
+    "Electric Utilities": "전력 & 유틸리티",
+    
+    # 소비재
+    "Beverages: Non-Alcoholic": "식음료 (F&B)",
+    "Food: Major Diversified": "식음료 (F&B)",
+    "Food: Specialty/Candy": "식음료 (F&B)",
+    "Restaurants": "식음료 (F&B)",
+    "Household/Personal Care": "가정 & 개인용품",
+    
+    # 기타
+    "Industrial Machinery": "산업 기계"
 }
 
 NAME_TRANSLATIONS = {
     "AAPL": "Apple Inc. (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
-    "GOOGL": "Alphabet Class A (구글)", "GOOG": "Alphabet Class C (구글)", "AMZN": "Amazon (아마존)",
-    "META": "Meta Platforms (메타/페이스북)", "BRK.B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)",
+    "GOOGL": "Alphabet (구글)", "GOOG": "Alphabet (구글)", "AMZN": "Amazon (아마존)",
+    "META": "Meta Platforms (메타)", "BRK.B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)",
     "TSLA": "Tesla (테슬라)", "AVGO": "Broadcom (브로드컴)", "V": "Visa (비자)",
     "JPM": "JPMorgan Chase (JP모건)", "WMT": "Walmart (월마트)", "UNH": "UnitedHealth (유나이티드헬스)",
     "MA": "Mastercard (마스터카드)", "PG": "Procter & Gamble (P&G)", "JNJ": "Johnson & Johnson (존슨앤드존슨)",
@@ -505,7 +531,7 @@ with tab6:
             with st.form("new_sector_stock"):
                 c1, c2 = st.columns(2)
                 s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, SNOW)")
-                s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
+                s_sector = c2.selectbox("섹터 분류", ["반도체", "소프트웨어", "IT 하드웨어", "이커머스", "제약바이오", "은행금융", "기타"])
                 s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
                 
                 if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
@@ -596,24 +622,24 @@ with tab6:
 
     with sub_tab_top100:
         st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실시간 데이터 기준)")
-        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 1위~100위' 명단을 즉시 스캔하여 줄을 세웁니다.")
+        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 최상위 100개' 명단을 즉시 스캔하여 줄을 세웁니다.")
 
         if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary"):
-            with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
+            with st.spinner("중복 주식(우선주/파생주) 및 장외주식을 완벽히 컷오프하며 100위를 선별 중입니다... (약 2초 소요)"):
                 try:
                     url = "https://scanner.tradingview.com/america/scan"
                     payload = {
                         "filter": [
                             {"left": "market_cap_basic", "operation": "nempty"},
                             {"left": "type", "operation": "in_range", "right": ["stock", "dr"]},
-                            {"left": "exchange", "operation": "in_range", "right": ["AMEX", "NASDAQ", "NYSE"]}
+                            {"left": "exchange", "operation": "in_range", "right": ["AMEX", "NASDAQ", "NYSE"]} # 정규장 필터 복구
                         ],
                         "options": {"lang": "en"},
                         "markets": ["america"],
                         "symbols": {"query": {"types": []}, "tickers": []},
                         "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                        "range": [0, 200]
+                        "range": [0, 200] # 여유있게 가져와서 필터링 후 100개 컷
                     }
                     headers = {"User-Agent": "Mozilla/5.0"}
                     res = requests.post(url, json=payload, headers=headers)
@@ -627,15 +653,21 @@ with tab6:
                         
                         sym = item['d'][0].replace('.', '-')
                         name_raw = item['d'][1]
-                        sec_raw = item['d'][2]
                         ind_raw = item['d'][3]
                         mcap = item['d'][4]
                         
+                        # 파생주/우선주/중복 클래스 완벽 필터링
                         base_ticker = sym.split('-')[0]
+                        if base_ticker in ['GOOG', 'GOOGL', 'GOOGM', 'GOOGN']: base_ticker = 'GOOG'
+                        if base_ticker in ['BRK']: base_ticker = 'BRK' 
+                        if base_ticker in ['FOXA', 'FOX']: base_ticker = 'FOX'
+                        if base_ticker in ['NWSA', 'NWS']: base_ticker = 'NWS'
+                        if base_ticker in ['UAA', 'UA']: base_ticker = 'UA'
+                        
                         if base_ticker in seen_tickers: continue
                         seen_tickers.add(base_ticker)
                         
-                        ind_trans = INDUSTRY_TRANSLATIONS.get(ind_raw, ind_raw)
+                        ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) 
                         name_trans = NAME_TRANSLATIONS.get(sym, name_raw)
                         
                         df_list.append({
@@ -643,9 +675,9 @@ with tab6:
                             '시총': format_mcap_krw(mcap),
                             'Symbol': sym,
                             'Name': name_trans,
-                            'Industry': ind_trans,
+                            '산업군(Industry)': ind_trans,
                             '시가총액_num': mcap,
-                            '산업 순위': "-",
+                            '분야 순위': "-",
                             '크로스 상태 (4H/1D EMA200)': "대기 중",
                             '크로스 날짜': "-",
                             '크로스 당시 주가': "-",
@@ -653,12 +685,12 @@ with tab6:
                         })
                     
                     new_df = pd.DataFrame(df_list)
-                    new_df['섹터 내 순위'] = new_df.groupby('Industry')['시가총액_num'].rank(ascending=False, method='min')
-                    new_df['산업 순위'] = new_df['섹터 내 순위'].apply(lambda x: f"산업 {int(x)}위" if pd.notna(x) else "-")
-                    new_df = new_df.drop(columns=['섹터 내 순위'])
+                    new_df['분야 내 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min')
+                    new_df['분야 순위'] = new_df['분야 내 순위'].apply(lambda x: f"산업 {int(x)}위" if pd.notna(x) else "-")
+                    new_df = new_df.drop(columns=['분야 내 순위'])
                     
                     st.session_state.sp100_state_df = new_df
-                    st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
+                    st.success("✅ 불순물(파생주/장외주) 제거 및 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
                 except Exception as e:
                     st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
@@ -666,32 +698,33 @@ with tab6:
             col_pie, col_ndx = st.columns([6, 4], gap="large")
             
             with col_pie:
-                st.markdown("#### 🍩 미국 주도 섹터 비중 (스캔된 종목 기준)")
+                st.markdown("#### 🍩 미국 주도 산업 비중 (정밀 분석)")
                 c_p1, c_p2 = st.columns(2)
                 
                 with c_p1:
-                    sector_count = st.session_state.sp100_state_df['Industry'].value_counts().reset_index()
+                    sector_count = st.session_state.sp100_state_df['산업군(Industry)'].value_counts().reset_index()
                     sector_count.columns = ['Industry', 'Count']
                     sector_count['Percentage'] = (sector_count['Count'] / sector_count['Count'].sum() * 100).round(1).astype(str) + '%'
                     sector_count['LegendLabel'] = sector_count['Industry'] + " (" + sector_count['Percentage'] + ")"
                     
-                    fig_count = alt.Chart(sector_count).mark_arc(innerRadius=45).encode(
+                    # 💡 도넛 차트 크기 확대 및 범례 세로 정렬
+                    fig_count = alt.Chart(sector_count).mark_arc(innerRadius=60, outerRadius=140).encode(
                         theta=alt.Theta(field="Count", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="세부 산업 (종목 수)", orient="bottom", columns=2, labelLimit=500)),
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=1, symbolLimit=50, labelFontSize=12)),
                         tooltip=['Industry', alt.Tooltip('Count', title="포함 종목 수"), alt.Tooltip('Percentage', title="비중")]
                     ).properties(title="[종목 개수 기준]", height=450)
                     st.altair_chart(fig_count, use_container_width=True)
                 
                 with c_p2:
-                    sector_mcap = st.session_state.sp100_state_df.groupby('Industry')['시가총액_num'].sum().reset_index()
+                    sector_mcap = st.session_state.sp100_state_df.groupby('산업군(Industry)')['시가총액_num'].sum().reset_index()
                     total_mcap = sector_mcap['시가총액_num'].sum()
                     sector_mcap['Percentage'] = (sector_mcap['시가총액_num'] / total_mcap * 100).round(1).astype(str) + '%'
                     sector_mcap['Formatted_Mcap'] = sector_mcap['시가총액_num'].apply(format_mcap_krw)
                     sector_mcap['LegendLabel'] = sector_mcap['Industry'] + " (" + sector_mcap['Percentage'] + ")"
                     
-                    fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=45).encode(
+                    fig_mcap = alt.Chart(sector_mcap).mark_arc(innerRadius=60, outerRadius=140).encode(
                         theta=alt.Theta(field="시가총액_num", type="quantitative"),
-                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title="세부 산업 (시총 합산)", orient="bottom", columns=2, labelLimit=500)),
+                        color=alt.Color(field="LegendLabel", type="nominal", legend=alt.Legend(title=None, orient="bottom", columns=1, symbolLimit=50, labelFontSize=12)),
                         tooltip=['Industry', alt.Tooltip('Formatted_Mcap', title="시가총액 합산"), alt.Tooltip('Percentage', title="비중")]
                     ).properties(title="[종합 시가총액 기준]", height=450)
                     st.altair_chart(fig_mcap, use_container_width=True)
@@ -707,7 +740,8 @@ with tab6:
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                     
-                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 선 차트)")
+                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들 차트)")
+                    # 💡 주봉(Weekly) 캔들 차트로 원상복구
                     ndx_tv_widget = """
                     <div class="tradingview-widget-container" style="height:320px;width:100%;">
                       <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
@@ -715,7 +749,7 @@ with tab6:
                       <script type="text/javascript">
                       new TradingView.widget({
                       "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
-                      "theme": "light", "style": "3", "locale": "kr", "enable_publishing": false,
+                      "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
                       "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
                       "container_id": "tradingview_ixic"
                       });
@@ -810,5 +844,5 @@ with tab6:
                             except Exception as e:
                                 st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
-            display_cols = ['순위', '시총', 'Symbol', 'Name', 'Industry', '산업 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
+            display_cols = ['순위', '시총', 'Symbol', 'Name', '산업군(Industry)', '분야 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
             st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=600)
