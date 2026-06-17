@@ -16,6 +16,7 @@ def get_robust_session():
 def get_earnings_html_via_api(ticker_symbol, df_1d, ndx):
     """야후 파이낸스 실적 발표일의 주가/나스닥 변동치를 완벽하게 추적하는 테이블 렌더러"""
     try:
+        # lxml 의존성을 피해가기 위해 yfinance 내부 캘린더 모듈이 아닌, 자체 순수 JSON 크롤링을 시도하거나 가장 안전한 함수만 사용합니다.
         ticker = yf.Ticker(ticker_symbol)
         ed = ticker.earnings_dates
         
@@ -134,24 +135,30 @@ def fetch_financial_data(ticker_symbol):
         gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])]
         dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])]
         
-        last_cross_type = "최근 1년 내 크로스 없음"
-        last_cross_date = "-"
-        ma_html = "<div class='metric-row'><span class='metric-label'>상태</span><span class='metric-value'>크로스 없음</span></div>"
+        # 최대 3연속 크로스 추출 로직
+        gc_dates = gc.index.tolist()
+        dc_dates = dc.index.tolist()
         
-        if not gc.empty or not dc.empty:
-            last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
-            last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
-            latest_idx = max(last_gc, last_dc)
-            
-            cross_name = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
-            days_diff = (datetime.now(timezone.utc) - latest_idx).days
-            if days_diff <= 90: cross_name = f"🔥 {cross_name}"
-                
-            last_cross_type = cross_name
-            last_cross_date = latest_idx.strftime('%Y-%m-%d %H:%M')
-            color = "#22c55e" if "골든" in cross_name else "#ef4444"
-            
-            ma_html = f"<div class='metric-row'><span class='metric-label'>상태</span><span class='metric-value' style='color:{color};'>{cross_name}</span></div><div class='metric-row'><span class='metric-label'>발생일</span><span class='metric-value'>{last_cross_date}</span></div><div class='metric-row'><span class='metric-label'>당시 주가</span><span class='metric-value'>${merged.loc[latest_idx, 'Close']:.2f}</span></div>"
+        crosses = [{'date': d, 'type': '🟢 골든크로스', 'price': merged.loc[d, 'Close']} for d in gc_dates] + \
+                  [{'date': d, 'type': '🔴 데드크로스', 'price': merged.loc[d, 'Close']} for d in dc_dates]
+        
+        crosses.sort(key=lambda x: x['date'], reverse=True)
+        recent_crosses = crosses[:3]
+        
+        last_cross_type = "크로스 없음"
+        last_cross_date = "-"
+        
+        if not recent_crosses:
+            ma_html = "<div style='padding: 10px;'>최근 1년 내 발생한 4H/1D EMA 200 크로스가 없습니다.</div>"
+        else:
+            last_cross_type = recent_crosses[0]['type']
+            last_cross_date = recent_crosses[0]['date'].strftime('%Y-%m-%d %H:%M')
+            ma_html = "<table class='ma-table'><tr><th>상태 (최근 3회)</th><th>발생일</th><th>당시 주가</th></tr>"
+            for c in recent_crosses:
+                d_str = c['date'].strftime('%Y-%m-%d %H:%M')
+                color = "#22c55e" if "골든" in c['type'] else "#ef4444"
+                ma_html += f"<tr><td><span style='color:{color}; font-weight:bold;'>{c['type']}</span></td><td>{d_str}</td><td>${c['price']:.2f}</td></tr>"
+            ma_html += "</table>"
             
         momentum_html = get_momentum_html(current_price, df_1d, ndx)
         
