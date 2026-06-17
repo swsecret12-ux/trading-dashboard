@@ -15,6 +15,9 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import yfinance as yf
 
+# ==========================================
+# --- 1. 클라우드 및 AI 세팅 ---
+# ==========================================
 URL = st.secrets.get("SUPABASE_URL", "")
 KEY = st.secrets.get("SUPABASE_KEY", "")
 HEADERS = {
@@ -588,11 +591,12 @@ with tab6:
                 c_left, c_right = st.columns([4, 6], gap="large")
                 with c_left:
                     st.markdown(stock_data['issue'], unsafe_allow_html=True)
-                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (파트너십, 실적 등)", expanded=False):
+                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (출처 명확 표기)", expanded=False):
+                        st.info("💡 야후 파이낸스 무료 API 제공 한도로 인해 최근 기사 위주로 수집됩니다. 과거 이슈는 우측 AI가 자체 지식망을 활용하여 심층 팩트체크합니다.")
                         st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
                 with c_right:
                     if stock_data.get('ai_analysis'):
-                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트")
+                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트 (비판적 시각 적용)")
                         st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
 
     with sub_tab_top100:
@@ -676,7 +680,7 @@ with tab6:
                     new_df = new_df.drop(columns=['분야 내 순위'])
                     
                     st.session_state.sp100_state_df = new_df
-                    st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
+                    st.success("✅ 불순물(파생주/장외주) 제거 및 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
                 except Exception as e:
                     st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
@@ -684,7 +688,7 @@ with tab6:
             col_pie, col_ndx = st.columns([6, 4], gap="large")
             
             with col_pie:
-                st.markdown("#### 📊 미국 주도 산업 비중 순위 (막대 차트)")
+                st.markdown("#### 📊 미국 주도 산업 비중 (가로 막대형 차트)")
                 c_p1, c_p2 = st.columns(2)
                 
                 with c_p1:
@@ -726,7 +730,7 @@ with tab6:
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                     
-                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 캔들 차트)")
+                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 실시간 캔들 차트)")
                     ndx_tv_widget = """
                     <div class="tradingview-widget-container" style="height:350px;width:100%;">
                       <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
