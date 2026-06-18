@@ -949,6 +949,7 @@ with tab6:
               <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
               {
+              "exchanges": ["KRX"],
               "market": "south_korea",
               "grouping": "sector",
               "blockSize": "market_cap_basic",
@@ -1016,7 +1017,7 @@ with tab6:
               <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
               <script type="text/javascript">
               new TradingView.widget({
-              "autosize": true, "symbol": "KRX:KOSPI", "interval": "W", "timezone": "Etc/UTC",
+              "autosize": true, "symbol": "KRX:KOSPI", "interval": "W", "timezone": "Asia/Seoul",
               "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
               "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
               "container_id": "tradingview_kospi"
