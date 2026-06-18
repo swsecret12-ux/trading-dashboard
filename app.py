@@ -15,9 +15,6 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import yfinance as yf
 
-# ==========================================
-# --- 1. 클라우드 및 AI 세팅 ---
-# ==========================================
 URL = st.secrets.get("SUPABASE_URL", "")
 KEY = st.secrets.get("SUPABASE_KEY", "")
 HEADERS = {
@@ -101,89 +98,66 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
-# 💡 핀비즈(Finviz) & S&P 500 히트맵 기준: GICS 11대 대분류 완벽 매핑
+def format_krw_direct(krw_val):
+    """국내(코스피) 스캐너 전용 직결 원화 포맷터"""
+    try:
+        val = float(krw_val)
+        if val <= 0: return "-"
+        if val >= 1e12: 
+            trillion = val / 1e12
+            t_part = int(trillion)
+            b_part = int((trillion - t_part) * 10000)
+            if t_part == 0: return f"{b_part:,}억원"
+            if b_part == 0: return f"{t_part:,}조원"
+            return f"{t_part:,}조 {b_part:,}억원"
+        elif val >= 1e8: 
+            billion = val / 1e8
+            return f"{int(billion):,}억원"
+        return "-"
+    except:
+        return krw_val
+
 INDUSTRY_GROUPING = {
-    # 1. 💻 기술 (Technology)
-    "Semiconductors": "💻 기술 (반도체)",
-    "Packaged Software": "💻 기술 (소프트웨어)",
-    "Telecommunications Equipment": "💻 기술 (IT 하드웨어)",
-    "Computer Processing Hardware": "💻 기술 (IT 하드웨어)",
-    "Computer Communications": "💻 기술 (네트워크 장비)",
-    "Electronic Equipment/Instruments": "💻 기술 (전자 부품)",
-    "Computer Peripherals": "💻 기술 (컴퓨터 주변기기)",
-    "Information Technology Services": "💻 기술 (IT 서비스)",
-    
-    # 2. 📱 커뮤니케이션 (Communication Services)
-    "Internet Software/Services": "📱 커뮤니케이션 (인터넷/미디어)",
-    "Broadcasting": "📱 커뮤니케이션 (방송/미디어)",
-    "Movies/Entertainment": "📱 커뮤니케이션 (엔터테인먼트)",
-    "Advertising/Marketing Services": "📱 커뮤니케이션 (광고)",
-    "Specialty Telecommunications": "📱 커뮤니케이션 (통신 인프라)",
-    
-    # 3. 🛍️ 경기소비재 (Consumer Cyclical)
-    "Internet Retail": "🛍️ 경기소비재 (이커머스)",
-    "Motor Vehicles": "🛍️ 경기소비재 (자동차)",
-    "Auto Manufacturing": "🛍️ 경기소비재 (자동차)",
-    "Apparel/Footwear Retail": "🛍️ 경기소비재 (의류/신발)",
-    "Specialty Stores": "🛍️ 경기소비재 (전문 유통)",
-    "Restaurants": "🛍️ 경기소비재 (외식/프랜차이즈)",
-    "Other Consumer Services": "🛍️ 경기소비재 (기타 서비스)",
-    "Hotels/Resorts/Cruises": "🛍️ 경기소비재 (호텔/여행)",
-    
-    # 4. 🛒 필수소비재 (Consumer Defensive)
-    "Discount Stores": "🛒 필수소비재 (대형 할인마트)",
-    "Food Retail": "🛒 필수소비재 (식품 유통)",
-    "Beverages: Non-Alcoholic": "🛒 필수소비재 (음료)",
-    "Beverages: Alcoholic": "🛒 필수소비재 (주류)",
-    "Household/Personal Care": "🛒 필수소비재 (가정용품/개인위생)",
-    "Food: Major Diversified": "🛒 필수소비재 (종합 식품)",
-    "Tobacco": "🛒 필수소비재 (담배)",
-    
-    # 5. 💊 헬스케어 (Healthcare)
-    "Pharmaceuticals: Major": "💊 헬스케어 (대형 제약사)",
-    "Biotechnology": "💊 헬스케어 (바이오테크)",
-    "Medical Specialties": "💊 헬스케어 (의료 기기)",
-    "Managed Health Care": "💊 헬스케어 (의료 보험)",
-    "Hospital/Nursing Management": "💊 헬스케어 (병원 관리)",
-    
-    # 6. 🏦 금융 (Financials)
-    "Major Banks": "🏦 금융 (대형 은행)",
-    "Regional Banks": "🏦 금융 (지역 은행)",
-    "Investment Banks/Brokers": "🏦 금융 (투자은행/증권)",
-    "Investment Managers": "🏦 금융 (자산운용)",
-    "Finance/Rental/Leasing": "🏦 금융 (신용/결제 서비스)",
-    "Property/Casualty Insurance": "🏦 금융 (손해보험)",
-    "Life/Health Insurance": "🏦 금융 (생명보험)",
-    "Financial Conglomerates": "🏦 금융 (종합 금융)",
-    
-    # 7. 🏭 산업재 (Industrials)
-    "Aerospace & Defense": "🏭 산업재 (항공우주/국방)",
-    "Industrial Machinery": "🏭 산업재 (산업 기계)",
-    "Trucks/Construction/Farm Machinery": "🏭 산업재 (중장비/농기계)",
-    "Air Freight/Couriers": "🏭 산업재 (물류/운송)",
-    "Railroads": "🏭 산업재 (철도)",
-    "Engineering & Construction": "🏭 산업재 (건설/엔지니어링)",
-    "Miscellaneous Commercial Services": "🏭 산업재 (상업 서비스)",
-    
-    # 8. 🛢️ 에너지 (Energy)
-    "Integrated Oil": "🛢️ 에너지 (석유/가스 통합)",
-    "Oil & Gas Production": "🛢️ 에너지 (석유/가스 생산)",
-    "Oil Refining/Marketing": "🛢️ 에너지 (정유/마케팅)",
-    
-    # 9. ⚡ 유틸리티 (Utilities)
-    "Electric Utilities": "⚡ 유틸리티 (전력)",
-    "Gas Distributors": "⚡ 유틸리티 (가스)",
-    
-    # 10. 🏢 부동산 (Real Estate)
-    "Real Estate Investment Trusts": "🏢 부동산 (리츠 REITs)",
-    "Real Estate Development": "🏢 부동산 (부동산 개발)",
-    
-    # 11. 🧱 원자재 (Basic Materials)
-    "Other Metals/Minerals": "🧱 원자재 (기타 금속/광물)",
-    "Specialty Chemicals": "🧱 원자재 (특수 화학)",
-    "Major Chemicals": "🧱 원자재 (대형 화학)",
-    "Steel": "🧱 원자재 (철강)",
-    "Copper": "🧱 원자재 (구리)"
+    "Semiconductors": "반도체",
+    "Packaged Software": "소프트웨어",
+    "Internet Software/Services": "소프트웨어",
+    "Information Technology Services": "소프트웨어",
+    "Computer Processing Hardware": "IT 하드웨어",
+    "Telecommunications Equipment": "IT 하드웨어", 
+    "Computer Peripherals": "IT 하드웨어",
+    "Computer Communications": "네트워크 장비",
+    "Electronic Equipment/Instruments": "IT 부품",
+    "Aerospace & Defense": "우주 & 항공",
+    "Specialty Telecommunications": "우주 & 항공", 
+    "Internet Retail": "이커머스",
+    "Apparel/Footwear Retail": "소매 및 유통",
+    "Specialty Stores": "소매 및 유통",
+    "Discount Stores": "대형 할인마트",
+    "Pharmaceuticals: Major": "제약 & 바이오",
+    "Biotechnology": "제약 & 바이오",
+    "Medical Specialties": "의료 기기",
+    "Managed Health Care": "헬스케어 및 보험",
+    "Major Banks": "금융",
+    "Regional Banks": "금융",
+    "Investment Banks/Brokers": "금융",
+    "Investment Managers": "금융",
+    "Finance/Rental/Leasing": "금융",
+    "Property/Casualty Insurance": "금융 (보험)",
+    "Life/Health Insurance": "금융 (보험)",
+    "Real Estate Investment Trusts": "부동산 (리츠)",
+    "Broadcasting": "미디어 & 방송",
+    "Movies/Entertainment": "미디어 & 엔터테인먼트",
+    "Auto Manufacturing": "자동차",
+    "Motor Vehicles": "자동차",
+    "Industrial Machinery": "산업 기계",
+    "Trucks/Construction/Farm Machinery": "산업 기계",
+    "Integrated Oil": "에너지",
+    "Electric Utilities": "에너지",
+    "Other Metals/Minerals": "원자재 및 광물",
+    "Beverages: Non-Alcoholic": "식음료",
+    "Restaurants": "식음료 (프랜차이즈)",
+    "Household/Personal Care": "필수 소비재",
+    "Air Freight/Couriers": "물류 및 운송"
 }
 
 NAME_TRANSLATIONS = {
@@ -242,6 +216,8 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0 
 if "sp100_state_df" not in st.session_state:
     st.session_state.sp100_state_df = pd.DataFrame()
+if "kospi100_state_df" not in st.session_state:
+    st.session_state.kospi100_state_df = pd.DataFrame()
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📝 매매 기록 보관지", "🔎 AI 차트 & 관점 분석", "📚 기본 이론 & DB", "🤖 자동매매 사령실", "📁 분석 자료 아카이브", "🏢 섹터 & 주도주 맵"])
 
@@ -527,7 +503,7 @@ with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
     
-    sub_tab_research, sub_tab_top100 = st.tabs(["🏢 내 종목 리서치", "🇺🇸 미국 시총 Top 100 맵"])
+    sub_tab_research, sub_tab_top100, sub_tab_kr_top100 = st.tabs(["🏢 내 종목 리서치", "🇺🇸 미국 시총 Top 100 맵", "🇰🇷 한국 코스피 Top 100 맵"])
     
     with sub_tab_research:
         with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
@@ -887,3 +863,247 @@ with tab6:
 
             display_cols = ['순위', '시총', 'Symbol', 'Name', '산업군(Industry)', '분야 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
             st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=1100)
+
+    with sub_tab_kr_top100:
+        st.markdown("### 🇰🇷 한국 코스피 상위 Top 100 기업 (실시간 데이터 기준)")
+        st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 대한민국 코스피(KOSPI) 시가총액 최상위 100개 명단을 즉시 스캔하여 묶어냅니다.")
+
+        if st.button("🔄 실시간 한국 코스피 Top 100 스캔 시작", type="primary", key="btn_kr_scan"):
+            with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
+                try:
+                    url = "https://scanner.tradingview.com/south_korea/scan"
+                    payload = {
+                        "filter": [
+                            {"left": "market_cap_basic", "operation": "nempty"},
+                            {"left": "type", "operation": "in_range", "right": ["stock", "dr"]},
+                            {"left": "exchange", "operation": "in_range", "right": ["KRX"]} 
+                        ],
+                        "options": {"lang": "ko"},
+                        "markets": ["south_korea"],
+                        "symbols": {"query": {"types": []}, "tickers": []},
+                        "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
+                        "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
+                        "range": [0, 150] 
+                    }
+                    headers = {"User-Agent": "Mozilla/5.0"}
+                    res = requests.post(url, json=payload, headers=headers)
+                    data = res.json()
+                    
+                    df_list = []
+                    seen_tickers = set()
+                    
+                    for item in data.get('data', []):
+                        if len(df_list) >= 100: break
+                        
+                        sym = item['d'][0] 
+                        name_raw = item['d'][1]
+                        ind_raw = item['d'][3]
+                        mcap = item['d'][4]
+                        
+                        base_ticker = sym.split(':')[-1]
+                        if base_ticker in seen_tickers: continue
+                        seen_tickers.add(base_ticker)
+                        
+                        yf_ticker = f"{base_ticker}.KS"
+                        
+                        df_list.append({
+                            '순위': len(df_list) + 1,
+                            '시총': format_krw_direct(mcap),
+                            'Symbol': base_ticker,
+                            'YF_Symbol': yf_ticker,
+                            'Name': name_raw,
+                            '산업군(Industry)': ind_raw if ind_raw else "기타",
+                            '시가총액_num': mcap,
+                            '분야 순위': "-",
+                            '크로스 상태 (4H/1D EMA200)': "대기 중",
+                            '크로스 날짜': "-",
+                            '크로스 당시 주가': "-",
+                            '업데이트 날짜': "-"
+                        })
+                    
+                    new_df = pd.DataFrame(df_list)
+                    new_df['분야 내 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min')
+                    new_df['분야 순위'] = new_df['분야 내 순위'].apply(lambda x: f"산업 {int(x)}위" if pd.notna(x) else "-")
+                    new_df = new_df.drop(columns=['분야 내 순위'])
+                    
+                    st.session_state.kospi100_state_df = new_df
+                    st.success("✅ 불순물 제거 및 실시간 코스피 Top 100 리스트 업데이트 완료!")
+                except Exception as e:
+                    st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
+
+        if not st.session_state.kospi100_state_df.empty:
+            
+            st.markdown("#### 🗺️ 한국 코스피 주도주 히트맵 (실시간 자금 흐름)")
+            st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
+            heatmap_widget_kr = """
+            <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
+              <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
+              <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
+              {
+              "market": "south_korea",
+              "grouping": "sector",
+              "blockSize": "market_cap_basic",
+              "blockColor": "change",
+              "locale": "kr",
+              "symbolUrl": "",
+              "colorTheme": "light",
+              "hasTopBar": false,
+              "isDataSetEnabled": false,
+              "isZoomEnabled": true,
+              "hasSymbolTooltip": true,
+              "width": "100%",
+              "height": 700
+            }
+              </script>
+            </div>
+            """
+            components.html(heatmap_widget_kr, height=700)
+            
+            st.markdown("---")
+            
+            st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
+            try:
+                session = get_robust_session()
+                kospi_df = pd.DataFrame()
+                
+                for _ in range(2):
+                    try:
+                        temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
+                        if not temp_df.empty:
+                            kospi_df = temp_df
+                            break
+                    except:
+                        time.sleep(1)
+
+                if not kospi_df.empty:
+                    if isinstance(kospi_df.columns, pd.MultiIndex):
+                        close_series = kospi_df['Close'].iloc[:, 0]
+                    else:
+                        close_series = kospi_df['Close']
+                        
+                    curr = close_series.iloc[-1]
+                    def ret(days):
+                        if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
+                        return 0.0
+                    
+                    kr_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
+                    kr_df = pd.DataFrame([kr_data])
+                    
+                    def color_val(val):
+                        color = '#ef4444' if val < 0 else '#22c55e'
+                        return f"color: {color}; font-weight: bold;"
+                    
+                    formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
+                    st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
+                else:
+                    st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+            except Exception as e:
+                st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+                
+            st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 캔들 차트)")
+            kr_tv_widget = """
+            <div class="tradingview-widget-container" style="height:350px;width:100%;">
+              <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
+              <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+              <script type="text/javascript">
+              new TradingView.widget({
+              "autosize": true, "symbol": "KRX:KOSPI", "interval": "W", "timezone": "Etc/UTC",
+              "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+              "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
+              "container_id": "tradingview_kospi"
+              });
+              </script>
+            </div>
+            """
+            components.html(kr_tv_widget, height=350)
+
+            st.markdown("---")
+
+            yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
+            ui_symbols = st.session_state.kospi100_state_df['Symbol'].tolist()
+            chunks_yf = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
+            chunks_ui = [ui_symbols[i:i+25] for i in range(0, 100, 25)]
+            labels_kr = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
+            
+            st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 '4시간봉 EMA 200 vs 1일봉 EMA 200' 크로스 현황을 정밀 스캔합니다.")
+            cols_kr = st.columns(4)
+            for i in range(4):
+                if i < len(chunks_yf):
+                    if cols_kr[i].button(f"🚀 코스피 {labels_kr[i]} 스캔", use_container_width=True, key=f"btn_kr_{i}"):
+                        with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
+                            time.sleep(2) 
+                            try:
+                                session = get_robust_session()
+                                data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False, session=session)
+                                data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False, session=session)
+                                
+                                if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
+                                else: data_1d = data_1d_raw
+                                    
+                                if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
+                                else: data_1h = data_1h_raw
+                                    
+                                if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks_yf[i][0])
+                                if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks_yf[i][0])
+                                
+                                current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                
+                                for j, yf_sym in enumerate(chunks_yf[i]):
+                                    ui_sym = chunks_ui[i][j]
+                                    if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns:
+                                        c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                    else:
+                                        df_sym_1d = data_1d[yf_sym].dropna()
+                                        df_sym_1h = data_1h[yf_sym].dropna()
+                                        
+                                        if len(df_sym_1d) < 150 or len(df_sym_1h) < 150:
+                                            c_type, c_date, c_price = "상장기간 부족", "-", "-"
+                                        else:
+                                            df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
+                                            df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
+                                            
+                                            df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
+                                            df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
+                                            df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
+                                            
+                                            df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
+                                            df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
+                                            
+                                            df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
+                                            df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
+                                            
+                                            merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
+                                            merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
+                                            merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
+                                            
+                                            gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])]
+                                            dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])]
+                                            
+                                            if not gc.empty or not dc.empty:
+                                                last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                                last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
+                                                latest_idx = max(last_gc, last_dc)
+                                                
+                                                c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
+                                                days_diff = (datetime.now(timezone.utc) - latest_idx).days
+                                                if days_diff <= 90: c_type = f"🔥 {c_type}"
+                                                    
+                                                c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
+                                                c_price = f"₩{merged.loc[latest_idx, 'Close']:,.0f}"
+                                            else:
+                                                c_type, c_date, c_price = "최근 1년 내 크로스 없음", "-", "-"
+                                    
+                                    mask = st.session_state.kospi100_state_df['Symbol'] == ui_sym
+                                    st.session_state.kospi100_state_df.loc[mask, '크로스 상태 (4H/1D EMA200)'] = c_type
+                                    st.session_state.kospi100_state_df.loc[mask, '크로스 날짜'] = c_date
+                                    st.session_state.kospi100_state_df.loc[mask, '크로스 당시 주가'] = c_price
+                                    st.session_state.kospi100_state_df.loc[mask, '업데이트 날짜'] = current_update_time
+
+                                st.success(f"✅ {current_update_time} 기준, 코스피 {labels_kr[i]} 크로스 분석 완료!")
+                                st.rerun() 
+                                
+                            except Exception as e:
+                                st.error(f"야후 파이낸스 스캔 중 오류 발생 (잠시 후 다시 시도해주세요): {str(e)}")
+
+            display_cols_kr = ['순위', '시총', 'Symbol', 'Name', '산업군(Industry)', '분야 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
+            st.dataframe(st.session_state.kospi100_state_df[display_cols_kr], use_container_width=True, hide_index=True, height=1100)
