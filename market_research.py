@@ -89,6 +89,7 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
     market_cap = 0
     earnings_html = ""
     rows = []
+    upcoming_row = ""
     
     # 중복/Series 반환을 방지하고 깔끔하게 단일 float를 추출하는 헬퍼 함수
     def get_val(df, idx, col):
@@ -104,8 +105,25 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
         if q_data.get('quoteResponse', {}).get('result'):
             market_cap = q_data['quoteResponse']['result'][0].get('marketCap', 0)
     except: pass
+
+    # 🚀 2. 다가오는 실적발표일 (예정) 항상 최상단 추출
+    try:
+        cal_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=calendarEvents"
+        if crumb: cal_url += f"&crumb={crumb}"
+        cal_res = session.get(cal_url, timeout=5)
+        if cal_res.status_code == 200:
+            cal_data = cal_res.json().get('quoteSummary', {}).get('result', [{}])[0].get('calendarEvents', {}).get('earnings', {})
+            earn_dates = cal_data.get('earningsDate', [])
+            if earn_dates:
+                raw_dt = earn_dates[0].get('raw', 0)
+                if raw_dt:
+                    future_date = pd.to_datetime(raw_dt, unit='s').strftime('%Y-%m-%d')
+                    if future_date != "1970-01-01":
+                        est = cal_data.get('earningsAverage', {}).get('fmt', '-')
+                        upcoming_row = f"<tr style='background-color:#fffbea;'><td>⏳ {future_date} (예정)</td><td>{est}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>"
+    except: pass
     
-    # 2. 분기 실적 데이터 (나스닥 API 우선 ➡️ 야후 API 후순위)
+    # 3. 과거 분기 실적 데이터 (나스닥 API 우선 ➡️ 야후 API 후순위)
     try:
         nasdaq_url = f"https://api.nasdaq.com/api/company/{ticker}/earnings-surprise"
         n_headers = session.headers.copy()
@@ -172,10 +190,10 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
                 rows.append(f"<tr><td>{date_formatted}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>{stock_change_html}</td><td>{sp500_change_html}</td></tr>")
     except: pass
 
-    # 3. 나스닥 통신 실패 시, 기존 야후 파이낸스 내부 API로 우회
+    # 4. 나스닥 통신 실패 시, 기존 야후 파이낸스 내부 API로 우회
     if not rows:
         try:
-            y_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
+            y_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory"
             if crumb: y_url += f"&crumb={crumb}"
             
             y_res = session.get(y_url, timeout=5)
@@ -183,15 +201,6 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
                 y_data = y_res.json()
                 result = y_data.get('quoteSummary', {}).get('result', [])
                 if result:
-                    calendar = result[0].get('calendarEvents', {}).get('earnings', {})
-                    earnings_dates = calendar.get('earningsDate', [])
-                    if earnings_dates:
-                        raw_dt = earnings_dates[0].get('raw', 0)
-                        future_date = pd.to_datetime(raw_dt, unit='s').strftime('%Y-%m-%d') if raw_dt else ""
-                        if future_date and future_date != "1970-01-01":
-                            est = calendar.get('earningsAverage', {}).get('raw', '')
-                            rows.append(f"<tr style='background-color:#fffbea;'><td>⏳ {future_date} (예정)</td><td>{est if est else '-'}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>")
-                    
                     history = result[0].get('earningsHistory', {}).get('history', [])
                     for item in reversed(history):
                         date_raw = item.get('quarter', {}).get('raw', 0)
@@ -238,9 +247,13 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
                         rows.append(f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>{stock_change_html}</td><td>{sp500_change_html}</td></tr>")
         except: pass
 
-    if rows:
+    final_rows = []
+    if upcoming_row: final_rows.append(upcoming_row)
+    final_rows.extend(rows)
+
+    if final_rows:
         earnings_html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>종목 익일 등락</th><th>S&P 500 익일 등락</th></tr>"
-        earnings_html += "".join(rows) + "</table>"
+        earnings_html += "".join(final_rows) + "</table>"
         earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* 실적 데이터 출처: Nasdaq & Yahoo API 다중 크롤링</p>"
     else:
         earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없습니다. (데이터 없음)</p>"
