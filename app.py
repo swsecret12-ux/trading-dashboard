@@ -15,6 +15,9 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import yfinance as yf
 
+# ==========================================
+# --- 1. 클라우드 및 AI 세팅 ---
+# ==========================================
 URL = st.secrets.get("SUPABASE_URL", "")
 KEY = st.secrets.get("SUPABASE_KEY", "")
 HEADERS = {
@@ -117,7 +120,9 @@ def format_krw_direct(krw_val):
     except:
         return krw_val
 
+# 💡 완벽하게 번역된 세부 산업군 매핑 사전
 INDUSTRY_GROUPING = {
+    # [IT / 테크]
     "Semiconductors": "반도체",
     "Packaged Software": "소프트웨어",
     "Internet Software/Services": "소프트웨어",
@@ -127,16 +132,24 @@ INDUSTRY_GROUPING = {
     "Computer Peripherals": "IT 하드웨어",
     "Computer Communications": "네트워크 장비",
     "Electronic Equipment/Instruments": "IT 부품",
+    
+    # [우주항공]
     "Aerospace & Defense": "우주 & 항공",
     "Specialty Telecommunications": "우주 & 항공", 
+
+    # [이커머스 및 유통]
     "Internet Retail": "이커머스",
     "Apparel/Footwear Retail": "소매 및 유통",
     "Specialty Stores": "소매 및 유통",
     "Discount Stores": "대형 할인마트",
+    
+    # [의료 / 헬스케어]
     "Pharmaceuticals: Major": "제약 & 바이오",
     "Biotechnology": "제약 & 바이오",
     "Medical Specialties": "의료 기기",
     "Managed Health Care": "헬스케어 및 보험",
+    
+    # [금융 및 부동산]
     "Major Banks": "금융",
     "Regional Banks": "금융",
     "Investment Banks/Brokers": "금융",
@@ -145,15 +158,23 @@ INDUSTRY_GROUPING = {
     "Property/Casualty Insurance": "금융 (보험)",
     "Life/Health Insurance": "금융 (보험)",
     "Real Estate Investment Trusts": "부동산 (리츠)",
+    
+    # [미디어 및 엔터]
     "Broadcasting": "미디어 & 방송",
     "Movies/Entertainment": "미디어 & 엔터테인먼트",
+    
+    # [자동차 및 기계]
     "Auto Manufacturing": "자동차",
     "Motor Vehicles": "자동차",
     "Industrial Machinery": "산업 기계",
     "Trucks/Construction/Farm Machinery": "산업 기계",
+    
+    # [에너지 및 원자재]
     "Integrated Oil": "에너지",
     "Electric Utilities": "에너지",
     "Other Metals/Minerals": "원자재 및 광물",
+    
+    # [식음료 및 필수소비재]
     "Beverages: Non-Alcoholic": "식음료",
     "Restaurants": "식음료 (프랜차이즈)",
     "Household/Personal Care": "필수 소비재",
