@@ -80,7 +80,7 @@ def fetch_investing_news(ticker):
         return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
-    """Crumb 토큰을 활용한 무결점 야후 v10 실적 데이터 크롤링"""
+    """Crumb 토큰 및 Nasdaq 공식 API를 융합한 무결점 실적 데이터 크롤링"""
     market_cap = 0
     earnings_html = ""
     rows = []
@@ -94,6 +94,12 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
         if q_data.get('quoteResponse', {}).get('result'):
             market_cap = q_data['quoteResponse']['result'][0].get('marketCap', 0)
     except: pass
+
+    # 💡 데이터 안전 추출 헬퍼 (Yahoo API 구조 변경 방어)
+    def safe_extract(item, key):
+        val = item.get(key)
+        if isinstance(val, dict): return val.get('raw')
+        return val
     
     # 2. 야후 파이낸스 실적 데이터 (Crumb 토큰 장착 완료)
     try:
@@ -101,39 +107,45 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
         if crumb: y_url += f"&crumb={crumb}"
         
         y_res = session.get(y_url, timeout=5)
-        
         if y_res.status_code == 200:
             y_data = y_res.json()
-            result = y_data.get('quoteSummary', {}).get('result', [])
-            
-            if result:
+            res_list = y_data.get('quoteSummary', {}).get('result')
+            if res_list:
                 # 향후 실적 발표 예정일
-                calendar = result[0].get('calendarEvents', {}).get('earnings', {})
+                calendar = res_list[0].get('calendarEvents', {}).get('earnings', {})
                 earnings_dates = calendar.get('earningsDate', [])
                 if earnings_dates:
-                    raw_dt = earnings_dates[0].get('raw', 0)
-                    future_date = pd.to_datetime(raw_dt, unit='s').strftime('%Y-%m-%d') if raw_dt else ""
-                    if future_date and future_date != "1970-01-01":
-                        est = calendar.get('earningsAverage', {}).get('raw', '')
-                        rows.append(f"<tr style='background-color:#fffbea;'><td>⏳ {future_date} (예정)</td><td>{est if est else '-'}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>")
+                    raw_dt = safe_extract(earnings_dates[0], 'raw') if isinstance(earnings_dates[0], dict) else None
+                    if raw_dt:
+                        future_date = pd.to_datetime(raw_dt, unit='s').strftime('%Y-%m-%d')
+                        if future_date and future_date != "1970-01-01":
+                            est_raw = safe_extract(calendar.get('earningsAverage', {}), 'raw')
+                            est_str = f"{est_raw:.2f}" if est_raw is not None else "-"
+                            rows.append(f"<tr style='background-color:#fffbea;'><td>⏳ {future_date} (예정)</td><td>{est_str}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>")
                 
                 # 과거 4분기 실적 히스토리
-                history = result[0].get('earningsHistory', {}).get('history', [])
+                history = res_list[0].get('earningsHistory', {}).get('history', [])
                 for item in reversed(history):
-                    date_raw = item.get('quarter', {}).get('raw', 0)
-                    if not date_raw: continue
+                    q_raw = safe_extract(item, 'quarter')
+                    if not q_raw: continue
                     
-                    date_obj = pd.to_datetime(date_raw, unit='s', utc=True)
+                    date_obj = pd.to_datetime(q_raw, unit='s', utc=True)
                     date_str = date_obj.strftime('%Y-%m-%d')
                     
-                    eps_est = item.get('epsEstimate', {}).get('fmt', '-')
-                    eps_act = item.get('epsActual', {}).get('fmt', '-')
-                    surp = item.get('surprisePercent', {}).get('raw', '-')
+                    eps_est_raw = safe_extract(item, 'epsEstimate')
+                    eps_act_raw = safe_extract(item, 'epsActual')
+                    surp_raw = safe_extract(item, 'surprisePercent')
+                    
+                    eps_est = f"{eps_est_raw:.2f}" if eps_est_raw is not None else "-"
+                    eps_act = f"{eps_act_raw:.2f}" if eps_act_raw is not None else "-"
                     
                     surp_html = "-"
-                    if isinstance(surp, (int, float)):
-                        color = "#22c55e" if surp > 0 else "#ef4444"
-                        surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp*100:.1f}% {'상회' if surp > 0 else '하회'}</span>"
+                    if surp_raw is not None:
+                        try:
+                            surp_val = float(surp_raw) * 100
+                            color = "#22c55e" if surp_val > 0 else "#ef4444"
+                            surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}% {'상회' if surp_val > 0 else '하회'}</span>"
+                        except: pass
                     
                     stock_change_html = "-"
                     sp500_change_html = "-"
@@ -158,21 +170,78 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
                             except: pass
                     
                     rows.append(f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>{stock_change_html}</td><td>{sp500_change_html}</td></tr>")
-        else:
-            # 야후 차단 시 나스닥 API 우회 시도 (2차 방어막)
-            nasdaq_url = f"https://api.nasdaq.com/api/company/{ticker}/earnings-surprise"
-            n_res = requests.get(nasdaq_url, headers=session.headers, timeout=5)
-            if n_res.status_code == 200:
-                n_rows = n_res.json().get('data', {}).get('earningsSurpriseTable', {}).get('rows', [])
-                for item in n_rows:
-                    rows.append(f"<tr><td>{item.get('date', '-')}</td><td>{item.get('epsEstimate', '-')}</td><td>{item.get('epsActual', '-')}</td><td>{item.get('percentageSurprise', '-')}</td><td>-</td><td>-</td></tr>")
     except: pass
+
+    # 3. 야후 차단 시 나스닥 API 우회 시도 (2차 방어막 - 키값 완벽 매핑)
+    if not rows:
+        try:
+            nasdaq_url = f"https://api.nasdaq.com/api/company/{ticker}/earnings-surprise"
+            n_headers = session.headers.copy()
+            n_headers.update({
+                "Accept": "application/json, text/plain, */*",
+                "Origin": "https://www.nasdaq.com",
+                "Referer": "https://www.nasdaq.com/"
+            })
+            n_res = requests.get(nasdaq_url, headers=n_headers, timeout=5)
+            
+            if n_res.status_code == 200:
+                n_data = n_res.json().get('data') or {}
+                table = n_data.get('earningsSurpriseTable') or {}
+                n_rows = table.get('rows') or []
+                
+                for item in n_rows:
+                    date_str = item.get('dateReported') or item.get('date') or '-'
+                    eps_est = item.get('consensusForecast') or item.get('epsEstimate') or '-'
+                    eps_act = item.get('eps') or item.get('epsActual') or '-'
+                    surp_pct = item.get('percentageSurprise') or '-'
+                    
+                    date_formatted = date_str
+                    date_obj = None
+                    if date_str != '-':
+                        try:
+                            date_obj = datetime.strptime(date_str, '%m/%d/%Y').replace(tzinfo=timezone.utc)
+                            date_formatted = date_obj.strftime('%Y-%m-%d')
+                        except: pass
+                        
+                    surp_html = "-"
+                    if surp_pct != '-':
+                        try:
+                            surp_val = float(surp_pct)
+                            color = "#22c55e" if surp_val > 0 else "#ef4444"
+                            surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}% {'상회' if surp_val > 0 else '하회'}</span>"
+                        except:
+                            surp_html = surp_pct
+                            
+                    stock_change_html = "-"
+                    sp500_change_html = "-"
+                    
+                    if date_obj and not hist_df.empty and not sp500_df.empty:
+                        closest_date = hist_df.index[hist_df.index <= date_obj]
+                        if not closest_date.empty:
+                            target_d = closest_date[-1]
+                            try:
+                                s_open = hist_df.loc[target_d, 'Open']
+                                s_close = hist_df.loc[target_d, 'Close']
+                                s_pct = ((s_close - s_open) / s_open) * 100
+                                s_color = "#22c55e" if s_pct > 0 else "#ef4444"
+                                stock_change_html = f"<span style='color:{s_color}; font-weight:bold;'>{s_pct:+.2f}%</span>"
+                                
+                                n_open = sp500_df.loc[target_d, 'Open']
+                                n_close = sp500_df.loc[target_d, 'Close']
+                                n_pct = ((n_close - n_open) / n_open) * 100
+                                n_color = "#22c55e" if n_pct > 0 else "#ef4444"
+                                sp500_change_html = f"<span style='color:{n_color}; font-weight:bold;'>{n_pct:+.2f}%</span>"
+                            except: pass
+                            
+                    rows.append(f"<tr><td>{date_formatted}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>{stock_change_html}</td><td>{sp500_change_html}</td></tr>")
+        except: pass
 
     if rows:
         earnings_html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>종목 당일 등락</th><th>S&P 500 당일 등락</th></tr>"
         earnings_html += "".join(rows) + "</table>"
+        earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* 실적 데이터 출처: Yahoo & Nasdaq API 우회 크롤링</p>"
     else:
-        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없습니다. (보안 토큰 갱신 지연)</p>"
+        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없습니다. (보안 토큰 및 API 응답 지연)</p>"
         
     return market_cap, earnings_html
 
