@@ -698,13 +698,13 @@ with tab6:
             
             st.markdown("---")
             
-            st.markdown("#### 📈 S&P 500 기간별 수익률 지표")
+            st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
             try:
                 session = get_robust_session()
                 sp500_df = pd.DataFrame()
                 
-                # 💡 야후 차단 우회: 지수(^GSPC)가 막히면 ETF(SPY)로 몰래 우회해서 계산합니다.
-                for tkr in ["^GSPC", "SPY"]:
+                # 💡 야후 차단 우회: 나스닥 100 지수(^NDX)가 막히면 ETF(QQQ)로 몰래 우회해서 계산합니다.
+                for tkr in ["^NDX", "QQQ"]:
                     for _ in range(2):
                         try:
                             temp_df = yf.download(tkr, period="4y", interval="1d", progress=False, session=session)
@@ -741,17 +741,17 @@ with tab6:
             except Exception as e:
                 st.error(f"데이터를 불러오는 중 오류 발생: {e}")
                 
-            st.markdown("#### 📊 S&P 500 최근 1년 흐름 (주봉 실시간 캔들 차트)")
+            st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (주봉 실시간 캔들 차트)")
             ndx_tv_widget = """
             <div class="tradingview-widget-container" style="height:350px;width:100%;">
-              <div id="tradingview_spx" style="height:calc(100% - 32px);width:100%"></div>
+              <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
               <script type="text/javascript">
               new TradingView.widget({
-              "autosize": true, "symbol": "OANDA:SPX500USD", "interval": "W", "timezone": "Etc/UTC",
+              "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
               "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
               "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
-              "container_id": "tradingview_spx"
+              "container_id": "tradingview_ndx"
               });
               </script>
             </div>
