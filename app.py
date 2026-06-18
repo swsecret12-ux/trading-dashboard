@@ -163,22 +163,12 @@ NAME_TRANSLATIONS = {
     "SPCX": "Space Exploration ETF (스페이스X/우주항공)"
 }
 
-def get_robust_session():
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Connection": "keep-alive"
-    })
-    return session
-
 from api_utils import (
     get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, 
     get_real_ai_advice, render_ai_advice_block, render_blog_image_html, 
     render_crisp_image_html, get_file_group_info, execute_survival_trade, load_theory_db
 )
-from market_research import fetch_financial_data, analyze_sector_with_ai
+from market_research import fetch_financial_data, analyze_sector_with_ai, get_robust_session
 
 st.set_page_config(page_title="나만의 트레이딩 대시보드", layout="wide")
 
@@ -682,7 +672,7 @@ with tab6:
             st.markdown("#### 🗺️ S&P 500 / 나스닥 주도주 히트맵 (실시간 자금 흐름)")
             st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
             heatmap_widget = """
-            <div class="tradingview-widget-container" style="height: 550px; width: 100%; margin-bottom: 30px;">
+            <div class="tradingview-widget-container" style="height: 600px; width: 100%; margin-bottom: 30px;">
               <div class="tradingview-widget-container__widget" style="height: calc(100% - 32px); width: 100%;"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
               {
@@ -704,19 +694,18 @@ with tab6:
               </script>
             </div>
             """
-            components.html(heatmap_widget, height=550)
+            components.html(heatmap_widget, height=600)
             
             st.markdown("---")
             
-            # 실시간 나스닥 데이터 직접 로드 (캐싱 버그 완전 해결)
-            st.markdown("#### 📈 나스닥(^IXIC) 기간별 수익률 지표")
+            st.markdown("#### 📈 S&P 500(^GSPC) 기간별 수익률 지표")
             try:
                 session = get_robust_session()
-                ndx = yf.Ticker("^IXIC", session=session).history(period="4y")
-                if not ndx.empty:
-                    curr = ndx['Close'].iloc[-1]
+                sp500_df = yf.Ticker("^GSPC", session=session).history(period="4y")
+                if not sp500_df.empty:
+                    curr = sp500_df['Close'].iloc[-1]
                     def ret(days):
-                        if len(ndx) > days: return (curr - ndx['Close'].iloc[-(days+1)]) / ndx['Close'].iloc[-(days+1)] * 100
+                        if len(sp500_df) > days: return (curr - sp500_df['Close'].iloc[-(days+1)]) / sp500_df['Close'].iloc[-(days+1)] * 100
                         return 0
                     
                     ndx_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
@@ -729,21 +718,21 @@ with tab6:
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
                 else:
-                    st.warning("나스닥 지수 데이터를 일시적으로 불러올 수 없습니다.")
+                    st.warning("S&P 500 지수 데이터를 일시적으로 불러올 수 없습니다.")
             except Exception as e:
-                st.error(f"나스닥 데이터를 불러오는 중 오류 발생: {e}")
+                st.error(f"S&P 500 데이터를 불러오는 중 오류 발생: {e}")
                 
-            st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 실시간 캔들 차트)")
+            st.markdown("#### 📊 S&P 500 최근 1년 흐름 (주봉 실시간 캔들 차트)")
             ndx_tv_widget = """
             <div class="tradingview-widget-container" style="height:350px;width:100%;">
-              <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
+              <div id="tradingview_spx" style="height:calc(100% - 32px);width:100%"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
               <script type="text/javascript">
               new TradingView.widget({
-              "autosize": true, "symbol": "NASDAQ:NDX", "interval": "W", "timezone": "Etc/UTC",
+              "autosize": true, "symbol": "SP:SPX", "interval": "W", "timezone": "Etc/UTC",
               "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
               "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
-              "container_id": "tradingview_ixic"
+              "container_id": "tradingview_spx"
               });
               </script>
             </div>
