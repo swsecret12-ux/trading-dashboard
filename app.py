@@ -672,8 +672,8 @@ with tab6:
             st.markdown("#### 🗺️ S&P 500 / 나스닥 주도주 히트맵 (실시간 자금 흐름)")
             st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
             heatmap_widget = """
-            <div class="tradingview-widget-container" style="height: 600px; width: 100%; margin-bottom: 30px;">
-              <div class="tradingview-widget-container__widget" style="height: calc(100% - 32px); width: 100%;"></div>
+            <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
+              <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
               {
               "exchanges": [],
@@ -689,12 +689,12 @@ with tab6:
               "isZoomEnabled": true,
               "hasSymbolTooltip": true,
               "width": "100%",
-              "height": "100%"
+              "height": 700
             }
               </script>
             </div>
             """
-            components.html(heatmap_widget, height=600)
+            components.html(heatmap_widget, height=700)
             
             st.markdown("---")
             
