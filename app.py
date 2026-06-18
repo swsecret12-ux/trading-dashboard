@@ -101,65 +101,89 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
-# 💡 완벽하게 번역된 세부 산업군 매핑 사전
+# 💡 핀비즈(Finviz) & S&P 500 히트맵 기준: GICS 11대 대분류 완벽 매핑
 INDUSTRY_GROUPING = {
-    # [IT / 테크]
-    "Semiconductors": "반도체",
-    "Packaged Software": "소프트웨어",
-    "Internet Software/Services": "소프트웨어",
-    "Information Technology Services": "소프트웨어",
-    "Computer Processing Hardware": "IT 하드웨어",
-    "Telecommunications Equipment": "IT 하드웨어", 
-    "Computer Peripherals": "IT 하드웨어",
-    "Computer Communications": "네트워크 장비",
-    "Electronic Equipment/Instruments": "IT 부품",
+    # 1. 💻 기술 (Technology)
+    "Semiconductors": "💻 기술 (반도체)",
+    "Packaged Software": "💻 기술 (소프트웨어)",
+    "Telecommunications Equipment": "💻 기술 (IT 하드웨어)",
+    "Computer Processing Hardware": "💻 기술 (IT 하드웨어)",
+    "Computer Communications": "💻 기술 (네트워크 장비)",
+    "Electronic Equipment/Instruments": "💻 기술 (전자 부품)",
+    "Computer Peripherals": "💻 기술 (컴퓨터 주변기기)",
+    "Information Technology Services": "💻 기술 (IT 서비스)",
     
-    # [우주항공]
-    "Aerospace & Defense": "우주 & 항공",
-    "Specialty Telecommunications": "우주 & 항공", 
-
-    # [이커머스 및 유통]
-    "Internet Retail": "이커머스",
-    "Apparel/Footwear Retail": "소매 및 유통",
-    "Specialty Stores": "소매 및 유통",
-    "Discount Stores": "대형 할인마트",
+    # 2. 📱 커뮤니케이션 (Communication Services)
+    "Internet Software/Services": "📱 커뮤니케이션 (인터넷/미디어)",
+    "Broadcasting": "📱 커뮤니케이션 (방송/미디어)",
+    "Movies/Entertainment": "📱 커뮤니케이션 (엔터테인먼트)",
+    "Advertising/Marketing Services": "📱 커뮤니케이션 (광고)",
+    "Specialty Telecommunications": "📱 커뮤니케이션 (통신 인프라)",
     
-    # [의료 / 헬스케어]
-    "Pharmaceuticals: Major": "제약 & 바이오",
-    "Biotechnology": "제약 & 바이오",
-    "Medical Specialties": "의료 기기",
-    "Managed Health Care": "헬스케어 및 보험",
+    # 3. 🛍️ 경기소비재 (Consumer Cyclical)
+    "Internet Retail": "🛍️ 경기소비재 (이커머스)",
+    "Motor Vehicles": "🛍️ 경기소비재 (자동차)",
+    "Auto Manufacturing": "🛍️ 경기소비재 (자동차)",
+    "Apparel/Footwear Retail": "🛍️ 경기소비재 (의류/신발)",
+    "Specialty Stores": "🛍️ 경기소비재 (전문 유통)",
+    "Restaurants": "🛍️ 경기소비재 (외식/프랜차이즈)",
+    "Other Consumer Services": "🛍️ 경기소비재 (기타 서비스)",
+    "Hotels/Resorts/Cruises": "🛍️ 경기소비재 (호텔/여행)",
     
-    # [금융 및 부동산]
-    "Major Banks": "금융",
-    "Regional Banks": "금융",
-    "Investment Banks/Brokers": "금융",
-    "Investment Managers": "금융",
-    "Finance/Rental/Leasing": "금융",
-    "Property/Casualty Insurance": "금융 (보험)",
-    "Life/Health Insurance": "금융 (보험)",
-    "Real Estate Investment Trusts": "부동산 (리츠)",
+    # 4. 🛒 필수소비재 (Consumer Defensive)
+    "Discount Stores": "🛒 필수소비재 (대형 할인마트)",
+    "Food Retail": "🛒 필수소비재 (식품 유통)",
+    "Beverages: Non-Alcoholic": "🛒 필수소비재 (음료)",
+    "Beverages: Alcoholic": "🛒 필수소비재 (주류)",
+    "Household/Personal Care": "🛒 필수소비재 (가정용품/개인위생)",
+    "Food: Major Diversified": "🛒 필수소비재 (종합 식품)",
+    "Tobacco": "🛒 필수소비재 (담배)",
     
-    # [미디어 및 엔터]
-    "Broadcasting": "미디어 & 방송",
-    "Movies/Entertainment": "미디어 & 엔터테인먼트",
+    # 5. 💊 헬스케어 (Healthcare)
+    "Pharmaceuticals: Major": "💊 헬스케어 (대형 제약사)",
+    "Biotechnology": "💊 헬스케어 (바이오테크)",
+    "Medical Specialties": "💊 헬스케어 (의료 기기)",
+    "Managed Health Care": "💊 헬스케어 (의료 보험)",
+    "Hospital/Nursing Management": "💊 헬스케어 (병원 관리)",
     
-    # [자동차 및 기계]
-    "Auto Manufacturing": "자동차",
-    "Motor Vehicles": "자동차",
-    "Industrial Machinery": "산업 기계",
-    "Trucks/Construction/Farm Machinery": "산업 기계",
+    # 6. 🏦 금융 (Financials)
+    "Major Banks": "🏦 금융 (대형 은행)",
+    "Regional Banks": "🏦 금융 (지역 은행)",
+    "Investment Banks/Brokers": "🏦 금융 (투자은행/증권)",
+    "Investment Managers": "🏦 금융 (자산운용)",
+    "Finance/Rental/Leasing": "🏦 금융 (신용/결제 서비스)",
+    "Property/Casualty Insurance": "🏦 금융 (손해보험)",
+    "Life/Health Insurance": "🏦 금융 (생명보험)",
+    "Financial Conglomerates": "🏦 금융 (종합 금융)",
     
-    # [에너지 및 원자재]
-    "Integrated Oil": "에너지",
-    "Electric Utilities": "에너지",
-    "Other Metals/Minerals": "원자재 및 광물",
+    # 7. 🏭 산업재 (Industrials)
+    "Aerospace & Defense": "🏭 산업재 (항공우주/국방)",
+    "Industrial Machinery": "🏭 산업재 (산업 기계)",
+    "Trucks/Construction/Farm Machinery": "🏭 산업재 (중장비/농기계)",
+    "Air Freight/Couriers": "🏭 산업재 (물류/운송)",
+    "Railroads": "🏭 산업재 (철도)",
+    "Engineering & Construction": "🏭 산업재 (건설/엔지니어링)",
+    "Miscellaneous Commercial Services": "🏭 산업재 (상업 서비스)",
     
-    # [식음료 및 필수소비재]
-    "Beverages: Non-Alcoholic": "식음료",
-    "Restaurants": "식음료 (프랜차이즈)",
-    "Household/Personal Care": "필수 소비재",
-    "Air Freight/Couriers": "물류 및 운송"
+    # 8. 🛢️ 에너지 (Energy)
+    "Integrated Oil": "🛢️ 에너지 (석유/가스 통합)",
+    "Oil & Gas Production": "🛢️ 에너지 (석유/가스 생산)",
+    "Oil Refining/Marketing": "🛢️ 에너지 (정유/마케팅)",
+    
+    # 9. ⚡ 유틸리티 (Utilities)
+    "Electric Utilities": "⚡ 유틸리티 (전력)",
+    "Gas Distributors": "⚡ 유틸리티 (가스)",
+    
+    # 10. 🏢 부동산 (Real Estate)
+    "Real Estate Investment Trusts": "🏢 부동산 (리츠 REITs)",
+    "Real Estate Development": "🏢 부동산 (부동산 개발)",
+    
+    # 11. 🧱 원자재 (Basic Materials)
+    "Other Metals/Minerals": "🧱 원자재 (기타 금속/광물)",
+    "Specialty Chemicals": "🧱 원자재 (특수 화학)",
+    "Major Chemicals": "🧱 원자재 (대형 화학)",
+    "Steel": "🧱 원자재 (철강)",
+    "Copper": "🧱 원자재 (구리)"
 }
 
 NAME_TRANSLATIONS = {
