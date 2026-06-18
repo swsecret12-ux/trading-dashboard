@@ -101,7 +101,7 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
-# 💡 누락된 영문 산업군 100% 한글 맵핑 완료
+# 💡 완벽하게 번역된 세부 산업군 매핑 사전
 INDUSTRY_GROUPING = {
     "Semiconductors": "반도체 및 반도체 장비", 
     "Computer Processing Hardware": "IT 하드웨어 & 컴퓨터 장비",
@@ -127,6 +127,7 @@ INDUSTRY_GROUPING = {
     "Broadcasting": "미디어 & 방송망",
     "Movies/Entertainment": "미디어 & 엔터테인먼트",
     "Auto Manufacturing": "자동차 & 모빌리티 제조",
+    "Motor Vehicles": "자동차 & 모빌리티 제조",
     "Aerospace & Defense": "항공우주 & 국방",
     "Air Freight/Couriers": "항공 물류 & 택배",
     "Integrated Oil": "에너지 (대형 석유/가스)",
@@ -162,19 +163,15 @@ NAME_TRANSLATIONS = {
     "SPCX": "Space Exploration ETF (스페이스X/우주항공)"
 }
 
-# 💡 실시간 나스닥 수익률 함수 (무한 로딩 버그 우회를 위해 캐싱 제거)
-def get_nasdaq_performance():
-    try:
-        session = requests.Session()
-        session.headers.update({"User-Agent": "Mozilla/5.0"})
-        ndx = yf.Ticker("^IXIC", session=session).history(period="4y")
-        if ndx.empty: return {}
-        curr = ndx['Close'].iloc[-1]
-        def ret(days):
-            if len(ndx) > days: return (curr - ndx['Close'].iloc[-(days+1)]) / ndx['Close'].iloc[-(days+1)] * 100
-            return 0
-        return {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
-    except: return {}
+def get_robust_session():
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive"
+    })
+    return session
 
 from api_utils import (
     get_gemini_keys, parse_ai_json, ask_gemini_dynamic, get_real_ocr_text, 
@@ -681,69 +678,77 @@ with tab6:
                     st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
         if not st.session_state.sp100_state_df.empty:
-            col_pie, col_ndx = st.columns([6, 4], gap="large")
             
-            with col_pie:
-                st.markdown("#### 📊 미국 주도 산업 비중 (가로 막대형 차트)")
-                c_p1, c_p2 = st.columns(2)
-                
-                with c_p1:
-                    sector_count = st.session_state.sp100_state_df['산업군(Industry)'].value_counts().reset_index()
-                    sector_count.columns = ['Industry', 'Count']
-                    sector_count['Percentage'] = (sector_count['Count'] / sector_count['Count'].sum() * 100).round(1).astype(str) + '%'
-                    
-                    fig_count = alt.Chart(sector_count).mark_bar(cornerRadiusEnd=4).encode(
-                        x=alt.X('Count:Q', title='종목 개수 (개)'),
-                        y=alt.Y('Industry:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300, labelFontSize=12)),
-                        color=alt.Color('Industry:N', legend=None, scale=alt.Scale(scheme='tableau20')),
-                        tooltip=['Industry', alt.Tooltip('Count', title='종목 수'), alt.Tooltip('Percentage', title='비중')]
-                    ).properties(title="[종목 개수 기준]", height=500)
-                    st.altair_chart(fig_count, use_container_width=True)
-                
-                with c_p2:
-                    sector_mcap = st.session_state.sp100_state_df.groupby('산업군(Industry)')['시가총액_num'].sum().reset_index()
-                    sector_mcap.columns = ['Industry', '시가총액_num']
-                    total_mcap = sector_mcap['시가총액_num'].sum()
-                    sector_mcap['Percentage'] = (sector_mcap['시가총액_num'] / total_mcap * 100).round(1).astype(str) + '%'
-                    sector_mcap['Formatted_Mcap'] = sector_mcap['시가총액_num'].apply(format_mcap_krw)
-                    
-                    fig_mcap = alt.Chart(sector_mcap).mark_bar(cornerRadiusEnd=4).encode(
-                        x=alt.X('시가총액_num:Q', title='시가총액 합산 ($)'),
-                        y=alt.Y('Industry:N', sort='-x', title=None, axis=alt.Axis(labelLimit=300, labelFontSize=12)),
-                        color=alt.Color('Industry:N', legend=None, scale=alt.Scale(scheme='tableau20')),
-                        tooltip=['Industry', alt.Tooltip('Formatted_Mcap', title='시가총액 합산'), alt.Tooltip('Percentage', title='비중')]
-                    ).properties(title="[종합 시가총액 기준]", height=500)
-                    st.altair_chart(fig_mcap, use_container_width=True)
+            st.markdown("#### 🗺️ S&P 500 / 나스닥 주도주 히트맵 (실시간 자금 흐름)")
+            st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
+            heatmap_widget = """
+            <div class="tradingview-widget-container" style="height: 550px; width: 100%; margin-bottom: 30px;">
+              <div class="tradingview-widget-container__widget" style="height: calc(100% - 32px); width: 100%;"></div>
+              <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
+              {
+              "exchanges": [],
+              "dataSource": "SPX500",
+              "grouping": "sector",
+              "blockSize": "market_cap_basic",
+              "blockColor": "change",
+              "locale": "kr",
+              "symbolUrl": "",
+              "colorTheme": "light",
+              "hasTopBar": false,
+              "isDataSetEnabled": false,
+              "isZoomEnabled": true,
+              "hasSymbolTooltip": true,
+              "width": "100%",
+              "height": "100%"
+            }
+              </script>
+            </div>
+            """
+            components.html(heatmap_widget, height=550)
             
-            with col_ndx:
-                st.markdown("#### 📈 나스닥(^IXIC) 기간별 수익률 지표")
-                ndx_data = get_nasdaq_performance()
-                if ndx_data:
+            st.markdown("---")
+            
+            # 실시간 나스닥 데이터 직접 로드 (캐싱 버그 완전 해결)
+            st.markdown("#### 📈 나스닥(^IXIC) 기간별 수익률 지표")
+            try:
+                session = get_robust_session()
+                ndx = yf.Ticker("^IXIC", session=session).history(period="4y")
+                if not ndx.empty:
+                    curr = ndx['Close'].iloc[-1]
+                    def ret(days):
+                        if len(ndx) > days: return (curr - ndx['Close'].iloc[-(days+1)]) / ndx['Close'].iloc[-(days+1)] * 100
+                        return 0
+                    
+                    ndx_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                     ndx_df = pd.DataFrame([ndx_data])
+                    
                     def color_val(val):
                         color = '#ef4444' if val < 0 else '#22c55e'
                         return f"color: {color}; font-weight: bold;"
+                    
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(x.strip('%')))), use_container_width=True, hide_index=True)
-                    
-                    st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 실시간 캔들 차트)")
-                    ndx_tv_widget = """
-                    <div class="tradingview-widget-container" style="height:350px;width:100%;">
-                      <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
-                      <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-                      <script type="text/javascript">
-                      new TradingView.widget({
-                      "autosize": true, "symbol": "NASDAQ:NDX", "interval": "W", "timezone": "Etc/UTC",
-                      "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
-                      "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
-                      "container_id": "tradingview_ixic"
-                      });
-                      </script>
-                    </div>
-                    """
-                    components.html(ndx_tv_widget, height=350)
                 else:
-                    st.write("나스닥 데이터를 불러오는 중입니다...")
+                    st.warning("나스닥 지수 데이터를 일시적으로 불러올 수 없습니다.")
+            except Exception as e:
+                st.error(f"나스닥 데이터를 불러오는 중 오류 발생: {e}")
+                
+            st.markdown("#### 📊 나스닥 최근 1년 흐름 (주봉 실시간 캔들 차트)")
+            ndx_tv_widget = """
+            <div class="tradingview-widget-container" style="height:350px;width:100%;">
+              <div id="tradingview_ixic" style="height:calc(100% - 32px);width:100%"></div>
+              <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+              <script type="text/javascript">
+              new TradingView.widget({
+              "autosize": true, "symbol": "NASDAQ:NDX", "interval": "W", "timezone": "Etc/UTC",
+              "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+              "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
+              "container_id": "tradingview_ixic"
+              });
+              </script>
+            </div>
+            """
+            components.html(ndx_tv_widget, height=350)
 
             st.markdown("---")
 
@@ -756,11 +761,12 @@ with tab6:
             for i in range(4):
                 if i < len(chunks):
                     if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True):
-                        with st.spinner(f"{labels[i]} 실시간 시총 및 크로스 데이터 스캔 중... (약 5초)"):
+                        with st.spinner(f"{labels[i]} 실시간 데이터 스캔 중... (IP 차단 방지 시스템 가동 중)"):
+                            time.sleep(2) # 강제 대기 (Rate Limit 방어)
                             try:
                                 session = get_robust_session()
-                                data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False)
-                                data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False)
+                                data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False, session=session)
+                                data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False, session=session)
                                 
                                 if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                                 else: data_1d = data_1d_raw
@@ -827,7 +833,7 @@ with tab6:
                                 st.rerun() 
                                 
                             except Exception as e:
-                                st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
+                                st.error(f"야후 파이낸스 스캔 중 오류 발생 (잠시 후 다시 시도해주세요): {str(e)}")
 
             display_cols = ['순위', '시총', 'Symbol', 'Name', '산업군(Industry)', '분야 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
             st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=600)
