@@ -10,7 +10,7 @@ def get_robust_session():
     """야후 파이낸스 접속 차단을 완벽히 우회하기 위한 스텔스 세션 헤더"""
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
         "Connection": "keep-alive",
@@ -59,10 +59,10 @@ def get_earnings_html_via_api(ticker):
         # 야후 차트 데이터 로드 (실적 발표일 당일 등락률 계산용)
         try:
             hist_df = yf.Ticker(ticker, session=session).history(period="2y")
-            ndx_df = yf.Ticker("^IXIC", session=session).history(period="2y")
+            sp500_df = yf.Ticker("^GSPC", session=session).history(period="2y")
         except:
             hist_df = pd.DataFrame()
-            ndx_df = pd.DataFrame()
+            sp500_df = pd.DataFrame()
 
         for item in reversed(history): 
             date_raw = item.get('quarter', {}).get('raw', 0)
@@ -81,9 +81,9 @@ def get_earnings_html_via_api(ticker):
                 surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp*100:.1f}% {'상회' if surp > 0 else '하회'}</span>"
             
             stock_change_html = "-"
-            ndx_change_html = "-"
+            sp500_change_html = "-"
             
-            if not hist_df.empty and not ndx_df.empty:
+            if not hist_df.empty and not sp500_df.empty:
                 closest_date = hist_df.index[hist_df.index <= date_obj.tz_localize('UTC')]
                 if not closest_date.empty:
                     target_d = closest_date[-1]
@@ -94,18 +94,18 @@ def get_earnings_html_via_api(ticker):
                         s_color = "#22c55e" if s_pct > 0 else "#ef4444"
                         stock_change_html = f"<span style='color:{s_color}; font-weight:bold;'>{s_pct:+.2f}%</span>"
                         
-                        n_open = ndx_df.loc[target_d, 'Open']
-                        n_close = ndx_df.loc[target_d, 'Close']
+                        n_open = sp500_df.loc[target_d, 'Open']
+                        n_close = sp500_df.loc[target_d, 'Close']
                         n_pct = ((n_close - n_open) / n_open) * 100
                         n_color = "#22c55e" if n_pct > 0 else "#ef4444"
-                        ndx_change_html = f"<span style='color:{n_color}; font-weight:bold;'>{n_pct:+.2f}%</span>"
+                        sp500_change_html = f"<span style='color:{n_color}; font-weight:bold;'>{n_pct:+.2f}%</span>"
                     except: pass
             
-            rows.append(f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>{stock_change_html}</td><td>{ndx_change_html}</td></tr>")
+            rows.append(f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_html}</td><td>{stock_change_html}</td><td>{sp500_change_html}</td></tr>")
             
         if not rows: return "<p>실적 데이터를 불러올 수 없습니다.</p>"
             
-        html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>종목 당일 등락</th><th>나스닥 당일 등락</th></tr>"
+        html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>종목 당일 등락</th><th>S&P 500 당일 등락</th></tr>"
         html += "".join(rows) + "</table>"
         return html
     except Exception as e:
@@ -122,7 +122,7 @@ def fetch_financial_data(ticker_symbol):
             
             df_1d = ticker.history(period="1y", interval="1d")
             df_1h = ticker.history(period="730d", interval="1h")
-            ndx_1d = yf.Ticker("^IXIC", session=session).history(period="1y", interval="1d")
+            sp500_1d = yf.Ticker("^GSPC", session=session).history(period="1y", interval="1d")
             
             if df_1d.empty or df_1h.empty:
                 return {"error": "차트 데이터를 가져올 수 없습니다."}
@@ -179,12 +179,12 @@ def fetch_financial_data(ticker_symbol):
             periods = {"1일": 1, "1개월": 21, "3개월": 63, "6개월": 126, "1년": 252}
             for p_name, p_days in periods.items():
                 s_ret = get_ret(df_1d, p_days)
-                n_ret = get_ret(ndx_1d, p_days)
+                n_ret = get_ret(sp500_1d, p_days)
                 s_col = "#22c55e" if s_ret > 0 else "#ef4444"
                 n_col = "#22c55e" if n_ret > 0 else "#ef4444"
                 mom_rows.append(f"<tr><td><b>{p_name} 변동</b></td><td><span style='color:{s_col}; font-weight:bold;'>{s_ret:+.2f}%</span></td><td><span style='color:{n_col}; font-weight:bold;'>{n_ret:+.2f}%</span></td></tr>")
                 
-            momentum_html = f"<table class='ma-table'><tr><th>기간</th><th>{ticker_symbol} 현재가: ${current_price:.2f}</th><th>나스닥(^IXIC) 비교</th></tr>"
+            momentum_html = f"<table class='ma-table'><tr><th>기간</th><th>{ticker_symbol} 현재가: ${current_price:.2f}</th><th>S&P 500(^GSPC) 비교</th></tr>"
             momentum_html += "".join(mom_rows) + "</table>"
             
             earnings_html = get_earnings_html_via_api(ticker_symbol)
@@ -219,7 +219,7 @@ def fetch_financial_data(ticker_symbol):
                 continue
             return {"error": str(e)}
             
-    return {"error": "야후 파이낸스 데이터 수집 실패: Too Many Requests (IP 차단). 5초 후 다시 시도해주세요."}
+    return {"error": "야후 파이낸스 데이터 수집 실패: Too Many Requests (IP 차단). 잠시 후 다시 시도해주세요."}
 
 def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     """AI에게 과거 핵심 팩트(파트너십 등)를 강제로 찾아오게 만드는 강력한 프롬프트"""
