@@ -871,7 +871,8 @@ with tab6:
         if st.button("🔄 실시간 한국 코스피 Top 100 스캔 시작", type="primary", key="btn_kr_scan"):
             with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
                 try:
-                    url = "https://scanner.tradingview.com/south_korea/scan"
+                    # 💡 south_korea 가 아닌 korea 로 정확한 API 주소 타겟팅
+                    url = "https://scanner.tradingview.com/korea/scan"
                     payload = {
                         "filter": [
                             {"left": "market_cap_basic", "operation": "nempty"},
@@ -879,14 +880,22 @@ with tab6:
                             {"left": "exchange", "operation": "in_range", "right": ["KRX"]} 
                         ],
                         "options": {"lang": "ko"},
-                        "markets": ["south_korea"],
+                        "markets": ["korea"],
                         "symbols": {"query": {"types": []}, "tickers": []},
                         "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
                         "range": [0, 150] 
                     }
-                    headers = {"User-Agent": "Mozilla/5.0"}
+                    # 💡 봇(Bot) 차단 방지를 위한 브라우저 헤더 보강
+                    headers = {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "application/json"
+                    }
                     res = requests.post(url, json=payload, headers=headers)
+                    
+                    if res.status_code != 200:
+                        raise Exception(f"트레이딩뷰 서버 응답 지연 (상태 코드: {res.status_code})")
+                        
                     data = res.json()
                     
                     df_list = []
