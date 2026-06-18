@@ -101,7 +101,7 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
-# 한국 현업 트레이더들이 사용하는 가장 자연스럽고 정밀한 산업군 매핑
+# 💡 누락된 영문 산업군 100% 한글 맵핑 완료
 INDUSTRY_GROUPING = {
     "Semiconductors": "반도체 및 반도체 장비", 
     "Computer Processing Hardware": "IT 하드웨어 & 컴퓨터 장비",
@@ -135,13 +135,18 @@ INDUSTRY_GROUPING = {
     "Restaurants": "식음료 (F&B 프랜차이즈)",
     "Household/Personal Care": "가정용품 및 개인위생",
     "Industrial Machinery": "산업 기계 및 인프라 구축",
-    "Specialty Telecommunications": "우주항공 & 통신 기기"
+    "Specialty Telecommunications": "우주항공 & 통신 기기",
+    "Computer Peripherals": "컴퓨터 및 주변기기",
+    "Investment Managers": "투자 관리 및 펀드",
+    "Other Metals/Minerals": "기타 금속 및 광물",
+    "Managed Health Care": "의료 보험 및 헬스케어 관리",
+    "Trucks/Construction/Farm Machinery": "트럭 및 중장비 제조"
 }
 
 NAME_TRANSLATIONS = {
-    "AAPL": "Apple (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
-    "GOOGL": "Alphabet Class A (구글)", "AMZN": "Amazon (아마존)", "META": "Meta Platforms (메타)", 
-    "BRK.B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)", "TSLA": "Tesla (테슬라)", 
+    "AAPL": "Apple Inc. (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
+    "GOOGL": "Alphabet Class A (구글)", "AMZN": "Amazon (아마존)", "META": "Meta Platforms (메타/페이스북)", 
+    "BRK-B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)", "TSLA": "Tesla (테슬라)", 
     "AVGO": "Broadcom (브로드컴)", "V": "Visa (비자)", "JPM": "JPMorgan Chase (JP모건)", 
     "WMT": "Walmart (월마트)", "UNH": "UnitedHealth (유나이티드헬스)", "MA": "Mastercard (마스터카드)", 
     "PG": "Procter & Gamble (P&G)", "JNJ": "Johnson & Johnson (존슨앤드존슨)", "HD": "Home Depot (홈디포)", 
@@ -157,17 +162,13 @@ NAME_TRANSLATIONS = {
     "SPCX": "Space Exploration ETF (스페이스X/우주항공)"
 }
 
-def get_robust_session():
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    })
-    return session
-
-@st.cache_data(ttl=3600)
+# 💡 실시간 나스닥 수익률 함수 (무한 로딩 버그 우회를 위해 캐싱 제거)
 def get_nasdaq_performance():
     try:
-        ndx = yf.Ticker("^IXIC").history(period="4y")
+        session = requests.Session()
+        session.headers.update({"User-Agent": "Mozilla/5.0"})
+        ndx = yf.Ticker("^IXIC", session=session).history(period="4y")
+        if ndx.empty: return {}
         curr = ndx['Close'].iloc[-1]
         def ret(days):
             if len(ndx) > days: return (curr - ndx['Close'].iloc[-(days+1)]) / ndx['Close'].iloc[-(days+1)] * 100
@@ -191,18 +192,13 @@ div[data-testid="stError"] p { font-size: 1.1rem; }
 div[data-testid="stMetricValue"] { font-size: 1.2rem !important; }
 div[data-testid="stMetricLabel"] { font-size: 0.85rem !important; color: #666; }
 
-/* 리서치 카드 Flexbox 뷰 적용 */
-.info-card { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05); }
-.info-card h4 { color: #0f172a; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 1.15rem; font-weight: 700; margin-bottom: 16px;}
-.metric-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #cbd5e1; font-size: 1.05rem; }
-.metric-row:last-child { border-bottom: none; }
-.metric-label { color: #64748b; font-weight: 600; }
-.metric-value { font-weight: 700; color: #0f172a; }
-
-.ma-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; }
-.ma-table th, .ma-table td { border: 1px solid #cbd5e1; padding: 10px 12px; text-align: left; }
-.ma-table th { background-color: #f8fafc; font-weight: bold; color: #1e293b; text-align: center; }
-.ma-table tr:nth-child(even) { background-color: #fbfbfc; }
+.info-card { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 25px; margin-bottom: 25px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+.info-card h4 { color: #1e40af; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; font-size: 1.3rem; }
+.ma-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 1.05rem; }
+.ma-table th, .ma-table td { border: 1px solid #cbd5e1; padding: 12px 15px; text-align: left; }
+.ma-table th { background-color: #e2e8f0; font-weight: bold; color: #1e293b; text-align: center; }
+.ma-table tr:nth-child(even) { background-color: #f8fafc; }
+.ma-table tr:hover { background-color: #f1f5f9; }
 </style>
 """, unsafe_allow_html=True)
 
