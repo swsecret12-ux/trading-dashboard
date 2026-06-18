@@ -103,45 +103,63 @@ def format_mcap_krw(usd_val):
 
 # 💡 완벽하게 번역된 세부 산업군 매핑 사전
 INDUSTRY_GROUPING = {
-    "Semiconductors": "반도체 및 반도체 장비", 
-    "Computer Processing Hardware": "IT 하드웨어 & 컴퓨터 장비",
-    "Computer Communications": "네트워크 통신 장비",
-    "Electronic Equipment/Instruments": "IT 부품 및 전자기기",
-    "Packaged Software": "소프트웨어 & 클라우드",
-    "Internet Software/Services": "소프트웨어 & 클라우드",
-    "Information Technology Services": "IT 서비스 & 컨설팅",
-    "Internet Retail": "이커머스 & 온라인 유통",
-    "Apparel/Footwear Retail": "의류 및 소비재 유통",
-    "Specialty Stores": "전문 유통 채널",
+    # [IT / 테크]
+    "Semiconductors": "반도체",
+    "Packaged Software": "소프트웨어",
+    "Internet Software/Services": "소프트웨어",
+    "Information Technology Services": "소프트웨어",
+    "Computer Processing Hardware": "IT 하드웨어",
+    "Telecommunications Equipment": "IT 하드웨어", 
+    "Computer Peripherals": "IT 하드웨어",
+    "Computer Communications": "네트워크 장비",
+    "Electronic Equipment/Instruments": "IT 부품",
+    
+    # [우주항공]
+    "Aerospace & Defense": "우주 & 항공",
+    "Specialty Telecommunications": "우주 & 항공", 
+
+    # [이커머스 및 유통]
+    "Internet Retail": "이커머스",
+    "Apparel/Footwear Retail": "소매 및 유통",
+    "Specialty Stores": "소매 및 유통",
     "Discount Stores": "대형 할인마트",
-    "Pharmaceuticals: Major": "제약 & 바이오 (대형 제약사)",
-    "Biotechnology": "제약 & 바이오 (바이오테크)",
-    "Medical Specialties": "의료 기기 & 장비",
-    "Major Banks": "대형 은행",
-    "Regional Banks": "지역 은행 및 금융지주",
-    "Investment Banks/Brokers": "투자은행 & 증권",
-    "Finance/Rental/Leasing": "여신 전문 & 신용카드",
-    "Property/Casualty Insurance": "손해보험",
-    "Life/Health Insurance": "생명/건강보험",
-    "Real Estate Investment Trusts": "리츠 (REITs)",
-    "Broadcasting": "미디어 & 방송망",
+    
+    # [의료 / 헬스케어]
+    "Pharmaceuticals: Major": "제약 & 바이오",
+    "Biotechnology": "제약 & 바이오",
+    "Medical Specialties": "의료 기기",
+    "Managed Health Care": "헬스케어 및 보험",
+    
+    # [금융 및 부동산]
+    "Major Banks": "금융",
+    "Regional Banks": "금융",
+    "Investment Banks/Brokers": "금융",
+    "Investment Managers": "금융",
+    "Finance/Rental/Leasing": "금융",
+    "Property/Casualty Insurance": "금융 (보험)",
+    "Life/Health Insurance": "금융 (보험)",
+    "Real Estate Investment Trusts": "부동산 (리츠)",
+    
+    # [미디어 및 엔터]
+    "Broadcasting": "미디어 & 방송",
     "Movies/Entertainment": "미디어 & 엔터테인먼트",
-    "Auto Manufacturing": "자동차 & 모빌리티 제조",
-    "Motor Vehicles": "자동차 & 모빌리티 제조",
-    "Aerospace & Defense": "항공우주 & 국방",
-    "Air Freight/Couriers": "항공 물류 & 택배",
-    "Integrated Oil": "에너지 (대형 석유/가스)",
-    "Electric Utilities": "전력 & 에너지 유틸리티",
-    "Beverages: Non-Alcoholic": "식음료 (음료 전문)",
-    "Restaurants": "식음료 (F&B 프랜차이즈)",
-    "Household/Personal Care": "가정용품 및 개인위생",
-    "Industrial Machinery": "산업 기계 및 인프라 구축",
-    "Specialty Telecommunications": "우주항공 & 통신 기기",
-    "Computer Peripherals": "컴퓨터 및 주변기기",
-    "Investment Managers": "투자 관리 및 펀드",
-    "Other Metals/Minerals": "기타 금속 및 광물",
-    "Managed Health Care": "의료 보험 및 헬스케어 관리",
-    "Trucks/Construction/Farm Machinery": "트럭 및 중장비 제조"
+    
+    # [자동차 및 기계]
+    "Auto Manufacturing": "자동차",
+    "Motor Vehicles": "자동차",
+    "Industrial Machinery": "산업 기계",
+    "Trucks/Construction/Farm Machinery": "산업 기계",
+    
+    # [에너지 및 원자재]
+    "Integrated Oil": "에너지",
+    "Electric Utilities": "에너지",
+    "Other Metals/Minerals": "원자재 및 광물",
+    
+    # [식음료 및 필수소비재]
+    "Beverages: Non-Alcoholic": "식음료",
+    "Restaurants": "식음료 (프랜차이즈)",
+    "Household/Personal Care": "필수 소비재",
+    "Air Freight/Couriers": "물류 및 운송"
 }
 
 NAME_TRANSLATIONS = {
