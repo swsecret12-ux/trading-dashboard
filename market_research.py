@@ -69,7 +69,7 @@ def fetch_investing_news(ticker):
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_korean, benchmark_name):
-    """yfinance 캘린더 엔진 활용: 완벽한 텍스트 날짜(Timezone 충돌 방어) 변환 및 익일 주가 변동률 계산"""
+    """yfinance 캘린더 엔진 활용: 완벽한 텍스트 날짜(Timezone 충돌 방어) 변환 및 익일(다음날) 주가 변동률 계산"""
     market_cap = 0
     earnings_html = ""
     rows = []
@@ -80,7 +80,7 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
         market_cap = tkr.info.get('marketCap', 0)
     except: pass
 
-    # Timezone 문제를 막기 위해 차트 날짜를 문자열로 완벽 변환 (예: '2024-05-27')
+    # Timezone 문제를 막기 위해 차트 날짜를 문자열로 완벽 변환
     hist_dates = []
     if not hist_df.empty:
         hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
@@ -93,17 +93,15 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
         earn_df = tkr.get_earnings_dates(limit=8)
         if earn_df is not None and not earn_df.empty:
             
-            # 현재 시점을 캘린더의 시간대에 맞춤
             now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
 
             for idx_date, row in earn_df.iterrows():
-                # 텍스트로 변환 (Timezone 에러 원천 차단)
                 date_str = idx_date.strftime('%Y-%m-%d')
                 eps_est = row.get('EPS Estimate', pd.NA)
                 eps_act = row.get('Reported EPS', pd.NA)
                 surp = row.get('Surprise(%)', pd.NA)
 
-                # 💡 다가오는 실적발표(미래 날짜)는 가장 윗줄에 노란색으로 고정!
+                # 💡 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정!
                 if idx_date > now_tz and pd.isna(eps_act):
                     if not upcoming_row:
                         est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
@@ -124,13 +122,13 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
                 stock_change_html = "-"
                 sp500_change_html = "-"
 
-                # 💡 핵심 로직: 문자열 비교로 발표일(idx_pos) 기준 "다음 거래일(idx_pos + 1)" 등락률 계산!
+                # 💡 핵심 로직: 발표 당일 종가 vs "다음 거래일 종가" 비교 (실적 발표 후 익일 반영분)
                 if date_str in hist_dates:
                     idx_pos = hist_dates.index(date_str)
                     
                     if idx_pos + 1 < len(hist_df):
-                        prev_close = hist_df['Close'].iloc[idx_pos]
-                        next_close = hist_df['Close'].iloc[idx_pos + 1]
+                        prev_close = hist_df['Close'].iloc[idx_pos]      # 당일 종가
+                        next_close = hist_df['Close'].iloc[idx_pos + 1]  # 익일 종가
                         s_pct = ((next_close - prev_close) / prev_close) * 100
                         s_color = "#22c55e" if s_pct > 0 else "#ef4444"
                         stock_change_html = f"<span style='color:{s_color}; font-weight:bold;'>{s_pct:+.2f}%</span>"
@@ -164,11 +162,11 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
 def fetch_financial_data(ticker_symbol):
     """IP 차단 에러를 근본적으로 막은 무결점 메인 로직"""
     
-    # 💡 숫자로만 된 입력(005930)이 들어오면 무조건 한국 주식(.KS)으로 인식하게 자동 변환
+    # 한국 주식(.KS) 자동 변환 로직
     if ticker_symbol.isdigit():
         ticker_symbol = f"{ticker_symbol}.KS"
         
-    # 💡 한국 종목 여부를 판단하여 벤치마크(S&P 500 / KOSPI)를 스위칭!
+    # 한국 종목 여부 판단 및 벤치마크 스위칭
     is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
     benchmark_ticker = "^KS11" if is_korean else "^GSPC"
     benchmark_name = "코스피(KOSPI)" if is_korean else "S&P 500"
@@ -218,7 +216,7 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 실적 함수 호출 시 한국 여부 및 벤치마크 이름 전달
+            # 실적 함수 호출
             market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb, df_1d, sp500_1d, is_korean, benchmark_name)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
@@ -298,7 +296,6 @@ def fetch_financial_data(ticker_symbol):
             continue
 
 def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
-    """AI에게 과거 핵심 팩트를 강제로 찾아오게 만드는 리포트 작성 프롬프트"""
     from api_utils import ask_gemini_dynamic
     today = datetime.now().strftime('%Y-%m-%d')
     extreme_info = fin_data.get('extreme_events', '')
