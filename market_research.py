@@ -8,70 +8,52 @@ import random
 import yfinance as yf
 
 def get_robust_session():
-    """야후 파이낸스 접속 차단을 완벽히 우회하기 위한 스텔스 세션 헤더 (랜덤 브라우저 위장)"""
+    """야후 파이낸스 접속 차단을 완벽히 우회하기 위한 스텔스 세션 헤더 및 토큰 획득"""
     session = requests.Session()
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
     ]
     session.headers.update({
         "User-Agent": random.choice(user_agents),
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1"
+        "Connection": "keep-alive"
     })
     
     crumb = ""
     try:
-        # 1단계: 야후 파이낸스 메인 페이지를 찔러서 쿠키(Cookie) 획득
         session.get("https://finance.yahoo.com/quote/AAPL", timeout=5)
         time.sleep(0.5)
-        # 2단계: 획득한 쿠키를 바탕으로 보안 토큰(Crumb) 발급 요청
         res = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=5)
-        if res.status_code == 200:
-            crumb = res.text.strip()
-    except:
-        pass
+        if res.status_code == 200: crumb = res.text.strip()
+    except: pass
         
     return session, crumb
 
 def get_yahoo_chart(ticker, r, i, session, crumb=""):
-    """야후 내부 v8 API 다이렉트 통신 (차트 데이터)"""
+    """야후 내부 v8 API 다이렉트 통신 (IP 차단 방어)"""
     url = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?range={r}&interval={i}"
-    if crumb:
-        url += f"&crumb={crumb}"
-        
+    if crumb: url += f"&crumb={crumb}"
     try:
         res = session.get(url, timeout=7)
-        if res.status_code != 200:
-            return pd.DataFrame()
-        
+        if res.status_code != 200: return pd.DataFrame()
         data = res.json()
-        if not data.get('chart', {}).get('result'):
-            return pd.DataFrame()
-            
+        if not data.get('chart', {}).get('result'): return pd.DataFrame()
         result = data['chart']['result'][0]
         timestamps = result.get('timestamp', [])
         if not timestamps: return pd.DataFrame()
-        
         quote = result.get('indicators', {}).get('quote', [{}])[0]
-        
-        df = pd.DataFrame({
-            'Open': quote.get('open', []),
-            'Close': quote.get('close', [])
-        }, index=pd.to_datetime(timestamps, unit='s', utc=True))
+        df = pd.DataFrame({'Open': quote.get('open', []), 'Close': quote.get('close', [])}, index=pd.to_datetime(timestamps, unit='s', utc=True))
         return df.dropna()
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def fetch_investing_news(ticker):
     """야후 뉴스 429 차단을 우회하기 위한 구글 뉴스 RSS 크롤러"""
     try:
-        query = urllib.parse.quote(f"{ticker} stock OR partnership OR earnings")
-        url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+        query = urllib.parse.quote(f"{ticker} stock OR earnings")
+        url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
         res = requests.get(url, timeout=5)
         root = ET.fromstring(res.text)
         news_items = []
@@ -81,75 +63,65 @@ def fetch_investing_news(ticker):
             try:
                 dt = datetime.strptime(pubDate, "%a, %d %b %Y %H:%M:%S %Z")
                 pubDate_str = dt.strftime("%Y-%m-%d")
-            except:
-                pubDate_str = pubDate
+            except: pubDate_str = pubDate
             news_items.append(f"- [{pubDate_str}] {title}")
         return "\n".join(news_items) if news_items else "최근 구글 검색 뉴스가 없습니다."
-    except:
-        return "뉴스 수집 실패 (Google RSS 우회 실패)"
+    except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
-def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
-    """yfinance 캘린더 엔진을 활용하여 완벽한 뉴욕 시간대(EST) 기준 실적 및 익일 등락률 계산"""
+def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_korean, benchmark_name):
+    """yfinance 캘린더 엔진 활용: 완벽한 시간대(Timezone) 동기화 및 익일(다음 날) 주가 변동률 계산"""
     market_cap = 0
     earnings_html = ""
     rows = []
     upcoming_row = ""
 
-    # 1. 시가총액 안전 추출
-    try:
-        info = yf.Ticker(ticker).info
-        market_cap = info.get('marketCap', 0)
-    except:
-        pass
-
-    # 2. 실적 데이터 및 '익일' 주가 등락률 계산 (yfinance get_earnings_dates 활용)
     try:
         tkr = yf.Ticker(ticker)
-        # 최대 8분기 치의 과거/미래 실적 데이터를 가져옵니다.
-        earn_df = tkr.get_earnings_dates(limit=8)
+        market_cap = tkr.info.get('marketCap', 0)
+    except: pass
 
+    try:
+        earn_df = tkr.get_earnings_dates(limit=8)
         if earn_df is not None and not earn_df.empty:
-            # 시간대(Timezone) 꼬임 방지를 위해 차트 데이터를 무조건 미국 뉴욕 시간으로 강제 고정!
+            
+            # 한국 시장 여부에 따른 시간대(Timezone) 완벽 분리 적용
+            tz_str = 'Asia/Seoul' if is_korean else 'America/New_York'
+            
+            earn_df.index = earn_df.index.tz_convert(tz_str)
+            now_tz = pd.Timestamp.now(tz=tz_str)
+
             hist_dates = []
             if not hist_df.empty:
-                hist_df_ny = hist_df.copy()
-                if hist_df_ny.index.tz is None:
-                    hist_df_ny.index = hist_df_ny.index.tz_localize('UTC')
-                hist_df_ny.index = hist_df_ny.index.tz_convert('America/New_York')
-                hist_dates = hist_df_ny.index.strftime('%Y-%m-%d').tolist()
+                hist_df_tz = hist_df.copy()
+                if hist_df_tz.index.tz is None: hist_df_tz.index = hist_df_tz.index.tz_localize('UTC')
+                hist_df_tz.index = hist_df_tz.index.tz_convert(tz_str)
+                hist_dates = hist_df_tz.index.strftime('%Y-%m-%d').tolist()
 
             sp500_dates = []
             if not sp500_df.empty:
-                sp500_df_ny = sp500_df.copy()
-                if sp500_df_ny.index.tz is None:
-                    sp500_df_ny.index = sp500_df_ny.index.tz_localize('UTC')
-                sp500_df_ny.index = sp500_df_ny.index.tz_convert('America/New_York')
-                sp500_dates = sp500_df_ny.index.strftime('%Y-%m-%d').tolist()
-
-            now_tz = pd.Timestamp.now(tz='America/New_York')
+                sp500_df_tz = sp500_df.copy()
+                if sp500_df_tz.index.tz is None: sp500_df_tz.index = sp500_df_tz.index.tz_localize('UTC')
+                sp500_df_tz.index = sp500_df_tz.index.tz_convert(tz_str)
+                sp500_dates = sp500_df_tz.index.strftime('%Y-%m-%d').tolist()
 
             for idx_date, row in earn_df.iterrows():
                 date_str = idx_date.strftime('%Y-%m-%d')
-
                 eps_est = row.get('EPS Estimate', pd.NA)
                 eps_act = row.get('Reported EPS', pd.NA)
                 surp = row.get('Surprise(%)', pd.NA)
 
-                # 🚀 1. 다가오는 미래 실적발표일 (예정) 항상 최상단 추출
+                # 💡 다가오는 실적발표(미래 날짜)는 무조건 가장 위쪽에 노란색으로 고정 노출!
                 if idx_date > now_tz and pd.isna(eps_act):
                     if not upcoming_row:
                         est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
                         upcoming_row = f"<tr style='background-color:#fffbea;'><td>⏳ {date_str} (예정)</td><td>{est_str}</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>"
                     continue
 
-                # 데이터가 아예 없는 빈 줄은 스킵
-                if pd.isna(eps_act) and pd.isna(eps_est):
-                    continue 
+                if pd.isna(eps_act) and pd.isna(eps_est): continue 
 
                 est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
                 act_str = f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
 
-                # 🚀 2. 서프라이즈 계산
                 surp_html = "-"
                 if pd.notna(surp):
                     surp_val = surp * 100
@@ -159,64 +131,66 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df):
                 stock_change_html = "-"
                 sp500_change_html = "-"
 
-                # 🚀 3. '익일(다음 거래일)' 종가 기준 주가 등락률 계산
+                # 💡 핵심 로직: 발표일(idx_pos) 기준 "다음 거래일(idx_pos + 1)"의 종가 비교!
                 if date_str in hist_dates:
                     idx_pos = hist_dates.index(date_str)
-                    # +1을 통해 발표 '다음 날(익일)'의 종가 데이터 접근
-                    if idx_pos + 1 < len(hist_df_ny):
-                        prev_close = hist_df_ny['Close'].iloc[idx_pos]
-                        next_close = hist_df_ny['Close'].iloc[idx_pos + 1]
+                    
+                    if idx_pos + 1 < len(hist_df_tz):
+                        prev_close = hist_df_tz['Close'].iloc[idx_pos]
+                        next_close = hist_df_tz['Close'].iloc[idx_pos + 1]
                         s_pct = ((next_close - prev_close) / prev_close) * 100
                         s_color = "#22c55e" if s_pct > 0 else "#ef4444"
                         stock_change_html = f"<span style='color:{s_color}; font-weight:bold;'>{s_pct:+.2f}%</span>"
 
-                        # S&P 500 익일 계산 연동
                         next_date_str = hist_dates[idx_pos + 1]
                         if next_date_str in sp500_dates:
                             n_idx_pos = sp500_dates.index(next_date_str)
                             if n_idx_pos - 1 >= 0:
-                                n_prev_close = sp500_df_ny['Close'].iloc[n_idx_pos - 1]
-                                n_next_close = sp500_df_ny['Close'].iloc[n_idx_pos]
+                                n_prev_close = sp500_df_tz['Close'].iloc[n_idx_pos - 1]
+                                n_next_close = sp500_df_tz['Close'].iloc[n_idx_pos]
                                 n_pct = ((n_next_close - n_prev_close) / n_prev_close) * 100
                                 n_color = "#22c55e" if n_pct > 0 else "#ef4444"
                                 sp500_change_html = f"<span style='color:{n_color}; font-weight:bold;'>{n_pct:+.2f}%</span>"
 
                 rows.append(f"<tr><td>{date_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_html}</td><td>{stock_change_html}</td><td>{sp500_change_html}</td></tr>")
-    except Exception as e:
-        pass
+    except Exception as e: pass
 
     final_rows = []
     if upcoming_row: final_rows.append(upcoming_row)
     final_rows.extend(rows)
 
     if final_rows:
-        earnings_html = "<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>종목 익일 등락</th><th>S&P 500 익일 등락</th></tr>"
+        earnings_html = f"<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>종목 익일 등락</th><th>{benchmark_name} 익일 등락</th></tr>"
         earnings_html += "".join(final_rows) + "</table>"
-        earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* 실적 데이터 출처: Yahoo Finance 공식 캘린더 연동 (익일 종가 반영)</p>"
+        earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* 실적 데이터 출처: Yahoo Finance (익일 종가 반영)</p>"
     else:
-        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없습니다. (데이터 없음)</p>"
+        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없습니다.</p>"
         
     return market_cap, earnings_html
 
 def fetch_financial_data(ticker_symbol):
-    """IP 차단을 무력화하고 핵심 변동일을 AI에게 핀포인트로 넘기는 무결점 메인 로직"""
+    """IP 차단 에러를 근본적으로 막은 무결점 메인 로직"""
+    
+    # 💡 한국 종목(.KS) 여부를 자동으로 판단하여 벤치마크(S&P 500 / KOSPI)를 스위칭합니다!
+    is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
+    benchmark_ticker = "^KS11" if is_korean else "^GSPC"
+    benchmark_name = "코스피(KOSPI)" if is_korean else "S&P 500"
+
     for attempt in range(3):
         try:
             session, crumb = get_robust_session()
             
             df_1d = get_yahoo_chart(ticker_symbol, "1y", "1d", session, crumb)
             df_1h = get_yahoo_chart(ticker_symbol, "1y", "1h", session, crumb) 
-            sp500_1d = get_yahoo_chart("^GSPC", "1y", "1d", session, crumb)
+            sp500_1d = get_yahoo_chart(benchmark_ticker, "1y", "1d", session, crumb)
             
             if df_1d.empty or df_1h.empty:
-                # 💡 최후의 보루: 직접 통신이 완전히 막히면 yfinance 라이브러리로 차트 데이터만 강제 백업 우회
                 import yfinance as yf
                 df_1d_raw = yf.download(ticker_symbol, period="1y", interval="1d", progress=False)
                 df_1h_raw = yf.download(ticker_symbol, period="1y", interval="1h", progress=False)
-                sp500_raw = yf.download("^GSPC", period="1y", interval="1d", progress=False)
+                sp500_raw = yf.download(benchmark_ticker, period="1y", interval="1d", progress=False)
                 
                 if not df_1d_raw.empty and not df_1h_raw.empty:
-                    # 최신 yfinance의 MultiIndex 반환 버그 방어
                     if isinstance(df_1d_raw.columns, pd.MultiIndex):
                         df_1d = pd.DataFrame({'Close': df_1d_raw['Close'].iloc[:, 0], 'Open': df_1d_raw['Open'].iloc[:, 0]})
                         df_1h = pd.DataFrame({'Close': df_1h_raw['Close'].iloc[:, 0], 'Open': df_1h_raw['Open'].iloc[:, 0]})
@@ -234,7 +208,6 @@ def fetch_financial_data(ticker_symbol):
             
             current_price = df_1d['Close'].iloc[-1]
             
-            # 🚀 핵심: 1년 내 최대 급등락 날짜 추출 (AI 강제 주입용)
             df_1d['Pct_Change'] = df_1d['Close'].pct_change() * 100
             valid_pct = df_1d['Pct_Change'].dropna()
             if not valid_pct.empty:
@@ -248,10 +221,9 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 2. 시가총액 & 분기 실적 뜯어오기
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb, df_1d, sp500_1d)
+            # 실적 함수 호출 시 한국 여부 및 벤치마크 이름 전달
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb, df_1d, sp500_1d, is_korean, benchmark_name)
 
-            # 3. 이평선 3연속 크로스 정밀 추적 로직
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
             df_1h_ma = pd.DataFrame({'Close': df_1h['Close']})
@@ -287,13 +259,12 @@ def fetch_financial_data(ticker_symbol):
                 for idx, row in crosses.tail(3)[::-1].iterrows():
                     color = "#22c55e" if "골든" in row['Type'] else "#ef4444"
                     date_str = idx.strftime('%Y-%m-%d %H:%M')
-                    price_str = f"${row['Close']:.2f}"
+                    price_str = f"₩{row['Close']:,.0f}" if is_korean else f"${row['Close']:.2f}"
                     ma_rows.append(f"<tr><td><span style='color:{color}; font-weight:bold;'>{row['Type']}</span></td><td>{date_str}</td><td>{price_str}</td></tr>")
                     
                 ma_html = "<table class='ma-table'><tr><th>상태 (최근 3회)</th><th>발생일</th><th>당시 주가</th></tr>"
                 ma_html += "".join(ma_rows) + "</table>"
 
-            # 4. 모멘텀 정밀 비교 표
             def get_ret(series, days):
                 if len(series) > days: return ((series.iloc[-1] - series.iloc[-(days+1)]) / series.iloc[-(days+1)]) * 100
                 return 0.0
@@ -307,10 +278,10 @@ def fetch_financial_data(ticker_symbol):
                 n_col = "#22c55e" if n_ret > 0 else "#ef4444"
                 mom_rows.append(f"<tr><td><b>{p_name} 변동</b></td><td><span style='color:{s_col}; font-weight:bold;'>{s_ret:+.2f}%</span></td><td><span style='color:{n_col}; font-weight:bold;'>{n_ret:+.2f}%</span></td></tr>")
                 
-            momentum_html = f"<table class='ma-table'><tr><th>기간</th><th>{ticker_symbol} 현재가: ${current_price:.2f}</th><th>S&P 500(^GSPC) 비교</th></tr>"
+            curr_str = f"₩{current_price:,.0f}" if is_korean else f"${current_price:.2f}"
+            momentum_html = f"<table class='ma-table'><tr><th>기간</th><th>{ticker_symbol} 현재가: {curr_str}</th><th>{benchmark_name} 비교</th></tr>"
             momentum_html += "".join(mom_rows) + "</table>"
             
-            # 5. 구글 RSS 기반 뉴스 스크랩
             raw_news = fetch_investing_news(ticker_symbol)
 
             return {
@@ -324,13 +295,13 @@ def fetch_financial_data(ticker_symbol):
                 "extreme_events": extreme_events_str
             }
         except Exception as e:
-            time.sleep(2) # 차단 방어를 위한 강제 쿨타임
+            time.sleep(2)
             if attempt == 2:
-                return {"error": f"데이터를 불러오는 데 실패했습니다 (통신망 우회 초과). 잠시 후 다시 시도해주세요. 상세 오류: {e}"}
+                return {"error": f"데이터를 불러오는 데 실패했습니다. 다시 시도해주세요. 오류: {e}"}
             continue
 
 def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
-    """AI에게 과거 핵심 팩트(파트너십 등)를 강제로 찾아오게 만드는 강력한 프롬프트"""
+    """AI에게 과거 핵심 팩트를 강제로 찾아오게 만드는 리포트 작성 프롬프트"""
     from api_utils import ask_gemini_dynamic
     today = datetime.now().strftime('%Y-%m-%d')
     extreme_info = fin_data.get('extreme_events', '')
@@ -345,25 +316,20 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     - 나의 핵심 관점: {user_issue}
     
     [🚨 핵심 지시사항: 과거 팩트체크 초강제]
-    1. 방금 제공된 뉴스는 최근 며칠 치에 불과합니다. 따라서 위 [핵심 급변동 기록]에 명시된 특정 날짜의 30% 급등/급락 원인(예: 아마존/엔비디아 파트너십 발표, 어닝 서프라이즈/쇼크 등)은 **당신의 사전 지식을 100% 동원하여 정확히 찾아내야** 합니다!
-    2. 절대 "최근 뉴스에 없다"거나 "알 수 없다"고 쓰지 마세요. 무조건 구체적인 촉매제를 표에 채워 넣으세요.
-    3. 종합 의견 작성 시, 무조건 긍정적으로 포장하지 마세요. 밸류에이션 부담, 경쟁사 위협 등 리스크 요인을 반드시 비판적으로 서술하세요.
+    1. 방금 제공된 뉴스는 최근 치에 불과합니다. 따라서 위 [핵심 급변동 기록]에 명시된 날짜의 급등/급락 원인은 **당신의 사전 지식을 100% 동원하여 정확히 찾아내야** 합니다!
+    2. 절대 "알 수 없다"고 쓰지 마세요. 무조건 구체적인 촉매제를 표에 채워 넣으세요.
+    3. 종합 의견 작성 시, 무조건 긍정적으로 포장하지 마세요. 리스크 요인을 반드시 비판적으로 서술하세요.
     
     [보고서 필수 목차 및 양식]
-    
     ## 🏢 {ticker} 심층 분석 보고서 ({today} 기준)
-    
     ### 1. 📊 시장 위치 및 핵심 밸류체인 요약
-    
-    ### 2. 🚨 최근 1년 10% 이상 급변동 사유 팩트체크 (당신의 지식 총동원)
-    | 발생 시점 | 변동 방향 | 구체적 촉매제 (반드시 구체적 이벤트 서술) | 펀더멘털 파급력 |
+    ### 2. 🚨 최근 1년 10% 이상 급변동 사유 팩트체크
+    | 발생 시점 | 변동 방향 | 구체적 촉매제 (당신의 지식 총동원) | 펀더멘털 파급력 |
     |---|---|---|---|
-    | (예: {extreme_info.split('|')[0] if extreme_info else ''}) | 상승/하락 | (예: 파트너십 발표 등) | ... |
-    
+    | (예: {extreme_info.split('|')[0] if extreme_info else ''}) | 상승/하락 | (예: 실적 서프라이즈) | ... |
     ### 3. 💰 실적 및 모멘텀 종합 의견 (비판적 시각 필수 포함)
-    
     ### 4. 💡 기관 트레이딩 결론 (Actionable Insight)
-    - **현재 포지션:** (롱/숏/관망 중 택 1)
+    - **현재 포지션:** (롱/숏/관망 택 1)
     - **핵심 리스크:**
     - **최종 Action:** """
     
