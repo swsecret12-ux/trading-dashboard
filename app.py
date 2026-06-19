@@ -522,7 +522,7 @@ with tab5:
 
 with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
-    st.info("야후 파이낸스(yfinance)를 통해 4H/1D 이평선 크로스, 실적, 최신 뉴스를 긁어오고 AI가 심층 리포트를 작성합니다.")
+    st.info("야후 파이낸스와 나스닥(Nasdaq)을 결합하여 완벽한 실적 데이터와 4H/1D 이평선 크로스, 최신 뉴스를 가져옵니다.")
     
     sub_tab_research, sub_tab_top100, sub_tab_kr_top100 = st.tabs(["🏢 내 종목 리서치", "🇺🇸 미국 시총 Top 100 맵", "🇰🇷 한국 코스피 Top 100 맵"])
     
@@ -530,7 +530,7 @@ with tab6:
         with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
             with st.form("new_sector_stock"):
                 c1, c2 = st.columns(2)
-                s_ticker = c1.text_input("야후 파이낸스 티커 (예: NVDA, AAPL, SNOW)")
+                s_ticker = c1.text_input("야후 파이낸스 티커 (한국종목은 005930.KS 형태 입력)")
                 s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
                 s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
                 
@@ -623,9 +623,9 @@ with tab6:
 
     with sub_tab_top100:
         st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실시간 데이터 기준)")
-        st.info("💡 **알림:** 하드코딩된 명단이 아닙니다! **[실시간 스캔 시작]** 버튼을 누르면, 트레이딩뷰(TradingView) 라이브 서버에서 테슬라, ARM, 팔란티어 등을 포함한 '진짜 실시간 미국 시가총액 최상위 100개' 명단을 즉시 스캔하여 줄을 세웁니다.")
+        st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 진성 미국 시가총액 100위 명단을 즉시 스캔하여 줄을 세웁니다.")
 
-        if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary"):
+        if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary", key="us_btn"):
             with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
                 try:
                     url = "https://scanner.tradingview.com/america/scan"
@@ -648,33 +648,25 @@ with tab6:
                     
                     df_list = []
                     seen_tickers = set()
-                    
                     target_exact = ['JPM', 'ORCL', 'BAC', 'MS', 'GS', 'WFC', 'C']
                     
                     for item in data.get('data', []):
                         if len(df_list) >= 100: break
-                        
                         sym = item['d'][0] 
                         name_raw = item['d'][1]
                         ind_raw = item['d'][3]
                         mcap = item['d'][4]
-                        
                         base_ticker = re.split(r'[-/.]', sym)[0]
                         if base_ticker == 'BML': continue
-
                         if base_ticker in target_exact:
-                            if sym != base_ticker: 
-                                continue 
-                                
+                            if sym != base_ticker: continue 
                         if base_ticker in ['GOOG', 'GOOGL', 'GOOGM', 'GOOGN']: 
                             base_ticker = 'GOOG'
                             if sym not in ['GOOG', 'GOOGL']: continue
-                            
                         if base_ticker in ['BRK.A', 'BRK.B', 'BRK']: base_ticker = 'BRK' 
                         if base_ticker in ['FOXA', 'FOX']: base_ticker = 'FOX'
                         if base_ticker in ['NWSA', 'NWS']: base_ticker = 'NWS'
                         if base_ticker in ['UAA', 'UA']: base_ticker = 'UA'
-                        
                         if base_ticker in seen_tickers: continue
                         seen_tickers.add(base_ticker)
                         
@@ -702,20 +694,19 @@ with tab6:
                     new_df = new_df.drop(columns=['분야 내 순위'])
                     
                     st.session_state.sp100_state_df = new_df
-                    st.success("✅ 불순물(파생주/장외주) 제거 및 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
+                    st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
                 except Exception as e:
                     st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
         if not st.session_state.sp100_state_df.empty:
-            
-            st.markdown("#### 🗺️ S&P 500 / 나스닥 주도주 히트맵 (실시간 자금 흐름)")
+            st.markdown("#### 🗺️ S&P 500 주도주 히트맵 (실시간 자금 흐름)")
             st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
             heatmap_widget = """
             <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
               <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
               {
-              "exchanges": [],
+              "exchanges": ["NYSE", "NASDAQ", "AMEX"],
               "dataSource": "SPX500",
               "grouping": "sector",
               "blockSize": "market_cap_basic",
@@ -734,15 +725,12 @@ with tab6:
             </div>
             """
             components.html(heatmap_widget, height=700)
-            
             st.markdown("---")
             
             st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
             try:
-                session = get_robust_session()
+                session = get_robust_session()[0]
                 sp500_df = pd.DataFrame()
-                
-                # 💡 야후 차단 우회: 나스닥 100 지수(^NDX)가 막히면 ETF(QQQ)로 몰래 우회해서 계산합니다.
                 for tkr in ["^NDX", "QQQ"]:
                     for _ in range(2):
                         try:
@@ -750,37 +738,27 @@ with tab6:
                             if not temp_df.empty:
                                 sp500_df = temp_df
                                 break
-                        except:
-                            time.sleep(1)
-                    if not sp500_df.empty:
-                        break
+                        except: time.sleep(1)
+                    if not sp500_df.empty: break
 
                 if not sp500_df.empty:
-                    if isinstance(sp500_df.columns, pd.MultiIndex):
-                        close_series = sp500_df['Close'].iloc[:, 0]
-                    else:
-                        close_series = sp500_df['Close']
-                        
+                    if isinstance(sp500_df.columns, pd.MultiIndex): close_series = sp500_df['Close'].iloc[:, 0]
+                    else: close_series = sp500_df['Close']
                     curr = close_series.iloc[-1]
                     def ret(days):
                         if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
                         return 0.0
-                    
                     ndx_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                     ndx_df = pd.DataFrame([ndx_data])
-                    
                     def color_val(val):
                         color = '#ef4444' if val < 0 else '#22c55e'
                         return f"color: {color}; font-weight: bold;"
-                    
                     formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
-                else:
-                    st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
-            except Exception as e:
-                st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+                else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+            except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
                 
-            st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (주봉 실시간 캔들 차트)")
+            st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (주봉 실시간 차트)")
             ndx_tv_widget = """
             <div class="tradingview-widget-container" style="height:350px;width:100%;">
               <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
@@ -796,56 +774,46 @@ with tab6:
             </div>
             """
             components.html(ndx_tv_widget, height=350)
-
             st.markdown("---")
 
             symbols = st.session_state.sp100_state_df['Symbol'].tolist()
             chunks = [symbols[i:i+25] for i in range(0, 100, 25)]
             labels = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
-            
             st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 '4시간봉 EMA 200 vs 1일봉 EMA 200' 크로스 현황을 정밀 스캔합니다.")
             cols = st.columns(4)
             for i in range(4):
                 if i < len(chunks):
-                    if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True):
-                        with st.spinner(f"{labels[i]} 실시간 데이터 스캔 중... (IP 차단 방지 시스템 가동 중)"):
-                            time.sleep(2) # 강제 대기 (Rate Limit 방어)
+                    if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True, key=f"btn_us_scan_{i}"):
+                        with st.spinner(f"{labels[i]} 실시간 데이터 스캔 중..."):
+                            time.sleep(2)
                             try:
-                                session = get_robust_session()
+                                session = get_robust_session()[0]
                                 data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False, session=session)
                                 data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False, session=session)
                                 
                                 if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                                 else: data_1d = data_1d_raw
-                                    
                                 if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
                                 else: data_1h = data_1h_raw
-                                    
                                 if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks[i][0])
                                 if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks[i][0])
-                                
                                 current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                 
                                 for sym in chunks[i]:
-                                    if sym not in data_1d.columns or sym not in data_1h.columns:
-                                        c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                    if sym not in data_1d.columns or sym not in data_1h.columns: c_type, c_date, c_price = "데이터 부족", "-", "-"
                                     else:
                                         df_sym_1d = data_1d[sym].dropna()
                                         df_sym_1h = data_1h[sym].dropna()
-                                        
-                                        if len(df_sym_1d) < 150 or len(df_sym_1h) < 150:
-                                            c_type, c_date, c_price = "상장기간 부족", "-", "-"
+                                        if len(df_sym_1d) < 150 or len(df_sym_1h) < 150: c_type, c_date, c_price = "상장기간 부족", "-", "-"
                                         else:
                                             df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
                                             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
-                                            
                                             df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
                                             df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
                                             df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
                                             
                                             df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
                                             df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
-                                            
                                             df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
                                             df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
                                             
@@ -860,11 +828,9 @@ with tab6:
                                                 last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
                                                 last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
                                                 latest_idx = max(last_gc, last_dc)
-                                                
                                                 c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
                                                 days_diff = (datetime.now(timezone.utc) - latest_idx).days
                                                 if days_diff <= 90: c_type = f"🔥 {c_type}"
-                                                    
                                                 c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
                                                 c_price = f"${merged.loc[latest_idx, 'Close']:.2f}"
                                             else:
@@ -875,10 +841,8 @@ with tab6:
                                     st.session_state.sp100_state_df.loc[mask, '크로스 날짜'] = c_date
                                     st.session_state.sp100_state_df.loc[mask, '크로스 당시 주가'] = c_price
                                     st.session_state.sp100_state_df.loc[mask, '업데이트 날짜'] = current_update_time
-
                                 st.success(f"✅ {current_update_time} 기준, {labels[i]} 크로스 분석 완료!")
                                 st.rerun() 
-                                
                             except Exception as e:
                                 st.error(f"야후 파이낸스 스캔 중 오류 발생 (잠시 후 다시 시도해주세요): {str(e)}")
 
@@ -887,12 +851,11 @@ with tab6:
 
     with sub_tab_kr_top100:
         st.markdown("### 🇰🇷 한국 코스피 상위 Top 100 기업 (실시간 데이터 기준)")
-        st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 대한민국 코스피(KOSPI) 시가총액 최상위 100개 명단을 즉시 스캔하여 묶어냅니다.")
+        st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 대한민국 코스피(KOSPI) 시가총액 최상위 100개 명단(우선주 제외)을 즉시 스캔하여 묶어냅니다.")
 
         if st.button("🔄 실시간 한국 코스피 Top 100 스캔 시작", type="primary", key="btn_kr_scan"):
             with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
                 try:
-                    # 💡 south_korea 가 아닌 korea 로 정확한 API 주소 타겟팅
                     url = "https://scanner.tradingview.com/korea/scan"
                     payload = {
                         "filter": [
@@ -905,18 +868,12 @@ with tab6:
                         "symbols": {"query": {"types": []}, "tickers": []},
                         "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
                         "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                        "range": [0, 150] 
+                        "range": [0, 200] 
                     }
-                    # 💡 봇(Bot) 차단 방지를 위한 브라우저 헤더 보강
-                    headers = {
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                        "Accept": "application/json"
-                    }
+                    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
                     res = requests.post(url, json=payload, headers=headers)
                     
-                    if res.status_code != 200:
-                        raise Exception(f"트레이딩뷰 서버 응답 지연 (상태 코드: {res.status_code})")
-                        
+                    if res.status_code != 200: raise Exception(f"트레이딩뷰 서버 응답 지연 (상태 코드: {res.status_code})")
                     data = res.json()
                     
                     df_list = []
@@ -924,16 +881,19 @@ with tab6:
                     
                     for item in data.get('data', []):
                         if len(df_list) >= 100: break
-                        
                         sym = item['d'][0] 
                         name_raw = item['d'][1]
                         ind_raw = item['d'][3]
                         mcap = item['d'][4]
                         
                         base_ticker = sym.split(':')[-1]
+                        
+                        # 💡 우선주(Preferred Stocks) 및 잡주 필터링 (한국 코스피 보통주는 대부분 '0'으로 끝남)
+                        if len(base_ticker) == 6 and not base_ticker.endswith('0'): continue
+                        if "우" in name_raw and ("우B" in name_raw or "우(" in name_raw or name_raw.endswith("우")): continue
+                        
                         if base_ticker in seen_tickers: continue
                         seen_tickers.add(base_ticker)
-                        
                         yf_ticker = f"{base_ticker}.KS"
                         
                         df_list.append({
@@ -957,12 +917,11 @@ with tab6:
                     new_df = new_df.drop(columns=['분야 내 순위'])
                     
                     st.session_state.kospi100_state_df = new_df
-                    st.success("✅ 불순물 제거 및 실시간 코스피 Top 100 리스트 업데이트 완료!")
+                    st.success("✅ 불순물 및 우선주 제거, 코스피 보통주 Top 100 리스트 업데이트 완료!")
                 except Exception as e:
                     st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
         if not st.session_state.kospi100_state_df.empty:
-            
             st.markdown("#### 🗺️ 한국 코스피 주도주 히트맵 (실시간 자금 흐름)")
             st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
             heatmap_widget_kr = """
@@ -989,49 +948,38 @@ with tab6:
             </div>
             """
             components.html(heatmap_widget_kr, height=700)
-            
             st.markdown("---")
             
             st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
             try:
-                session = get_robust_session()
+                session = get_robust_session()[0]
                 kospi_df = pd.DataFrame()
-                
                 for _ in range(2):
                     try:
                         temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
                         if not temp_df.empty:
                             kospi_df = temp_df
                             break
-                    except:
-                        time.sleep(1)
+                    except: time.sleep(1)
 
                 if not kospi_df.empty:
-                    if isinstance(kospi_df.columns, pd.MultiIndex):
-                        close_series = kospi_df['Close'].iloc[:, 0]
-                    else:
-                        close_series = kospi_df['Close']
-                        
+                    if isinstance(kospi_df.columns, pd.MultiIndex): close_series = kospi_df['Close'].iloc[:, 0]
+                    else: close_series = kospi_df['Close']
                     curr = close_series.iloc[-1]
                     def ret(days):
                         if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
                         return 0.0
-                    
                     kr_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                     kr_df = pd.DataFrame([kr_data])
-                    
                     def color_val(val):
                         color = '#ef4444' if val < 0 else '#22c55e'
                         return f"color: {color}; font-weight: bold;"
-                    
                     formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                     st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
-                else:
-                    st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
-            except Exception as e:
-                st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+                else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+            except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
                 
-            st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 캔들 차트)")
+            st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트)")
             kr_tv_widget = """
             <div class="tradingview-widget-container" style="height:350px;width:100%;">
               <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
@@ -1047,7 +995,6 @@ with tab6:
             </div>
             """
             components.html(kr_tv_widget, height=350)
-
             st.markdown("---")
 
             yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
@@ -1064,42 +1011,34 @@ with tab6:
                         with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
                             time.sleep(2) 
                             try:
-                                session = get_robust_session()
+                                session = get_robust_session()[0]
                                 data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False, session=session)
                                 data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False, session=session)
                                 
                                 if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                                 else: data_1d = data_1d_raw
-                                    
                                 if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
                                 else: data_1h = data_1h_raw
-                                    
                                 if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks_yf[i][0])
                                 if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks_yf[i][0])
-                                
                                 current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                 
                                 for j, yf_sym in enumerate(chunks_yf[i]):
                                     ui_sym = chunks_ui[i][j]
-                                    if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns:
-                                        c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                    if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns: c_type, c_date, c_price = "데이터 부족", "-", "-"
                                     else:
                                         df_sym_1d = data_1d[yf_sym].dropna()
                                         df_sym_1h = data_1h[yf_sym].dropna()
-                                        
-                                        if len(df_sym_1d) < 150 or len(df_sym_1h) < 150:
-                                            c_type, c_date, c_price = "상장기간 부족", "-", "-"
+                                        if len(df_sym_1d) < 150 or len(df_sym_1h) < 150: c_type, c_date, c_price = "상장기간 부족", "-", "-"
                                         else:
                                             df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
                                             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
-                                            
                                             df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
                                             df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
                                             df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
                                             
                                             df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
                                             df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
-                                            
                                             df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
                                             df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
                                             
@@ -1114,11 +1053,9 @@ with tab6:
                                                 last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
                                                 last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
                                                 latest_idx = max(last_gc, last_dc)
-                                                
                                                 c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
                                                 days_diff = (datetime.now(timezone.utc) - latest_idx).days
                                                 if days_diff <= 90: c_type = f"🔥 {c_type}"
-                                                    
                                                 c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
                                                 c_price = f"₩{merged.loc[latest_idx, 'Close']:,.0f}"
                                             else:
@@ -1132,7 +1069,6 @@ with tab6:
 
                                 st.success(f"✅ {current_update_time} 기준, 코스피 {labels_kr[i]} 크로스 분석 완료!")
                                 st.rerun() 
-                                
                             except Exception as e:
                                 st.error(f"야후 파이낸스 스캔 중 오류 발생 (잠시 후 다시 시도해주세요): {str(e)}")
 
