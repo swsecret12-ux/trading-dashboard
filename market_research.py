@@ -69,7 +69,7 @@ def fetch_investing_news(ticker):
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_korean, benchmark_name):
-    """yfinance 캘린더 엔진 활용: 완벽한 시간대(Timezone) 동기화 및 익일(다음 날) 주가 변동률 계산"""
+    """yfinance 캘린더 엔진 활용: 완벽한 텍스트 날짜(Timezone 충돌 방어) 변환 및 익일 주가 변동률 계산"""
     market_cap = 0
     earnings_html = ""
     rows = []
@@ -80,37 +80,30 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
         market_cap = tkr.info.get('marketCap', 0)
     except: pass
 
+    # Timezone 문제를 막기 위해 차트 날짜를 문자열로 완벽 변환 (예: '2024-05-27')
+    hist_dates = []
+    if not hist_df.empty:
+        hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
+
+    sp500_dates = []
+    if not sp500_df.empty:
+        sp500_dates = sp500_df.index.strftime('%Y-%m-%d').tolist()
+
     try:
         earn_df = tkr.get_earnings_dates(limit=8)
         if earn_df is not None and not earn_df.empty:
             
-            # 한국 시장 여부에 따른 시간대(Timezone) 완벽 분리 적용
-            tz_str = 'Asia/Seoul' if is_korean else 'America/New_York'
-            
-            earn_df.index = earn_df.index.tz_convert(tz_str)
-            now_tz = pd.Timestamp.now(tz=tz_str)
-
-            hist_dates = []
-            if not hist_df.empty:
-                hist_df_tz = hist_df.copy()
-                if hist_df_tz.index.tz is None: hist_df_tz.index = hist_df_tz.index.tz_localize('UTC')
-                hist_df_tz.index = hist_df_tz.index.tz_convert(tz_str)
-                hist_dates = hist_df_tz.index.strftime('%Y-%m-%d').tolist()
-
-            sp500_dates = []
-            if not sp500_df.empty:
-                sp500_df_tz = sp500_df.copy()
-                if sp500_df_tz.index.tz is None: sp500_df_tz.index = sp500_df_tz.index.tz_localize('UTC')
-                sp500_df_tz.index = sp500_df_tz.index.tz_convert(tz_str)
-                sp500_dates = sp500_df_tz.index.strftime('%Y-%m-%d').tolist()
+            # 현재 시점을 캘린더의 시간대에 맞춤
+            now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
 
             for idx_date, row in earn_df.iterrows():
+                # 텍스트로 변환 (Timezone 에러 원천 차단)
                 date_str = idx_date.strftime('%Y-%m-%d')
                 eps_est = row.get('EPS Estimate', pd.NA)
                 eps_act = row.get('Reported EPS', pd.NA)
                 surp = row.get('Surprise(%)', pd.NA)
 
-                # 💡 다가오는 실적발표(미래 날짜)는 무조건 가장 위쪽에 노란색으로 고정 노출!
+                # 💡 다가오는 실적발표(미래 날짜)는 가장 윗줄에 노란색으로 고정!
                 if idx_date > now_tz and pd.isna(eps_act):
                     if not upcoming_row:
                         est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
@@ -131,13 +124,13 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
                 stock_change_html = "-"
                 sp500_change_html = "-"
 
-                # 💡 핵심 로직: 발표일(idx_pos) 기준 "다음 거래일(idx_pos + 1)"의 종가 비교!
+                # 💡 핵심 로직: 문자열 비교로 발표일(idx_pos) 기준 "다음 거래일(idx_pos + 1)" 등락률 계산!
                 if date_str in hist_dates:
                     idx_pos = hist_dates.index(date_str)
                     
-                    if idx_pos + 1 < len(hist_df_tz):
-                        prev_close = hist_df_tz['Close'].iloc[idx_pos]
-                        next_close = hist_df_tz['Close'].iloc[idx_pos + 1]
+                    if idx_pos + 1 < len(hist_df):
+                        prev_close = hist_df['Close'].iloc[idx_pos]
+                        next_close = hist_df['Close'].iloc[idx_pos + 1]
                         s_pct = ((next_close - prev_close) / prev_close) * 100
                         s_color = "#22c55e" if s_pct > 0 else "#ef4444"
                         stock_change_html = f"<span style='color:{s_color}; font-weight:bold;'>{s_pct:+.2f}%</span>"
@@ -146,8 +139,8 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
                         if next_date_str in sp500_dates:
                             n_idx_pos = sp500_dates.index(next_date_str)
                             if n_idx_pos - 1 >= 0:
-                                n_prev_close = sp500_df_tz['Close'].iloc[n_idx_pos - 1]
-                                n_next_close = sp500_df_tz['Close'].iloc[n_idx_pos]
+                                n_prev_close = sp500_df['Close'].iloc[n_idx_pos - 1]
+                                n_next_close = sp500_df['Close'].iloc[n_idx_pos]
                                 n_pct = ((n_next_close - n_prev_close) / n_prev_close) * 100
                                 n_color = "#22c55e" if n_pct > 0 else "#ef4444"
                                 sp500_change_html = f"<span style='color:{n_color}; font-weight:bold;'>{n_pct:+.2f}%</span>"
@@ -171,7 +164,11 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
 def fetch_financial_data(ticker_symbol):
     """IP 차단 에러를 근본적으로 막은 무결점 메인 로직"""
     
-    # 💡 한국 종목(.KS) 여부를 자동으로 판단하여 벤치마크(S&P 500 / KOSPI)를 스위칭합니다!
+    # 💡 숫자로만 된 입력(005930)이 들어오면 무조건 한국 주식(.KS)으로 인식하게 자동 변환
+    if ticker_symbol.isdigit():
+        ticker_symbol = f"{ticker_symbol}.KS"
+        
+    # 💡 한국 종목 여부를 판단하여 벤치마크(S&P 500 / KOSPI)를 스위칭!
     is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
     benchmark_ticker = "^KS11" if is_korean else "^GSPC"
     benchmark_name = "코스피(KOSPI)" if is_korean else "S&P 500"
