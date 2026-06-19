@@ -15,9 +15,6 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import yfinance as yf
 
-# ==========================================
-# --- 1. 클라우드 및 AI 세팅 ---
-# ==========================================
 URL = st.secrets.get("SUPABASE_URL", "")
 KEY = st.secrets.get("SUPABASE_KEY", "")
 HEADERS = {
@@ -102,7 +99,6 @@ def format_mcap_krw(usd_val):
         return usd_val
 
 def format_krw_direct(krw_val):
-    """국내(코스피) 스캐너 전용 직결 원화 포맷터"""
     try:
         val = float(krw_val)
         if val <= 0: return "-"
@@ -120,70 +116,51 @@ def format_krw_direct(krw_val):
     except:
         return krw_val
 
-# 💡 완벽하게 번역된 세부 산업군 매핑 사전
 INDUSTRY_GROUPING = {
-    # [IT / 테크]
-    "Semiconductors": "반도체",
-    "Packaged Software": "소프트웨어",
-    "Internet Software/Services": "소프트웨어",
-    "Information Technology Services": "소프트웨어",
+    "Semiconductors": "반도체 및 장비", 
     "Computer Processing Hardware": "IT 하드웨어",
-    "Telecommunications Equipment": "IT 하드웨어", 
-    "Computer Peripherals": "IT 하드웨어",
-    "Computer Communications": "네트워크 장비",
-    "Electronic Equipment/Instruments": "IT 부품",
-    
-    # [우주항공]
-    "Aerospace & Defense": "우주 & 항공",
-    "Specialty Telecommunications": "우주 & 항공", 
-
-    # [이커머스 및 유통]
-    "Internet Retail": "이커머스",
-    "Apparel/Footwear Retail": "소매 및 유통",
-    "Specialty Stores": "소매 및 유통",
+    "Computer Communications": "네트워크 통신 장비",
+    "Electronic Equipment/Instruments": "IT 부품 및 전자기기",
+    "Packaged Software": "소프트웨어 & 클라우드",
+    "Internet Software/Services": "소프트웨어 & 클라우드",
+    "Information Technology Services": "IT 서비스 & 컨설팅",
+    "Internet Retail": "이커머스 & 온라인 유통",
+    "Apparel/Footwear Retail": "의류 및 소비재 유통",
+    "Specialty Stores": "전문 유통 채널",
     "Discount Stores": "대형 할인마트",
-    
-    # [의료 / 헬스케어]
     "Pharmaceuticals: Major": "제약 & 바이오",
     "Biotechnology": "제약 & 바이오",
-    "Medical Specialties": "의료 기기",
-    "Managed Health Care": "헬스케어 및 보험",
-    
-    # [금융 및 부동산]
-    "Major Banks": "금융",
-    "Regional Banks": "금융",
-    "Investment Banks/Brokers": "금융",
-    "Investment Managers": "금융",
-    "Finance/Rental/Leasing": "금융",
-    "Property/Casualty Insurance": "금융 (보험)",
-    "Life/Health Insurance": "금융 (보험)",
-    "Real Estate Investment Trusts": "부동산 (리츠)",
-    
-    # [미디어 및 엔터]
-    "Broadcasting": "미디어 & 방송",
+    "Medical Specialties": "의료 기기 & 장비",
+    "Major Banks": "대형 은행",
+    "Regional Banks": "지역 은행",
+    "Investment Banks/Brokers": "투자은행 & 증권",
+    "Finance/Rental/Leasing": "여신 전문 & 신용카드",
+    "Property/Casualty Insurance": "손해보험",
+    "Life/Health Insurance": "생명/건강보험",
+    "Real Estate Investment Trusts": "리츠 (REITs)",
+    "Broadcasting": "미디어 & 방송망",
     "Movies/Entertainment": "미디어 & 엔터테인먼트",
-    
-    # [자동차 및 기계]
-    "Auto Manufacturing": "자동차",
-    "Motor Vehicles": "자동차",
-    "Industrial Machinery": "산업 기계",
-    "Trucks/Construction/Farm Machinery": "산업 기계",
-    
-    # [에너지 및 원자재]
-    "Integrated Oil": "에너지",
-    "Electric Utilities": "에너지",
-    "Other Metals/Minerals": "원자재 및 광물",
-    
-    # [식음료 및 필수소비재]
-    "Beverages: Non-Alcoholic": "식음료",
-    "Restaurants": "식음료 (프랜차이즈)",
-    "Household/Personal Care": "필수 소비재",
-    "Air Freight/Couriers": "물류 및 운송"
+    "Auto Manufacturing": "자동차 & 모빌리티",
+    "Motor Vehicles": "자동차 & 모빌리티",
+    "Aerospace & Defense": "항공우주 & 국방",
+    "Air Freight/Couriers": "항공 물류 & 택배",
+    "Integrated Oil": "에너지 (석유/가스)",
+    "Electric Utilities": "전력 & 에너지 유틸리티",
+    "Beverages: Non-Alcoholic": "식음료 (음료 전문)",
+    "Restaurants": "식음료 (F&B 프랜차이즈)",
+    "Household/Personal Care": "가정용품 및 개인위생",
+    "Industrial Machinery": "산업 기계 및 인프라",
+    "Specialty Telecommunications": "통신 기기",
+    "Computer Peripherals": "컴퓨터 주변기기",
+    "Investment Managers": "투자 관리 및 펀드",
+    "Other Metals/Minerals": "기타 금속 및 광물",
+    "Managed Health Care": "의료 보험 및 헬스케어",
+    "Trucks/Construction/Farm Machinery": "트럭 및 중장비"
 }
 
 NAME_TRANSLATIONS = {
     "AAPL": "Apple Inc. (애플)", "MSFT": "Microsoft (마이크로소프트)", "NVDA": "NVIDIA (엔비디아)",
-    "GOOGL": "Alphabet Class A (구글)", "AMZN": "Amazon (아마존)", "META": "Meta Platforms (메타/페이스북)", 
+    "GOOGL": "Alphabet Class A (구글)", "AMZN": "Amazon (아마존)", "META": "Meta Platforms (메타)", 
     "BRK-B": "Berkshire Hathaway (버크셔)", "LLY": "Eli Lilly (일라이 릴리)", "TSLA": "Tesla (테슬라)", 
     "AVGO": "Broadcom (브로드컴)", "V": "Visa (비자)", "JPM": "JPMorgan Chase (JP모건)", 
     "WMT": "Walmart (월마트)", "UNH": "UnitedHealth (유나이티드헬스)", "MA": "Mastercard (마스터카드)", 
@@ -196,8 +173,7 @@ NAME_TRANSLATIONS = {
     "RTX": "RTX Corporation (레이시온)", "PFE": "Pfizer (화이자)", "ORCL": "Oracle (오라클)", 
     "BAC": "Bank of America (뱅크오브아메리카)", "MS": "Morgan Stanley (모건스탠리)", 
     "GS": "Goldman Sachs (골드만삭스)", "WFC": "Wells Fargo (웰스파고)", "C": "Citigroup (씨티그룹)",
-    "MU": "Micron Technology (마이크론)", "TSM": "Taiwan Semiconductor (TSMC)",
-    "SPCX": "Space Exploration ETF (스페이스X/우주항공)"
+    "MU": "Micron Technology (마이크론)", "TSM": "Taiwan Semiconductor (TSMC)"
 }
 
 from api_utils import (
@@ -530,7 +506,7 @@ with tab6:
         with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
             with st.form("new_sector_stock"):
                 c1, c2 = st.columns(2)
-                s_ticker = c1.text_input("야후 파이낸스 티커 (한국종목은 005930.KS 형태 입력)")
+                s_ticker = c1.text_input("야후 파이낸스 티커 (한국종목은 005930 또는 005930.KS 형태 입력)")
                 s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "코인", "기타"])
                 s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
                 
@@ -614,7 +590,6 @@ with tab6:
                 with c_left:
                     st.markdown(stock_data['issue'], unsafe_allow_html=True)
                     with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (출처 명확 표기)", expanded=False):
-                        st.info("💡 야후 파이낸스 무료 API 제공 한도로 인해 최근 기사 위주로 수집됩니다. 과거 이슈는 우측 AI가 자체 지식망을 활용하여 심층 팩트체크합니다.")
                         st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
                 with c_right:
                     if stock_data.get('ai_analysis'):
@@ -851,7 +826,7 @@ with tab6:
 
     with sub_tab_kr_top100:
         st.markdown("### 🇰🇷 한국 코스피 상위 Top 100 기업 (실시간 데이터 기준)")
-        st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 대한민국 코스피(KOSPI) 시가총액 최상위 100개 명단(우선주 제외)을 즉시 스캔하여 묶어냅니다.")
+        st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 대한민국 코스피(KOSPI) 시가총액 최상위 100개 명단(우선주 완전 필터링)을 즉시 스캔하여 묶어냅니다.")
 
         if st.button("🔄 실시간 한국 코스피 Top 100 스캔 시작", type="primary", key="btn_kr_scan"):
             with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
@@ -888,7 +863,7 @@ with tab6:
                         
                         base_ticker = sym.split(':')[-1]
                         
-                        # 💡 우선주(Preferred Stocks) 및 잡주 필터링 (한국 코스피 보통주는 대부분 '0'으로 끝남)
+                        # 💡 우선주(Preferred Stocks) 및 잡주 완벽 필터링
                         if len(base_ticker) == 6 and not base_ticker.endswith('0'): continue
                         if "우" in name_raw and ("우B" in name_raw or "우(" in name_raw or name_raw.endswith("우")): continue
                         
@@ -917,7 +892,7 @@ with tab6:
                     new_df = new_df.drop(columns=['분야 내 순위'])
                     
                     st.session_state.kospi100_state_df = new_df
-                    st.success("✅ 불순물 및 우선주 제거, 코스피 보통주 Top 100 리스트 업데이트 완료!")
+                    st.success("✅ 불순물 및 우선주 제거, 순수 코스피 보통주 Top 100 리스트 업데이트 완료!")
                 except Exception as e:
                     st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
@@ -930,6 +905,7 @@ with tab6:
               <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
               {
               "exchanges": ["KRX"],
+              "dataSource": "KOSPI200",
               "market": "south_korea",
               "grouping": "sector",
               "blockSize": "market_cap_basic",
