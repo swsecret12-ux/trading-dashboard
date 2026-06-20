@@ -68,6 +68,7 @@ def render_kr_map_tab():
                     
                     base_ticker = sym.split(':')[-1]
                     
+                    # 💡 우선주(Preferred Stocks) 및 잡주 완벽 필터링
                     if len(base_ticker) == 6 and not base_ticker.endswith('0'): continue
                     if "우" in name_raw and ("우B" in name_raw or "우(" in name_raw or name_raw.endswith("우")): continue
                     
@@ -115,7 +116,6 @@ def render_kr_map_tab():
           "blockSize": "market_cap_basic",
           "blockColor": "change",
           "locale": "kr",
-          "symbolUrl": "",
           "colorTheme": "light",
           "hasTopBar": false,
           "isDataSetEnabled": false,
@@ -160,6 +160,8 @@ def render_kr_map_tab():
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
         st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트)")
+        
+        # 👇 문제가 되었던 차트 티커를 진짜 대한민국 종합주가지수인 KRX:KOSPI 로 완벽하게 교체했습니다!
         kr_tv_widget = """
         <div class="tradingview-widget-container" style="height:350px;width:100%;">
           <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
