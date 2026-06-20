@@ -159,24 +159,33 @@ def render_kr_map_tab():
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트)")
+        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트) 🛠️ `[디버깅용: 적용된 티커 KRX:KOSPI]`")
+        st.info("💡 **확인해주세요!** 차트 왼쪽 위에 `KRX:KOSPI`라고 적혀있고, 우측 가격이 **수천 대(예: 2,700 등)**로 나와야 정상입니다. 만약 아니라면 위젯을 새로고침 중입니다.")
         
-        # 💡 영우님이 찾아주신 완벽한 KOSPI 종합주가지수 티커 (KRX:KOSPI) 반영 완료!
+        # 💡 강제 디버깅: ID 변경으로 캐시 무력화, 툴바 노출(hide_top_toolbar: false)로 티커 강제 확인
         kr_tv_widget = """
-        <div class="tradingview-widget-container" style="height:350px;width:100%;">
-          <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
+        <div class="tradingview-widget-container" style="height:400px;width:100%;">
+          <div id="tv_kospi_debug" style="height:calc(100% - 32px);width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
           new TradingView.widget({
-          "autosize": true, "symbol": "KRX:KOSPI", "interval": "W", "timezone": "Asia/Seoul",
-          "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
-          "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
-          "container_id": "tradingview_kospi"
+          "autosize": true, 
+          "symbol": "KRX:KOSPI", 
+          "interval": "W", 
+          "timezone": "Asia/Seoul",
+          "theme": "light", 
+          "style": "1", 
+          "locale": "kr", 
+          "enable_publishing": false,
+          "hide_top_toolbar": false, 
+          "hide_legend": false, 
+          "save_image": false,
+          "container_id": "tv_kospi_debug"
           });
           </script>
         </div>
         """
-        components.html(kr_tv_widget, height=350)
+        components.html(kr_tv_widget, height=400)
         st.markdown("---")
 
         yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
