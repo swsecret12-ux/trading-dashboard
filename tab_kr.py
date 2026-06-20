@@ -161,7 +161,7 @@ def render_kr_map_tab():
             
         st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트)")
         
-        # 👇 문제가 되었던 차트 티커를 진짜 대한민국 종합주가지수인 KRX:KOSPI 로 완벽하게 교체했습니다!
+        # 💡 영우님이 찾아주신 완벽한 KOSPI 종합주가지수 티커 (KRX:KOSPI) 반영 완료!
         kr_tv_widget = """
         <div class="tradingview-widget-container" style="height:350px;width:100%;">
           <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
