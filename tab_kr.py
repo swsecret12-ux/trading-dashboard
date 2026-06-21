@@ -103,14 +103,15 @@ def render_kr_map_tab():
     if not st.session_state.kospi100_state_df.empty:
         st.markdown("#### 🗺️ 한국 코스피 주도주 히트맵 (실시간 자금 흐름)")
         st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
+        
+        # 💡 충돌을 일으키던 불필요한 속성을 지우고 KOSPI200만 완벽하게 타겟팅하도록 수정
         heatmap_widget_kr = """
         <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
           <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
           {
-          "exchanges": ["KRX"],
+          "exchanges": [],
           "dataSource": "KOSPI200",
-          "market": "south_korea",
           "grouping": "sector",
           "blockSize": "market_cap_basic",
           "blockColor": "change",
