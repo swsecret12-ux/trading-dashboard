@@ -207,21 +207,26 @@ def render_us_map_tab():
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
         st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (일봉 실시간 차트)")
+        # 💡 높이를 750px로 두 배 확장하고, RSI 및 200일 이동평균선(MA 200)을 studies에 추가했습니다.
         ndx_tv_widget = """
-        <div class="tradingview-widget-container" style="height:350px;width:100%;">
+        <div class="tradingview-widget-container" style="height:750px;width:100%; margin-bottom: 20px;">
           <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
           new TradingView.widget({
           "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "D", "timezone": "Etc/UTC",
           "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
-          "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
-          "container_id": "tradingview_ndx"
+          "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
+          "container_id": "tradingview_ndx",
+          "studies": [
+            "RSI@tv-basicstudies",
+            {"id": "MASimple@tv-basicstudies", "inputs": {"length": 200}}
+          ]
           });
           </script>
         </div>
         """
-        components.html(ndx_tv_widget, height=350)
+        components.html(ndx_tv_widget, height=750)
         st.markdown("---")
 
         symbols = st.session_state.sp100_state_df['Symbol'].tolist()
