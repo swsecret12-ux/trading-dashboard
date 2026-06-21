@@ -101,36 +101,7 @@ def render_kr_map_tab():
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
     if not st.session_state.kospi100_state_df.empty:
-        st.markdown("#### 🗺️ 한국 코스피 주도주 히트맵 (실시간 자금 흐름)")
-        st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
-        
-        # 💡 dataSource 속성을 완전히 삭제하고 오직 "market": "south_korea"만 명시! (미국장 튕김 완벽 차단)
-        heatmap_widget_kr = """
-        <!-- Cache Buster: South Korea Market Fix -->
-        <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
-          <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
-          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
-          {
-          "exchanges": [],
-          "grouping": "sector",
-          "blockSize": "market_cap_basic",
-          "blockColor": "change",
-          "locale": "kr",
-          "symbolUrl": "",
-          "colorTheme": "light",
-          "hasTopBar": true,
-          "isDataSetEnabled": false,
-          "isZoomEnabled": true,
-          "hasSymbolTooltip": true,
-          "width": "100%",
-          "height": "100%",
-          "market": "south_korea"
-        }
-          </script>
-        </div>
-        """
-        components.html(heatmap_widget_kr, height=700)
-        st.markdown("---")
+        # 히트맵 섹션 완전 삭제됨
         
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
@@ -236,7 +207,8 @@ def render_kr_map_tab():
                     color=color_condition
                 )
                 
-                candlestick_chart = (rule + bar).properties(height=350)
+                # 💡 차트의 세로 길이(Height)를 기존 350에서 700으로 2배 대폭 확장!
+                candlestick_chart = (rule + bar).properties(height=700)
                 
                 # 테두리 제거 및 폰트 설정으로 트레이딩뷰 스타일 완벽 모사
                 candlestick_chart = candlestick_chart.configure_view(
