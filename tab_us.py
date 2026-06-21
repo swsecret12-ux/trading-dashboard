@@ -6,7 +6,6 @@ import time
 from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
-from market_research import get_robust_session
 
 INDUSTRY_GROUPING = {
     "Semiconductors": "반도체 및 장비", "Computer Processing Hardware": "IT 하드웨어", "Computer Communications": "네트워크 통신 장비",
@@ -63,7 +62,6 @@ def format_mcap_krw(usd_val):
         return usd_val
 
 def render_us_map_tab():
-    # 💡 에러 원천 차단: 세션 스테이트가 초기화되지 않았을 경우 무조건 여기서 생성 보장
     if "sp100_state_df" not in st.session_state:
         st.session_state.sp100_state_df = pd.DataFrame()
 
@@ -172,23 +170,25 @@ def render_us_map_tab():
         components.html(heatmap_widget, height=700)
         st.markdown("---")
         
+        # 💡 에러 박멸: 무적의 yfinance 다운로드 로직 적용
         st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
         try:
-            session = get_robust_session()[0]
             sp500_df = pd.DataFrame()
             for tkr in ["^NDX", "QQQ"]:
-                for _ in range(2):
+                for _ in range(3): # 최대 3번 끈질기게 재시도
                     try:
-                        temp_df = yf.download(tkr, period="4y", interval="1d", progress=False, session=session)
+                        temp_df = yf.download(tkr, period="4y", interval="1d", progress=False)
                         if not temp_df.empty:
-                            sp500_df = temp_df
+                            if isinstance(temp_df.columns, pd.MultiIndex):
+                                sp500_df = pd.DataFrame({'Close': temp_df['Close'].iloc[:, 0]})
+                            else:
+                                sp500_df = temp_df[['Close']]
                             break
                     except: time.sleep(1)
                 if not sp500_df.empty: break
 
             if not sp500_df.empty:
-                if isinstance(sp500_df.columns, pd.MultiIndex): close_series = sp500_df['Close'].iloc[:, 0]
-                else: close_series = sp500_df['Close']
+                close_series = sp500_df['Close']
                 curr = close_series.iloc[-1]
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
@@ -232,9 +232,8 @@ def render_us_map_tab():
                     with st.spinner(f"{labels[i]} 실시간 데이터 스캔 중..."):
                         time.sleep(2)
                         try:
-                            session = get_robust_session()[0]
-                            data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False, session=session)
-                            data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False, session=session)
+                            data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False)
+                            data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False)
                             
                             if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                             else: data_1d = data_1d_raw
