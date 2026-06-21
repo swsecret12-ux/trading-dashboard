@@ -31,7 +31,7 @@ def render_kr_map_tab():
         st.session_state.kospi100_state_df = pd.DataFrame()
 
     st.markdown("### 🇰🇷 한국 코스피 상위 Top 100 기업 (실시간 데이터 기준)")
-    st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 대한민국 코스피(KOSPI) 시가총액 최상위 100개 명단(우선주 완전 필터링)을 즉시 스캔하여 묶어냅니다.")
+    st.info("💡 **알림:** 실시간 트레이딩뷰 서버에서 대한민국 코스피 시가총액 최상위 100개 명단(우선주 완전 필터링)을 즉시 스캔합니다.")
 
     if st.button("🔄 실시간 한국 코스피 Top 100 스캔 시작", type="primary", key="btn_kr_scan"):
         with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
@@ -103,7 +103,7 @@ def render_kr_map_tab():
 
     if not st.session_state.kospi100_state_df.empty:
         st.markdown("#### 🗺️ 한국 코스피 주도주 히트맵 (실시간 자금 흐름)")
-        st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
+        st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다.")
         heatmap_widget_kr = """
         <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
           <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
@@ -131,9 +131,9 @@ def render_kr_map_tab():
         st.markdown("---")
         
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
+        kospi_df = pd.DataFrame()
         try:
             session = get_robust_session()[0]
-            kospi_df = pd.DataFrame()
             for _ in range(2):
                 try:
                     temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
@@ -159,33 +159,22 @@ def render_kr_map_tab():
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트) 🛠️ `[디버깅용: 적용된 티커 KRX:KOSPI]`")
-        st.info("💡 **확인해주세요!** 차트 왼쪽 위에 `KRX:KOSPI`라고 적혀있고, 우측 가격이 **수천 대(예: 2,700 등)**로 나와야 정상입니다. 만약 아니라면 위젯을 새로고침 중입니다.")
+        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (오리지널 지수 자체 구현)")
+        st.info("💡 **알림:** 트레이딩뷰 위젯이 한국거래소(KRX) 라이선스 문제로 코스피 지수를 차단하고 애플(AAPL) 차트로 강제 전환하는 버그를 완벽하게 우회했습니다. 야후 파이낸스 오리지널 데이터를 직접 가져와 그려낸 '진짜 2,000대 코스피' 차트입니다.")
         
-        # 💡 강제 디버깅: ID 변경으로 캐시 무력화, 툴바 노출(hide_top_toolbar: false)로 티커 강제 확인
-        kr_tv_widget = """
-        <div class="tradingview-widget-container" style="height:400px;width:100%;">
-          <div id="tv_kospi_debug" style="height:calc(100% - 32px);width:100%"></div>
-          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-          <script type="text/javascript">
-          new TradingView.widget({
-          "autosize": true, 
-          "symbol": "KRX:KOSPI", 
-          "interval": "W", 
-          "timezone": "Asia/Seoul",
-          "theme": "light", 
-          "style": "1", 
-          "locale": "kr", 
-          "enable_publishing": false,
-          "hide_top_toolbar": false, 
-          "hide_legend": false, 
-          "save_image": false,
-          "container_id": "tv_kospi_debug"
-          });
-          </script>
-        </div>
-        """
-        components.html(kr_tv_widget, height=400)
+        if not kospi_df.empty:
+            # 최근 1년치 데이터(약 250일)만 슬라이싱하여 스트림릿 네이티브 라인 차트로 출력
+            chart_data = kospi_df.tail(250).copy()
+            if isinstance(chart_data.columns, pd.MultiIndex):
+                chart_series = chart_data['Close'].iloc[:, 0]
+            else:
+                chart_series = chart_data['Close']
+            
+            # 외부 위젯이 아닌 스트림릿 순수 차트로 렌더링 (절대 애플 차트로 안 바뀝니다)
+            st.line_chart(chart_series, height=350, use_container_width=True)
+        else:
+            st.warning("차트 데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.")
+            
         st.markdown("---")
 
         yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
