@@ -67,6 +67,7 @@ def render_kr_map_tab():
                     
                     base_ticker = sym.split(':')[-1]
                     
+                    # 우선주 필터링
                     if len(base_ticker) == 6 and not base_ticker.endswith('0'): continue
                     if "우" in name_raw and ("우B" in name_raw or "우(" in name_raw or name_raw.endswith("우")): continue
                     
@@ -134,7 +135,6 @@ def render_kr_map_tab():
             kospi_df = pd.DataFrame()
             for _ in range(3):
                 try:
-                    # session 제거, 순수 yf.download 사용으로 100% 안정성 확보
                     temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
                     if not temp_df.empty:
                         kospi_df = temp_df
@@ -171,13 +171,11 @@ def render_kr_map_tab():
             kospi_daily = pd.DataFrame()
             for _ in range(3):
                 try:
-                    # session 제거, 가장 안정적인 방식으로 호출
                     kospi_daily = yf.download("^KS11", period="1y", interval="1d", progress=False)
                     if not kospi_daily.empty: break
                 except: time.sleep(1)
 
             if not kospi_daily.empty:
-                # 멀티인덱스 완벽 대응 및 평탄화
                 if isinstance(kospi_daily.columns, pd.MultiIndex):
                     df_chart = pd.DataFrame({
                         'Open': kospi_daily['Open'].iloc[:, 0] if isinstance(kospi_daily['Open'], pd.DataFrame) else kospi_daily['Open'],
@@ -191,27 +189,61 @@ def render_kr_map_tab():
                 df_chart = df_chart.dropna().reset_index()
                 df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close']
                 
-                # 캔들 색상 조건 (상승: 초록, 하락: 빨강)
-                color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#22c55e"), alt.value("#ef4444"))
+                # 캔들 색상 조건 (트레이딩뷰 오리지널 컬러 적용)
+                color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
                 
                 base = alt.Chart(df_chart).encode(
-                    x=alt.X('Date:T', title=None, axis=alt.Axis(labelAngle=-45, labelExpr="timeFormat(datum.value, '%Y년 %m월 %d일')"))
+                    x=alt.X('Date:T', 
+                            title=None, 
+                            axis=alt.Axis(
+                                labelAngle=0, 
+                                labelColor='#787b86',
+                                tickCount=12,
+                                grid=True,
+                                gridColor='#e0e3eb',
+                                gridDash=[2, 2],
+                                domain=False,
+                                ticks=False,
+                                labelPadding=10,
+                                # 1월이면 연도를, 아니면 월(M월)을 표시하는 트레이딩뷰 완벽 모사 로직
+                                labelExpr="timeFormat(datum.value, '%m') == '01' ? timeFormat(datum.value, '%Y') : timeFormat(datum.value, '%-m월')"
+                            ))
                 )
                 
                 rule = base.mark_rule().encode(
-                    y=alt.Y('Low:Q', title='지수 (Point)', scale=alt.Scale(zero=False), axis=alt.Axis(orient='right')),
+                    y=alt.Y('Low:Q', 
+                            title=None, # '지수 (Point)' 글자 삭제
+                            scale=alt.Scale(zero=False, padding=15), 
+                            axis=alt.Axis(
+                                orient='right', # 오른쪽 배치
+                                labelColor='#787b86',
+                                grid=True,
+                                gridColor='#e0e3eb',
+                                domain=False,
+                                ticks=False,
+                                format=','
+                            )),
                     y2='High:Q',
                     color=color_condition
                 )
                 
-                # 일봉에 맞게 캔들(바) 두께를 2.5로 최적화
-                bar = base.mark_bar(size=2.5).encode(
+                # 일봉에 맞게 캔들(바) 두께 최적화
+                bar = base.mark_bar(size=3.0).encode(
                     y='Open:Q',
                     y2='Close:Q',
                     color=color_condition
                 )
                 
                 candlestick_chart = (rule + bar).properties(height=350)
+                
+                # 테두리 제거 및 폰트 설정으로 트레이딩뷰 스타일 완벽 모사
+                candlestick_chart = candlestick_chart.configure_view(
+                    strokeWidth=0
+                ).configure_axis(
+                    labelFontSize=11,
+                    titleFontSize=12
+                )
+
                 st.altair_chart(candlestick_chart, use_container_width=True)
                 
             else:
@@ -234,7 +266,6 @@ def render_kr_map_tab():
                 if cols_kr[i].button(f"🚀 코스피 {labels_kr[i]} 스캔", use_container_width=True, key=f"btn_kr_{i}"):
                     with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
                         try:
-                            # session 제거, 순수 yf.download 사용 (에러 원천 차단)
                             data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
                             data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
                             
