@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 import yfinance as yf
 import altair as alt
 import streamlit.components.v1 as components
-from market_research import get_robust_session
 
 def format_krw_direct(krw_val):
     try:
@@ -132,71 +131,81 @@ def render_kr_map_tab():
         
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
-            session = get_robust_session()[0]
             kospi_df = pd.DataFrame()
-            for _ in range(2):
+            for _ in range(3):
                 try:
-                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
+                    # session 제거, 순수 yf.download 사용으로 100% 안정성 확보
+                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
                     if not temp_df.empty:
                         kospi_df = temp_df
                         break
                 except: time.sleep(1)
 
             if not kospi_df.empty:
-                if isinstance(kospi_df.columns, pd.MultiIndex): close_series = kospi_df['Close'].iloc[:, 0].dropna()
-                else: close_series = kospi_df['Close'].dropna()
+                if isinstance(kospi_df.columns, pd.MultiIndex): 
+                    close_series = kospi_df['Close'].iloc[:, 0].dropna()
+                else: 
+                    close_series = kospi_df['Close'].dropna()
                 
                 curr = close_series.iloc[-1]
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
                     return 0.0
+                
                 kr_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                 kr_df = pd.DataFrame([kr_data])
+                
                 def color_val(val):
                     color = '#ef4444' if val < 0 else '#22c55e'
                     return f"color: {color}; font-weight: bold;"
+                
                 formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
-            else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
-        except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+            else: 
+                st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+        except Exception as e: 
+            st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
         st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 자체 캔들 차트)")
         try:
-            session = get_robust_session()[0]
             kospi_daily = pd.DataFrame()
-            for _ in range(2):
+            for _ in range(3):
                 try:
-                    kospi_daily = yf.download("^KS11", period="1y", interval="1d", progress=False, session=session)
+                    # session 제거, 가장 안정적인 방식으로 호출
+                    kospi_daily = yf.download("^KS11", period="1y", interval="1d", progress=False)
                     if not kospi_daily.empty: break
                 except: time.sleep(1)
 
             if not kospi_daily.empty:
-                if isinstance(kospi_daily.columns, pd.MultiIndex): 
-                    kospi_daily = pd.DataFrame({
-                        'Open': kospi_daily['Open'].iloc[:, 0],
-                        'High': kospi_daily['High'].iloc[:, 0],
-                        'Low': kospi_daily['Low'].iloc[:, 0],
-                        'Close': kospi_daily['Close'].iloc[:, 0]
+                # 멀티인덱스 완벽 대응 및 평탄화
+                if isinstance(kospi_daily.columns, pd.MultiIndex):
+                    df_chart = pd.DataFrame({
+                        'Open': kospi_daily['Open'].iloc[:, 0] if isinstance(kospi_daily['Open'], pd.DataFrame) else kospi_daily['Open'],
+                        'High': kospi_daily['High'].iloc[:, 0] if isinstance(kospi_daily['High'], pd.DataFrame) else kospi_daily['High'],
+                        'Low':  kospi_daily['Low'].iloc[:, 0]  if isinstance(kospi_daily['Low'], pd.DataFrame)  else kospi_daily['Low'],
+                        'Close':kospi_daily['Close'].iloc[:, 0] if isinstance(kospi_daily['Close'], pd.DataFrame) else kospi_daily['Close']
                     })
-                
-                kospi_daily = kospi_daily.dropna()
-                
-                df_chart = kospi_daily.reset_index()
+                else:
+                    df_chart = kospi_daily[['Open', 'High', 'Low', 'Close']].copy()
+
+                df_chart = df_chart.dropna().reset_index()
                 df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close']
                 
+                # 캔들 색상 조건 (상승: 초록, 하락: 빨강)
                 color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#22c55e"), alt.value("#ef4444"))
                 
                 base = alt.Chart(df_chart).encode(
-                    x=alt.X('Date:T', title=None, axis=alt.Axis(labelAngle=-45))
+                    x=alt.X('Date:T', title=None, axis=alt.Axis(labelAngle=-45, labelExpr="timeFormat(datum.value, '%Y년 %m월 %d일')"))
                 )
                 
                 rule = base.mark_rule().encode(
-                    y=alt.Y('Low:Q', title='지수 (Point)', scale=alt.Scale(zero=False)),
+                    y=alt.Y('Low:Q', title='지수 (Point)', scale=alt.Scale(zero=False), axis=alt.Axis(orient='right')),
                     y2='High:Q',
                     color=color_condition
                 )
                 
-                bar = base.mark_bar(size=2).encode(
+                # 일봉에 맞게 캔들(바) 두께를 2.5로 최적화
+                bar = base.mark_bar(size=2.5).encode(
                     y='Open:Q',
                     y2='Close:Q',
                     color=color_condition
@@ -206,7 +215,7 @@ def render_kr_map_tab():
                 st.altair_chart(candlestick_chart, use_container_width=True)
                 
             else:
-                st.warning("야후 파이낸스 통신망 지연으로 차트를 불러오지 못했습니다.")
+                st.warning("야후 파이낸스 통신망 지연으로 차트를 불러오지 못했습니다. (새로고침을 눌러주세요)")
         except Exception as e:
             st.error(f"차트 데이터 오류 발생: {e}")
             
@@ -224,11 +233,10 @@ def render_kr_map_tab():
             if i < len(chunks_yf):
                 if cols_kr[i].button(f"🚀 코스피 {labels_kr[i]} 스캔", use_container_width=True, key=f"btn_kr_{i}"):
                     with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
-                        time.sleep(2) 
                         try:
-                            session = get_robust_session()[0]
-                            data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False, session=session)
-                            data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False, session=session)
+                            # session 제거, 순수 yf.download 사용 (에러 원천 차단)
+                            data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
+                            data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
                             
                             if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                             else: data_1d = data_1d_raw
@@ -240,11 +248,13 @@ def render_kr_map_tab():
                             
                             for j, yf_sym in enumerate(chunks_yf[i]):
                                 ui_sym = chunks_ui[i][j]
-                                if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns: c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns: 
+                                    c_type, c_date, c_price = "데이터 부족", "-", "-"
                                 else:
                                     df_sym_1d = data_1d[yf_sym].dropna()
                                     df_sym_1h = data_1h[yf_sym].dropna()
-                                    if len(df_sym_1d) < 150 or len(df_sym_1h) < 150: c_type, c_date, c_price = "상장기간 부족", "-", "-"
+                                    if len(df_sym_1d) < 150 or len(df_sym_1h) < 150: 
+                                        c_type, c_date, c_price = "상장기간 부족", "-", "-"
                                     else:
                                         df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
                                         df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
