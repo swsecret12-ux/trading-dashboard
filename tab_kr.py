@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
-from market_research import get_robust_session
+from market_research import get_robust_session, get_yahoo_chart
 
 def format_krw_direct(krw_val):
     try:
@@ -133,18 +133,25 @@ def render_kr_map_tab():
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         kospi_df = pd.DataFrame()
         try:
-            session = get_robust_session()[0]
-            for _ in range(2):
-                try:
-                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
-                    if not temp_df.empty:
-                        kospi_df = temp_df
-                        break
-                except: time.sleep(1)
+            session, crumb = get_robust_session()
+            # 💡 야후 내부망 API를 강제로 열어 빈 데이터 반환 에러를 차단합니다!
+            kospi_df = get_yahoo_chart("^KS11", "4y", "1d", session, crumb)
+            
+            # yfinance 모듈 다운로드 2차 대비책
+            if kospi_df.empty:
+                for _ in range(2):
+                    try:
+                        temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
+                        if not temp_df.empty:
+                            if isinstance(temp_df.columns, pd.MultiIndex):
+                                kospi_df = pd.DataFrame({'Close': temp_df['Close'].iloc[:, 0]})
+                            else:
+                                kospi_df = temp_df[['Close']]
+                            break
+                    except: time.sleep(1)
 
             if not kospi_df.empty:
-                if isinstance(kospi_df.columns, pd.MultiIndex): close_series = kospi_df['Close'].iloc[:, 0]
-                else: close_series = kospi_df['Close']
+                close_series = kospi_df['Close']
                 curr = close_series.iloc[-1]
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
@@ -156,22 +163,18 @@ def render_kr_map_tab():
                     return f"color: {color}; font-weight: bold;"
                 formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
-            else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
-        except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+            else: 
+                st.warning("야후 파이낸스 통신망이 일시적으로 지연되고 있습니다. 새로고침을 눌러주세요.")
+        except Exception as e: 
+            st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
         st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (오리지널 지수 자체 구현)")
-        st.info("💡 **알림:** 트레이딩뷰 위젯이 한국거래소(KRX) 라이선스 문제로 코스피 지수를 차단하고 애플(AAPL) 차트로 강제 전환하는 버그를 완벽하게 우회했습니다. 야후 파이낸스 오리지널 데이터를 직접 가져와 그려낸 '진짜 2,000대 코스피' 차트입니다.")
+        st.info("💡 **알림:** 트레이딩뷰 위젯이 한국거래소(KRX) 라이선스 문제로 코스피 지수를 차단하고 애플(AAPL) 차트로 강제 전환하는 고질적 버그를 완벽하게 우회했습니다. 야후 파이낸스의 오리지널 데이터를 직접 가져와 스트림릿 자체 차트로 그려낸 '진짜 코스피(KOSPI) 종합 지수' 차트입니다.")
         
         if not kospi_df.empty:
-            # 최근 1년치 데이터(약 250일)만 슬라이싱하여 스트림릿 네이티브 라인 차트로 출력
+            # 트레이딩뷰를 버리고 최근 1년치 코스피 지수를 스트림릿 네이티브 차트로 완벽히 그려냅니다.
             chart_data = kospi_df.tail(250).copy()
-            if isinstance(chart_data.columns, pd.MultiIndex):
-                chart_series = chart_data['Close'].iloc[:, 0]
-            else:
-                chart_series = chart_data['Close']
-            
-            # 외부 위젯이 아닌 스트림릿 순수 차트로 렌더링 (절대 애플 차트로 안 바뀝니다)
-            st.line_chart(chart_series, height=350, use_container_width=True)
+            st.line_chart(chart_data['Close'], height=350, use_container_width=True)
         else:
             st.warning("차트 데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.")
             
@@ -191,7 +194,7 @@ def render_kr_map_tab():
                     with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
                         time.sleep(2) 
                         try:
-                            session = get_robust_session()[0]
+                            session, crumb = get_robust_session()
                             data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False, session=session)
                             data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False, session=session)
                             
