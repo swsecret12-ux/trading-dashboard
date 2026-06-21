@@ -207,16 +207,24 @@ def render_us_map_tab():
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
         st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (일봉 실시간 차트)")
-        # 💡 높이를 750px로 두 배 확장하고, RSI 및 200일 이동평균선(MA 200)을 studies에 추가했습니다.
+        # 💡 높이 750 확장 + RSI / 200일선 추가 + 상단 툴바 활성화
         ndx_tv_widget = """
         <div class="tradingview-widget-container" style="height:750px;width:100%; margin-bottom: 20px;">
           <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
           new TradingView.widget({
-          "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "D", "timezone": "Etc/UTC",
-          "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
-          "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
+          "autosize": true, 
+          "symbol": "OANDA:NAS100USD", 
+          "interval": "D", 
+          "timezone": "Etc/UTC",
+          "theme": "light", 
+          "style": "1", 
+          "locale": "kr", 
+          "enable_publishing": false,
+          "hide_top_toolbar": false, 
+          "hide_legend": false, 
+          "save_image": false,
           "container_id": "tradingview_ndx",
           "studies": [
             "RSI@tv-basicstudies",
