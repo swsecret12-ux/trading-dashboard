@@ -101,8 +101,6 @@ def render_kr_map_tab():
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
     if not st.session_state.kospi100_state_df.empty:
-        # 히트맵 섹션 완전 삭제됨
-        
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
             kospi_df = pd.DataFrame()
@@ -162,6 +160,10 @@ def render_kr_map_tab():
                 df_chart = df_chart.dropna().reset_index()
                 df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close']
                 
+                # 💡 차트의 불필요한 상하 여백을 없애기 위해 1년 최저가와 최고가 추출
+                min_price = df_chart['Low'].min() * 0.98
+                max_price = df_chart['High'].max() * 1.02
+                
                 # 캔들 색상 조건 (트레이딩뷰 오리지널 컬러 적용)
                 color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
                 
@@ -178,44 +180,44 @@ def render_kr_map_tab():
                                 domain=False,
                                 ticks=False,
                                 labelPadding=10,
-                                # 1월이면 연도를, 아니면 월(M월)을 표시하는 트레이딩뷰 완벽 모사 로직
                                 labelExpr="timeFormat(datum.value, '%m') == '01' ? timeFormat(datum.value, '%Y') : timeFormat(datum.value, '%-m월')"
                             ))
                 )
                 
-                rule = base.mark_rule().encode(
+                # 💡 캔들 꼬리(Wick) 굵기를 1.5로 더 뚜렷하게 설정
+                rule = base.mark_rule(size=1.5).encode(
                     y=alt.Y('Low:Q', 
-                            title=None, # '지수 (Point)' 글자 삭제
-                            scale=alt.Scale(zero=False, padding=15), 
+                            title=None,
+                            scale=alt.Scale(domain=[min_price, max_price]), # 💡 계산된 최고/최저가로 꽉 차게 줌인!
                             axis=alt.Axis(
-                                orient='right', # 오른쪽 배치
+                                orient='right', 
                                 labelColor='#787b86',
                                 grid=True,
                                 gridColor='#e0e3eb',
                                 domain=False,
                                 ticks=False,
-                                format=','
+                                format=',.0f' # 💡 이상한 1e+4 외계어 표기를 깔끔한 9,000 형태로 강제 고정!
                             )),
                     y2='High:Q',
                     color=color_condition
                 )
                 
-                # 일봉에 맞게 캔들(바) 두께 최적화
-                bar = base.mark_bar(size=3.0).encode(
+                # 💡 캔들 몸통(Body) 두께를 4.0으로 굵게 설정하여 꽉 찬 느낌 부여
+                bar = base.mark_bar(size=4.0).encode(
                     y='Open:Q',
                     y2='Close:Q',
                     color=color_condition
                 )
                 
-                # 💡 차트의 세로 길이(Height)를 기존 350에서 700으로 2배 대폭 확장!
-                candlestick_chart = (rule + bar).properties(height=700)
+                # 세로 길이 600 설정 (차트를 꽉 채워서 확대)
+                candlestick_chart = (rule + bar).properties(height=600)
                 
-                # 테두리 제거 및 폰트 설정으로 트레이딩뷰 스타일 완벽 모사
+                # 💡 폰트 사이즈를 기존 11에서 14로 대폭 상향하여 글씨를 큼직하게
                 candlestick_chart = candlestick_chart.configure_view(
                     strokeWidth=0
                 ).configure_axis(
-                    labelFontSize=11,
-                    titleFontSize=12
+                    labelFontSize=14,
+                    titleFontSize=14
                 )
 
                 st.altair_chart(candlestick_chart, use_container_width=True)
