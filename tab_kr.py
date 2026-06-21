@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
+import json # 💡 자체 차트를 그리기 위한 핵심 부품
 from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
@@ -26,6 +27,7 @@ def format_krw_direct(krw_val):
         return krw_val
 
 def render_kr_map_tab():
+    # 💡 에러 원천 차단: 세션 스테이트가 초기화되지 않았을 경우 무조건 여기서 생성 보장
     if "kospi100_state_df" not in st.session_state:
         st.session_state.kospi100_state_df = pd.DataFrame()
 
@@ -67,6 +69,7 @@ def render_kr_map_tab():
                     
                     base_ticker = sym.split(':')[-1]
                     
+                    # 💡 우선주(Preferred Stocks) 및 잡주 완벽 필터링
                     if len(base_ticker) == 6 and not base_ticker.endswith('0'): continue
                     if "우" in name_raw and ("우B" in name_raw or "우(" in name_raw or name_raw.endswith("우")): continue
                     
@@ -135,20 +138,18 @@ def render_kr_map_tab():
             kospi_df = pd.DataFrame()
             for _ in range(2):
                 try:
-                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
-                    if not temp_df.empty:
-                        kospi_df = temp_df
-                        break
+                    kospi_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
+                    if not kospi_df.empty: break
                 except: time.sleep(1)
 
             if not kospi_df.empty:
-                # 💡 핵심 방어 코드: 야후 파이낸스의 NaN 쓰레기값 완벽 청소
-                if isinstance(kospi_df.columns, pd.MultiIndex): 
-                    close_series = kospi_df['Close'].iloc[:, 0].dropna()
-                else: 
-                    close_series = kospi_df['Close'].dropna()
-                    
+                # 최신 MultiIndex 버그 방어
+                if isinstance(kospi_df.columns, pd.MultiIndex): close_series = kospi_df['Close'].iloc[:, 0]
+                else: close_series = kospi_df['Close']
+                
+                close_series = close_series.dropna() # NaN 값 완벽 청소
                 curr = close_series.iloc[-1]
+                
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
                     return 0.0
@@ -165,24 +166,75 @@ def render_kr_map_tab():
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        # 💡 트레이딩뷰 애플 튕김 방지 솔루션: KODEX 200(069500)으로 코스피 완벽 대체!
-        st.markdown("#### 📊 코스피 추종 ETF (KODEX 200) 주봉 실시간 차트")
-        st.caption("💡 트레이딩뷰 위젯이 한국거래소(KRX)의 코스피 지수를 차단하고 애플 차트로 강제 변환하는 버그를 우회하기 위해, 코스피 지수와 똑같이 움직이는 'KODEX 200 ETF(KRX:069500)' 주봉 캔들 차트를 띄웠습니다.")
-        kr_tv_widget = """
-        <div class="tradingview-widget-container" style="height:350px;width:100%;">
-          <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
-          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-          <script type="text/javascript">
-          new TradingView.widget({
-          "autosize": true, "symbol": "KRX:069500", "interval": "W", "timezone": "Asia/Seoul",
-          "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
-          "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
-          "container_id": "tradingview_kospi"
-          });
-          </script>
-        </div>
-        """
-        components.html(kr_tv_widget, height=350)
+        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 캔들 차트)")
+        try:
+            session = get_robust_session()[0]
+            kospi_weekly = pd.DataFrame()
+            for _ in range(2):
+                try:
+                    kospi_weekly = yf.download("^KS11", period="1y", interval="1wk", progress=False, session=session)
+                    if not kospi_weekly.empty: break
+                except: time.sleep(1)
+
+            if not kospi_weekly.empty:
+                if isinstance(kospi_weekly.columns, pd.MultiIndex): 
+                    kospi_weekly = pd.DataFrame({
+                        'Open': kospi_weekly['Open'].iloc[:, 0],
+                        'High': kospi_weekly['High'].iloc[:, 0],
+                        'Low': kospi_weekly['Low'].iloc[:, 0],
+                        'Close': kospi_weekly['Close'].iloc[:, 0]
+                    })
+                
+                # 중복 날짜 및 빈 값 싹 청소 (자체 차트 엔진의 안정성을 위함)
+                kospi_weekly = kospi_weekly[~kospi_weekly.index.duplicated(keep='last')].sort_index()
+                kospi_weekly = kospi_weekly.dropna()
+                
+                chart_data = []
+                for date, row in kospi_weekly.iterrows():
+                    chart_data.append({
+                        "time": date.strftime("%Y-%m-%d"),
+                        "open": float(row['Open']),
+                        "high": float(row['High']),
+                        "low": float(row['Low']),
+                        "close": float(row['Close'])
+                    })
+                data_json = json.dumps(chart_data)
+
+                # 💡 스트림릿 내부에 트레이딩뷰와 똑같은 모양의 캔들 엔진 직접 삽입!
+                lw_html = f"""
+                <div id="tvchart" style="width:100%;height:350px;"></div>
+                <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+                <script>
+                    const chartOptions = {{ 
+                        layout: {{ textColor: '#333', backgroundColor: '#ffffff' }},
+                        grid: {{ vertLines: {{ color: '#f0f3fa' }}, horzLines: {{ color: '#f0f3fa' }} }},
+                        timeScale: {{ borderColor: '#d1d4dc', timeVisible: false }}
+                    }};
+                    const chart = LightweightCharts.createChart(document.getElementById('tvchart'), chartOptions);
+                    
+                    // 미국 나스닥과 완벽히 동일한 초록(상승)/빨강(하락) 캔들 세팅
+                    const candlestickSeries = chart.addCandlestickSeries({{
+                        upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
+                        wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+                    }});
+                    
+                    candlestickSeries.setData({data_json});
+                    chart.timeScale().fitContent();
+                    
+                    window.addEventListener('resize', () => {{
+                        const container = document.getElementById('tvchart');
+                        if (container) {{
+                            chart.applyOptions({{ width: container.clientWidth }});
+                        }}
+                    }});
+                </script>
+                """
+                components.html(lw_html, height=350)
+            else:
+                st.warning("야후 파이낸스 통신망 지연으로 차트를 불러오지 못했습니다.")
+        except Exception as e:
+            st.error(f"차트 데이터 오류 발생: {e}")
+            
         st.markdown("---")
 
         yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
