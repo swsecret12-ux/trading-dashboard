@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
+from market_research import get_robust_session
 
 def format_krw_direct(krw_val):
     try:
@@ -128,46 +129,52 @@ def render_kr_map_tab():
         components.html(heatmap_widget_kr, height=700)
         st.markdown("---")
         
-        # 💡 에러 박멸: 무적의 yfinance 다운로드 로직 적용
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
+            session = get_robust_session()[0]
             kospi_df = pd.DataFrame()
-            for _ in range(3): # 최대 3번 끈질기게 재시도
+            for _ in range(2):
                 try:
-                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
+                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False, session=session)
                     if not temp_df.empty:
-                        if isinstance(temp_df.columns, pd.MultiIndex):
-                            kospi_df = pd.DataFrame({'Close': temp_df['Close'].iloc[:, 0]})
-                        else:
-                            kospi_df = temp_df[['Close']]
+                        kospi_df = temp_df
                         break
                 except: time.sleep(1)
 
             if not kospi_df.empty:
-                close_series = kospi_df['Close']
+                # 💡 핵심 방어 코드: 야후 파이낸스의 NaN 쓰레기값 완벽 청소
+                if isinstance(kospi_df.columns, pd.MultiIndex): 
+                    close_series = kospi_df['Close'].iloc[:, 0].dropna()
+                else: 
+                    close_series = kospi_df['Close'].dropna()
+                    
                 curr = close_series.iloc[-1]
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
                     return 0.0
+                    
                 kr_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                 kr_df = pd.DataFrame([kr_data])
+                
                 def color_val(val):
                     color = '#ef4444' if val < 0 else '#22c55e'
                     return f"color: {color}; font-weight: bold;"
+                    
                 formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        # 💡 파란색 경고문구 삭제 & 스타일 '1' (캔들) 주봉 차트로 원상복구!
-        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트)")
+        # 💡 트레이딩뷰 애플 튕김 방지 솔루션: KODEX 200(069500)으로 코스피 완벽 대체!
+        st.markdown("#### 📊 코스피 추종 ETF (KODEX 200) 주봉 실시간 차트")
+        st.caption("💡 트레이딩뷰 위젯이 한국거래소(KRX)의 코스피 지수를 차단하고 애플 차트로 강제 변환하는 버그를 우회하기 위해, 코스피 지수와 똑같이 움직이는 'KODEX 200 ETF(KRX:069500)' 주봉 캔들 차트를 띄웠습니다.")
         kr_tv_widget = """
         <div class="tradingview-widget-container" style="height:350px;width:100%;">
           <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
           new TradingView.widget({
-          "autosize": true, "symbol": "KRX:KOSPI", "interval": "W", "timezone": "Asia/Seoul",
+          "autosize": true, "symbol": "KRX:069500", "interval": "W", "timezone": "Asia/Seoul",
           "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
           "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
           "container_id": "tradingview_kospi"
@@ -192,8 +199,9 @@ def render_kr_map_tab():
                     with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
                         time.sleep(2) 
                         try:
-                            data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
-                            data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
+                            session = get_robust_session()[0]
+                            data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False, session=session)
+                            data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False, session=session)
                             
                             if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                             else: data_1d = data_1d_raw
