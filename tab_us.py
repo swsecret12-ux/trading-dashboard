@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
+from market_research import get_robust_session
 
 INDUSTRY_GROUPING = {
     "Semiconductors": "반도체 및 장비", "Computer Processing Hardware": "IT 하드웨어", "Computer Communications": "네트워크 통신 장비",
@@ -170,34 +171,39 @@ def render_us_map_tab():
         components.html(heatmap_widget, height=700)
         st.markdown("---")
         
-        # 💡 에러 박멸: 무적의 yfinance 다운로드 로직 적용
         st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
         try:
+            session = get_robust_session()[0]
             sp500_df = pd.DataFrame()
             for tkr in ["^NDX", "QQQ"]:
-                for _ in range(3): # 최대 3번 끈질기게 재시도
+                for _ in range(2):
                     try:
-                        temp_df = yf.download(tkr, period="4y", interval="1d", progress=False)
+                        temp_df = yf.download(tkr, period="4y", interval="1d", progress=False, session=session)
                         if not temp_df.empty:
-                            if isinstance(temp_df.columns, pd.MultiIndex):
-                                sp500_df = pd.DataFrame({'Close': temp_df['Close'].iloc[:, 0]})
-                            else:
-                                sp500_df = temp_df[['Close']]
+                            sp500_df = temp_df
                             break
                     except: time.sleep(1)
                 if not sp500_df.empty: break
 
             if not sp500_df.empty:
-                close_series = sp500_df['Close']
+                # 💡 핵심 방어 코드: 야후 파이낸스의 NaN 쓰레기값 완벽 청소
+                if isinstance(sp500_df.columns, pd.MultiIndex): 
+                    close_series = sp500_df['Close'].iloc[:, 0].dropna()
+                else: 
+                    close_series = sp500_df['Close'].dropna()
+                    
                 curr = close_series.iloc[-1]
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
                     return 0.0
+                    
                 ndx_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                 ndx_df = pd.DataFrame([ndx_data])
+                
                 def color_val(val):
                     color = '#ef4444' if val < 0 else '#22c55e'
                     return f"color: {color}; font-weight: bold;"
+                    
                 formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
@@ -232,8 +238,9 @@ def render_us_map_tab():
                     with st.spinner(f"{labels[i]} 실시간 데이터 스캔 중..."):
                         time.sleep(2)
                         try:
-                            data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False)
-                            data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False)
+                            session = get_robust_session()[0]
+                            data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False, session=session)
+                            data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False, session=session)
                             
                             if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                             else: data_1d = data_1d_raw
