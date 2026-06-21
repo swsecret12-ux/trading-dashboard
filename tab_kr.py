@@ -104,32 +104,34 @@ def render_kr_map_tab():
         st.markdown("#### 🗺️ 한국 코스피 주도주 히트맵 (실시간 자금 흐름)")
         st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
         
-        # 💡 'market': 'south_korea'를 명시적으로 다시 추가하여 미국 시장으로 튕기는 현상 완벽 방어!
+        # 💡 dataSource를 AllKOR로 수정하고, hasTopBar를 true로 활성화하여 안전장치 마련!
+        # 추가로 Streamlit 캐시 꼬임 방지를 위해 높이를 705로 변경
         heatmap_widget_kr = """
+        <!-- Cache Buster: 2026-06-21 V3 -->
         <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
           <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
           {
           "exchanges": [],
-          "dataSource": "KOSPI200",
+          "dataSource": "AllKOR",
           "grouping": "sector",
           "blockSize": "market_cap_basic",
           "blockColor": "change",
           "locale": "kr",
           "symbolUrl": "",
           "colorTheme": "light",
-          "hasTopBar": false,
+          "hasTopBar": true,
           "isDataSetEnabled": false,
           "isZoomEnabled": true,
           "hasSymbolTooltip": true,
           "width": "100%",
-          "height": 700,
+          "height": "100%",
           "market": "south_korea"
         }
           </script>
         </div>
         """
-        components.html(heatmap_widget_kr, height=700)
+        components.html(heatmap_widget_kr, height=705)
         st.markdown("---")
         
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
