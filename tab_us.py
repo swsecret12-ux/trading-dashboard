@@ -186,12 +186,9 @@ def render_us_map_tab():
                 if not sp500_df.empty: break
 
             if not sp500_df.empty:
-                # 💡 핵심 방어 코드: 야후 파이낸스의 NaN 쓰레기값 완벽 청소
-                if isinstance(sp500_df.columns, pd.MultiIndex): 
-                    close_series = sp500_df['Close'].iloc[:, 0].dropna()
-                else: 
-                    close_series = sp500_df['Close'].dropna()
-                    
+                if isinstance(sp500_df.columns, pd.MultiIndex): close_series = sp500_df['Close'].iloc[:, 0].dropna()
+                else: close_series = sp500_df['Close'].dropna()
+                
                 curr = close_series.iloc[-1]
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
@@ -209,14 +206,14 @@ def render_us_map_tab():
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (주봉 실시간 차트)")
+        st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (일봉 실시간 차트)")
         ndx_tv_widget = """
         <div class="tradingview-widget-container" style="height:350px;width:100%;">
           <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
           new TradingView.widget({
-          "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "W", "timezone": "Etc/UTC",
+          "autosize": true, "symbol": "OANDA:NAS100USD", "interval": "D", "timezone": "Etc/UTC",
           "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
           "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
           "container_id": "tradingview_ndx"
