@@ -162,7 +162,7 @@ def render_kr_map_tab():
                 df_chart = df_chart.dropna().reset_index()
                 df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
                 
-                # 💡 RSI 계산 (14일)
+                # RSI 계산 (14일)
                 delta = df_chart['Close'].diff()
                 gain = (delta.where(delta > 0, 0)).fillna(0)
                 loss = (-delta.where(delta < 0, 0)).fillna(0)
@@ -174,52 +174,83 @@ def render_kr_map_tab():
                 # 색상 조건
                 color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
                 
-                # 💡 X축을 Date:O (순서형)으로 바꿔서 주말/공휴일 빈칸 삭제
-                base = alt.Chart(df_chart).encode(
-                    x=alt.X('Date:O', 
-                            title=None, 
-                            axis=alt.Axis(
-                                labelAngle=0, 
-                                labelColor='#787b86',
-                                # 20개 간격으로만 표시하여 라벨 겹침 방지
-                                labelExpr="indexof(datum.label, datum.value) % 20 == 0 ? timeFormat(datum.value, '%Y-%m-%d') : ''",
-                                grid=True,
-                                gridColor='#e0e3eb',
-                                gridDash=[2, 2],
-                                domain=False,
-                                ticks=False
-                            ))
-                )
+                # 차트 상/하단 여백 최소화를 위한 최저/최고가 계산
+                min_price = df_chart['Low'].min() * 0.98
+                max_price = df_chart['High'].max() * 1.02
                 
-                # 캔들 꼬리 & 몸통
-                rule = base.mark_rule(size=2.0).encode(
-                    y=alt.Y('Low:Q', title=None, scale=alt.Scale(zero=False, padding=20), axis=alt.Axis(orient='right', format=',.0f', labelFontSize=12)),
+                # 💡 마우스 오버(Hover) 시 세로줄과 툴팁을 동기화하기 위한 선택 객체
+                hover = alt.selection_point(fields=['Date'], nearest=True, on='mouseover', empty=False, clear='mouseout')
+
+                # 💡 X축 (상단/중단 차트는 숨기고, 하단 차트에서만 표시)
+                x_axis_hidden = alt.X('Date:O', axis=alt.Axis(labels=False, ticks=False, domain=False, title=None))
+                x_axis_show = alt.X('Date:O', 
+                        title=None, 
+                        axis=alt.Axis(
+                            labelAngle=0, 
+                            labelColor='#787b86',
+                            labelExpr="indexof(datum.label, datum.value) % 20 == 0 ? timeFormat(datum.value, '%Y-%m-%d') : ''",
+                            grid=True,
+                            gridColor='#e0e3eb',
+                            gridDash=[2, 2],
+                            domain=False,
+                            ticks=False
+                        ))
+                
+                base = alt.Chart(df_chart)
+
+                # 💡 공통 툴팁 및 크로스헤어 레이어
+                selectors = base.mark_point(size=100).encode(
+                    x=x_axis_hidden, opacity=alt.value(0),
+                    tooltip=[
+                        alt.Tooltip('Date:T', format='%Y-%m-%d', title='날짜'),
+                        alt.Tooltip('Open:Q', format=',.0f', title='시가'),
+                        alt.Tooltip('High:Q', format=',.0f', title='고가'),
+                        alt.Tooltip('Low:Q', format=',.0f', title='저가'),
+                        alt.Tooltip('Close:Q', format=',.0f', title='종가'),
+                        alt.Tooltip('Volume:Q', format=',.0f', title='거래량'),
+                        alt.Tooltip('RSI:Q', format='.2f', title='RSI')
+                    ]
+                ).add_params(hover)
+
+                # 💡 마우스를 따라다니는 공통 세로선
+                rules = base.mark_rule(color='#787b86', strokeWidth=1, strokeDash=[5,5]).encode(
+                    x=x_axis_hidden
+                ).transform_filter(hover)
+                
+                # 1. 캔들 차트 (높이 750)
+                rule_candle = base.mark_rule(size=2.0).encode(
+                    x=x_axis_hidden,
+                    y=alt.Y('Low:Q', title=None, scale=alt.Scale(domain=[min_price, max_price]), axis=alt.Axis(orient='right', format=',.0f', labelFontSize=12)),
                     y2='High:Q',
                     color=color_condition
                 )
-                bar = base.mark_bar(size=5.0).encode(
+                bar_candle = base.mark_bar(size=5.0).encode(
+                    x=x_axis_hidden,
                     y='Open:Q',
                     y2='Close:Q',
                     color=color_condition
                 )
-                candlestick = (rule + bar).properties(height=650) # 차트 키움
+                candlestick = (rule_candle + bar_candle + selectors + rules).properties(height=750)
                 
-                # 💡 RSI 차트
-                rsi_chart = base.mark_line(color='#673ab7', strokeWidth=2).encode(
-                    y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', labelFontSize=12))
-                ).properties(height=150)
-                rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
-                
-                # 💡 거래량 차트
-                volume = base.mark_bar(size=5.0).encode(
-                    x=alt.X('Date:O', axis=alt.Axis(labels=False, ticks=False, domain=False)),
+                # 2. 거래량 차트 (높이 150)
+                volume_bar = base.mark_bar(size=5.0).encode(
+                    x=x_axis_hidden,
                     y=alt.Y('Volume:Q', title=None, axis=alt.Axis(orient='right', format='.2s', labelFontSize=12)),
                     color=color_condition
-                ).properties(height=150)
+                )
+                volume_chart = (volume_bar + selectors + rules).properties(height=150)
+
+                # 3. RSI 차트 (하단에 X축 날짜 표시)
+                rsi_line = base.mark_line(color='#673ab7', strokeWidth=2).encode(
+                    x=x_axis_show,
+                    y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', labelFontSize=12))
+                )
+                rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
+                rsi_chart = (rsi_line + rsi_baseline + selectors.encode(x=x_axis_show) + rules.encode(x=x_axis_show)).properties(height=150)
                 
-                # 차트 합치기 (테두리 적용)
-                combined = alt.vconcat(candlestick, rsi_chart + rsi_baseline, volume, spacing=10).configure_view(
-                    stroke='lightgray', strokeWidth=1 # 💡 테두리 추가
+                # 차트 세로 결합 (테두리 및 스페이싱 제거)
+                combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(
+                    stroke='lightgray', strokeWidth=1 
                 ).configure_axis(
                     labelFontSize=14
                 )
