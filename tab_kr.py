@@ -133,11 +133,11 @@ def render_kr_map_tab():
                 formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
             else: 
-                st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+                st.warning("야 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: 
             st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 자체 캔들 차트)")
+        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 캔들 + 거래량)")
         try:
             kospi_daily = pd.DataFrame()
             for _ in range(3):
@@ -147,48 +147,46 @@ def render_kr_map_tab():
                 except: time.sleep(1)
 
             if not kospi_daily.empty:
+                # 💡 거래량(Volume) 데이터도 함께 추출하도록 보강
                 if isinstance(kospi_daily.columns, pd.MultiIndex):
                     df_chart = pd.DataFrame({
                         'Open': kospi_daily['Open'].iloc[:, 0] if isinstance(kospi_daily['Open'], pd.DataFrame) else kospi_daily['Open'],
                         'High': kospi_daily['High'].iloc[:, 0] if isinstance(kospi_daily['High'], pd.DataFrame) else kospi_daily['High'],
                         'Low':  kospi_daily['Low'].iloc[:, 0]  if isinstance(kospi_daily['Low'], pd.DataFrame)  else kospi_daily['Low'],
-                        'Close':kospi_daily['Close'].iloc[:, 0] if isinstance(kospi_daily['Close'], pd.DataFrame) else kospi_daily['Close']
+                        'Close':kospi_daily['Close'].iloc[:, 0] if isinstance(kospi_daily['Close'], pd.DataFrame) else kospi_daily['Close'],
+                        'Volume':kospi_daily['Volume'].iloc[:, 0] if isinstance(kospi_daily['Volume'], pd.DataFrame) else kospi_daily['Volume']
                     })
                 else:
-                    df_chart = kospi_daily[['Open', 'High', 'Low', 'Close']].copy()
+                    df_chart = kospi_daily[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
 
-                df_chart = df_chart.dropna().reset_index()
-                df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close']
+                df_chart = df_chart.dropna(subset=['Open', 'High', 'Low', 'Close']).reset_index()
+                df_chart['Volume'] = df_chart['Volume'].fillna(0) # 거래량 결측치 0으로 방어
+                df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
                 
-                # 💡 차트의 불필요한 상하 여백을 없애기 위해 1년 최저가와 최고가 추출
                 min_price = df_chart['Low'].min() * 0.98
                 max_price = df_chart['High'].max() * 1.02
                 
-                # 캔들 색상 조건 (트레이딩뷰 오리지널 컬러 적용)
                 color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
                 
-                base = alt.Chart(df_chart).encode(
-                    x=alt.X('Date:T', 
-                            title=None, 
-                            axis=alt.Axis(
-                                labelAngle=0, 
-                                labelColor='#787b86',
-                                tickCount=12,
-                                grid=True,
-                                gridColor='#e0e3eb',
-                                gridDash=[2, 2],
-                                domain=False,
-                                ticks=False,
-                                labelPadding=10,
-                                labelExpr="timeFormat(datum.value, '%m') == '01' ? timeFormat(datum.value, '%Y') : timeFormat(datum.value, '%-m월')"
-                            ))
-                )
+                # 상단 캔들 차트용 X축 (글자 생략하여 하단 차트와 자연스럽게 연결)
+                x_axis_top = alt.X('Date:T', 
+                        title=None, 
+                        axis=alt.Axis(
+                            labels=False,
+                            ticks=False,
+                            domain=False,
+                            grid=True,
+                            gridColor='#e0e3eb',
+                            gridDash=[2, 2]
+                        ))
                 
-                # 💡 캔들 꼬리(Wick) 굵기를 1.5로 더 뚜렷하게 설정
-                rule = base.mark_rule(size=1.5).encode(
+                base_top = alt.Chart(df_chart).encode(x=x_axis_top)
+                
+                # 💡 캔들 꼬리(Wick) 굵기를 2.0으로 대폭 상향
+                rule = base_top.mark_rule(size=2.0).encode(
                     y=alt.Y('Low:Q', 
                             title=None,
-                            scale=alt.Scale(domain=[min_price, max_price]), # 💡 계산된 최고/최저가로 꽉 차게 줌인!
+                            scale=alt.Scale(domain=[min_price, max_price]),
                             axis=alt.Axis(
                                 orient='right', 
                                 labelColor='#787b86',
@@ -196,31 +194,63 @@ def render_kr_map_tab():
                                 gridColor='#e0e3eb',
                                 domain=False,
                                 ticks=False,
-                                format=',.0f' # 💡 이상한 1e+4 외계어 표기를 깔끔한 9,000 형태로 강제 고정!
+                                format=',.0f' 
                             )),
                     y2='High:Q',
                     color=color_condition
                 )
                 
-                # 💡 캔들 몸통(Body) 두께를 4.0으로 굵게 설정하여 꽉 찬 느낌 부여
-                bar = base.mark_bar(size=4.0).encode(
+                # 💡 캔들 몸통(Body) 두께를 6.0으로 매우 굵게 상향
+                bar = base_top.mark_bar(size=6.0).encode(
                     y='Open:Q',
                     y2='Close:Q',
                     color=color_condition
                 )
                 
-                # 세로 길이 600 설정 (차트를 꽉 채워서 확대)
-                candlestick_chart = (rule + bar).properties(height=600)
+                candlestick_chart = (rule + bar).properties(height=500)
                 
-                # 💡 폰트 사이즈를 기존 11에서 14로 대폭 상향하여 글씨를 큼직하게
-                candlestick_chart = candlestick_chart.configure_view(
+                # 💡 하단 거래량 차트용 X축 (여기에 날짜 표시)
+                x_axis_bottom = alt.X('Date:T', 
+                        title=None, 
+                        axis=alt.Axis(
+                            labelAngle=0, 
+                            labelColor='#787b86',
+                            tickCount=12,
+                            grid=True,
+                            gridColor='#e0e3eb',
+                            gridDash=[2, 2],
+                            domain=False,
+                            ticks=False,
+                            labelPadding=10,
+                            labelExpr="timeFormat(datum.value, '%m') == '01' ? timeFormat(datum.value, '%Y') : timeFormat(datum.value, '%-m월')"
+                        ))
+                
+                # 💡 거래량(Volume) 바 차트 생성
+                volume_chart = alt.Chart(df_chart).mark_bar(size=6.0).encode(
+                    x=x_axis_bottom,
+                    y=alt.Y('Volume:Q', 
+                            title=None,
+                            axis=alt.Axis(
+                                orient='right', 
+                                labelColor='#787b86',
+                                grid=True,
+                                gridColor='#e0e3eb',
+                                domain=False,
+                                ticks=False,
+                                format='.2s' # k, M, G 등으로 짧고 깔끔하게 표기
+                            )),
+                    color=color_condition
+                ).properties(height=150)
+                
+                # 상/하단 차트 완벽 결합
+                combined_chart = alt.vconcat(candlestick_chart, volume_chart, spacing=0).resolve_scale(x='shared').configure_view(
                     strokeWidth=0
                 ).configure_axis(
                     labelFontSize=14,
                     titleFontSize=14
                 )
 
-                st.altair_chart(candlestick_chart, use_container_width=True)
+                st.altair_chart(combined_chart, use_container_width=True)
                 
             else:
                 st.warning("야후 파이낸스 통신망 지연으로 차트를 불러오지 못했습니다. (새로고침을 눌러주세요)")
