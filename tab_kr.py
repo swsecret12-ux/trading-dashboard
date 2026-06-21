@@ -4,7 +4,7 @@ import requests
 import time
 from datetime import datetime, timezone
 import yfinance as yf
-import altair as alt # 💡 영우님의 힌트! 스트림릿 자체 엔진(Altair)으로 캔들 차트를 그리기 위한 핵심 부품!
+import altair as alt
 import streamlit.components.v1 as components
 from market_research import get_robust_session
 
@@ -27,7 +27,6 @@ def format_krw_direct(krw_val):
         return krw_val
 
 def render_kr_map_tab():
-    # 💡 에러 원천 차단: 세션 스테이트가 초기화되지 않았을 경우 무조건 여기서 생성 보장
     if "kospi100_state_df" not in st.session_state:
         st.session_state.kospi100_state_df = pd.DataFrame()
 
@@ -144,10 +143,9 @@ def render_kr_map_tab():
                 except: time.sleep(1)
 
             if not kospi_df.empty:
-                if isinstance(kospi_df.columns, pd.MultiIndex): close_series = kospi_df['Close'].iloc[:, 0]
-                else: close_series = kospi_df['Close']
+                if isinstance(kospi_df.columns, pd.MultiIndex): close_series = kospi_df['Close'].iloc[:, 0].dropna()
+                else: close_series = kospi_df['Close'].dropna()
                 
-                close_series = close_series.dropna()
                 curr = close_series.iloc[-1]
                 def ret(days):
                     if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
@@ -162,55 +160,48 @@ def render_kr_map_tab():
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 자체 캔들 차트)")
+        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 자체 캔들 차트)")
         try:
             session = get_robust_session()[0]
-            kospi_weekly = pd.DataFrame()
+            kospi_daily = pd.DataFrame()
             for _ in range(2):
                 try:
-                    kospi_weekly = yf.download("^KS11", period="1y", interval="1wk", progress=False, session=session)
-                    if not kospi_weekly.empty: break
+                    kospi_daily = yf.download("^KS11", period="1y", interval="1d", progress=False, session=session)
+                    if not kospi_daily.empty: break
                 except: time.sleep(1)
 
-            if not kospi_weekly.empty:
-                # 💡 핵심 방어 로직: 멀티 인덱스 평탄화
-                if isinstance(kospi_weekly.columns, pd.MultiIndex): 
-                    kospi_weekly = pd.DataFrame({
-                        'Open': kospi_weekly['Open'].iloc[:, 0],
-                        'High': kospi_weekly['High'].iloc[:, 0],
-                        'Low': kospi_weekly['Low'].iloc[:, 0],
-                        'Close': kospi_weekly['Close'].iloc[:, 0]
+            if not kospi_daily.empty:
+                if isinstance(kospi_daily.columns, pd.MultiIndex): 
+                    kospi_daily = pd.DataFrame({
+                        'Open': kospi_daily['Open'].iloc[:, 0],
+                        'High': kospi_daily['High'].iloc[:, 0],
+                        'Low': kospi_daily['Low'].iloc[:, 0],
+                        'Close': kospi_daily['Close'].iloc[:, 0]
                     })
                 
-                # 주말 및 결측치 싹 청소
-                kospi_weekly = kospi_weekly.dropna()
+                kospi_daily = kospi_daily.dropna()
                 
-                # 💡 영우님 힌트 적용 완료! 선차트를 그렸던 스트림릿 내장 엔진(Altair)에 캔들을 입힙니다.
-                df_chart = kospi_weekly.reset_index()
+                df_chart = kospi_daily.reset_index()
                 df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close']
                 
-                # 양봉(초록) / 음봉(빨강) 조건 설정
                 color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#22c55e"), alt.value("#ef4444"))
                 
                 base = alt.Chart(df_chart).encode(
-                    x=alt.X('Date:T', title=None, axis=alt.Axis(format='%Y-%m', labelAngle=-45))
+                    x=alt.X('Date:T', title=None, axis=alt.Axis(labelAngle=-45))
                 )
                 
-                # 꼬리 (High to Low)
                 rule = base.mark_rule().encode(
                     y=alt.Y('Low:Q', title='지수 (Point)', scale=alt.Scale(zero=False)),
                     y2='High:Q',
                     color=color_condition
                 )
                 
-                # 몸통 (Open to Close)
-                bar = base.mark_bar(size=6).encode(
+                bar = base.mark_bar(size=2).encode(
                     y='Open:Q',
                     y2='Close:Q',
                     color=color_condition
                 )
                 
-                # 두 차트 결합하여 렌더링
                 candlestick_chart = (rule + bar).properties(height=350)
                 st.altair_chart(candlestick_chart, use_container_width=True)
                 
