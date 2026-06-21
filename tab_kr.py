@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
-from market_research import get_robust_session, get_yahoo_chart
 
 def format_krw_direct(krw_val):
     try:
@@ -26,12 +25,11 @@ def format_krw_direct(krw_val):
         return krw_val
 
 def render_kr_map_tab():
-    # 💡 에러 원천 차단: 세션 스테이트가 초기화되지 않았을 경우 무조건 여기서 생성 보장
     if "kospi100_state_df" not in st.session_state:
         st.session_state.kospi100_state_df = pd.DataFrame()
 
     st.markdown("### 🇰🇷 한국 코스피 상위 Top 100 기업 (실시간 데이터 기준)")
-    st.info("💡 **알림:** 실시간 트레이딩뷰 서버에서 대한민국 코스피 시가총액 최상위 100개 명단(우선주 완전 필터링)을 즉시 스캔합니다.")
+    st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 대한민국 코스피(KOSPI) 시가총액 최상위 100개 명단(우선주 완전 필터링)을 즉시 스캔하여 묶어냅니다.")
 
     if st.button("🔄 실시간 한국 코스피 Top 100 스캔 시작", type="primary", key="btn_kr_scan"):
         with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
@@ -68,7 +66,6 @@ def render_kr_map_tab():
                     
                     base_ticker = sym.split(':')[-1]
                     
-                    # 💡 우선주(Preferred Stocks) 및 잡주 완벽 필터링
                     if len(base_ticker) == 6 and not base_ticker.endswith('0'): continue
                     if "우" in name_raw and ("우B" in name_raw or "우(" in name_raw or name_raw.endswith("우")): continue
                     
@@ -103,7 +100,7 @@ def render_kr_map_tab():
 
     if not st.session_state.kospi100_state_df.empty:
         st.markdown("#### 🗺️ 한국 코스피 주도주 히트맵 (실시간 자금 흐름)")
-        st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다.")
+        st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
         heatmap_widget_kr = """
         <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
           <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
@@ -116,6 +113,7 @@ def render_kr_map_tab():
           "blockSize": "market_cap_basic",
           "blockColor": "change",
           "locale": "kr",
+          "symbolUrl": "",
           "colorTheme": "light",
           "hasTopBar": false,
           "isDataSetEnabled": false,
@@ -130,25 +128,20 @@ def render_kr_map_tab():
         components.html(heatmap_widget_kr, height=700)
         st.markdown("---")
         
+        # 💡 에러 박멸: 무적의 yfinance 다운로드 로직 적용
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
-        kospi_df = pd.DataFrame()
         try:
-            session, crumb = get_robust_session()
-            # 💡 야후 내부망 API를 강제로 열어 빈 데이터 반환 에러를 차단합니다!
-            kospi_df = get_yahoo_chart("^KS11", "4y", "1d", session, crumb)
-            
-            # yfinance 모듈 다운로드 2차 대비책
-            if kospi_df.empty:
-                for _ in range(2):
-                    try:
-                        temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
-                        if not temp_df.empty:
-                            if isinstance(temp_df.columns, pd.MultiIndex):
-                                kospi_df = pd.DataFrame({'Close': temp_df['Close'].iloc[:, 0]})
-                            else:
-                                kospi_df = temp_df[['Close']]
-                            break
-                    except: time.sleep(1)
+            kospi_df = pd.DataFrame()
+            for _ in range(3): # 최대 3번 끈질기게 재시도
+                try:
+                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
+                    if not temp_df.empty:
+                        if isinstance(temp_df.columns, pd.MultiIndex):
+                            kospi_df = pd.DataFrame({'Close': temp_df['Close'].iloc[:, 0]})
+                        else:
+                            kospi_df = temp_df[['Close']]
+                        break
+                except: time.sleep(1)
 
             if not kospi_df.empty:
                 close_series = kospi_df['Close']
@@ -163,21 +156,26 @@ def render_kr_map_tab():
                     return f"color: {color}; font-weight: bold;"
                 formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
-            else: 
-                st.warning("야후 파이낸스 통신망이 일시적으로 지연되고 있습니다. 새로고침을 눌러주세요.")
-        except Exception as e: 
-            st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+            else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+        except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
-        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (오리지널 지수 자체 구현)")
-        st.info("💡 **알림:** 트레이딩뷰 위젯이 한국거래소(KRX) 라이선스 문제로 코스피 지수를 차단하고 애플(AAPL) 차트로 강제 전환하는 고질적 버그를 완벽하게 우회했습니다. 야후 파이낸스의 오리지널 데이터를 직접 가져와 스트림릿 자체 차트로 그려낸 '진짜 코스피(KOSPI) 종합 지수' 차트입니다.")
-        
-        if not kospi_df.empty:
-            # 트레이딩뷰를 버리고 최근 1년치 코스피 지수를 스트림릿 네이티브 차트로 완벽히 그려냅니다.
-            chart_data = kospi_df.tail(250).copy()
-            st.line_chart(chart_data['Close'], height=350, use_container_width=True)
-        else:
-            st.warning("차트 데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.")
-            
+        # 💡 파란색 경고문구 삭제 & 스타일 '1' (캔들) 주봉 차트로 원상복구!
+        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (주봉 실시간 차트)")
+        kr_tv_widget = """
+        <div class="tradingview-widget-container" style="height:350px;width:100%;">
+          <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+          <script type="text/javascript">
+          new TradingView.widget({
+          "autosize": true, "symbol": "KRX:KOSPI", "interval": "W", "timezone": "Asia/Seoul",
+          "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+          "hide_top_toolbar": true, "hide_legend": true, "save_image": false,
+          "container_id": "tradingview_kospi"
+          });
+          </script>
+        </div>
+        """
+        components.html(kr_tv_widget, height=350)
         st.markdown("---")
 
         yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
@@ -194,9 +192,8 @@ def render_kr_map_tab():
                     with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
                         time.sleep(2) 
                         try:
-                            session, crumb = get_robust_session()
-                            data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False, session=session)
-                            data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False, session=session)
+                            data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
+                            data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
                             
                             if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
                             else: data_1d = data_1d_raw
