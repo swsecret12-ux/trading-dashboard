@@ -6,36 +6,55 @@ from datetime import datetime, timezone
 import yfinance as yf
 import altair as alt
 
-# 💡 트레이딩뷰의 어색한 직역을 매끄러운 한국 주식 섹터명으로 100% 교정
+# 💡 트레이딩뷰의 어색한 직역을 매끄럽고 직관적인 한국 주식 섹터명으로 대대적 교정
 INDUSTRY_GROUPING_KR = {
-    "Electronic Technology": "IT & 반도체", "전자 기술": "IT & 반도체", "Semiconductors": "반도체 및 장비", "반도체": "반도체 및 장비",
-    "Electronic Components": "IT 부품/장비", "전자 부품": "IT 부품/장비", "전기 제품": "IT 부품/장비",
+    "Electronic Technology": "IT & 전자", "전자 기술": "IT & 전자", 
+    "Semiconductors": "반도체", "반도체": "반도체",
+    "Electronic Components": "IT 부품", "전자 부품": "IT 부품", "전기 제품": "IT 부품",
     "Telecommunications Equipment": "통신 장비", "통신 장비": "통신 장비",
-    "Internet Software/Services": "소프트웨어 & 인터넷", "인터넷 소프트웨어/서비스": "소프트웨어 & 인터넷", "Packaged Software": "소프트웨어 & 인터넷", "패키지 소프트웨어": "소프트웨어 & 인터넷",
-    "Information Technology Services": "IT 서비스 & 컨설팅", "정보 기술 서비스": "IT 서비스 & 컨설팅",
-    "Computer Communications": "네트워크 통신", "컴퓨터 통신": "네트워크 통신",
-    "Motor Vehicles": "자동차 & 모빌리티", "자동차": "자동차 & 모빌리티", "모터 차량": "자동차 & 모빌리티",
+    "Internet Software/Services": "소프트웨어 & 인터넷", "인터넷 소프트웨어/서비스": "소프트웨어 & 인터넷", 
+    "Packaged Software": "소프트웨어", "패키지 소프트웨어": "소프트웨어",
+    "Information Technology Services": "IT 서비스", "정보 기술 서비스": "IT 서비스",
+    "Computer Communications": "네트워크 & 통신", "컴퓨터 통신": "네트워크 & 통신",
+    "Motor Vehicles": "자동차", "자동차": "자동차", "모터 차량": "자동차",
     "Auto Parts: OEM": "자동차 부품", "자동차 부품: OEM": "자동차 부품",
-    "Chemicals: Major Diversified": "화학 & 소재", "화학: 주요 다각화": "화학 & 소재", "화학": "화학 & 소재", "Chemicals: Specialty": "화학 & 소재", "특수 화학": "화학 & 소재",
-    "Pharmaceuticals: Major": "제약 & 바이오", "제약: 주요": "제약 & 바이오", "Biotechnology": "제약 & 바이오", "생명공학": "제약 & 바이오",
-    "Medical Specialties": "의료기기 & 헬스케어", "의료 전문": "의료기기 & 헬스케어",
-    "Major Banks": "금융 (은행/지주)", "주요 은행": "금융 (은행/지주)", "Regional Banks": "금융 (지방은행)", "지역 은행": "금융 (지방은행)",
-    "Investment Banks/Brokers": "금융 (증권)", "투자 은행/브로커": "금융 (증권)", "투자 은행/중개인": "금융 (증권)",
-    "Life/Health Insurance": "금융 (보험)", "생명/건강 보험": "금융 (보험)", "Property/Casualty Insurance": "금융 (손해보험)", "재산/상해 보험": "금융 (손해보험)",
-    "Financial Conglomerates": "금융 (지주사)", "금융 대기업": "금융 (지주사)", "Finance/Rental/Leasing": "금융 (여신/렌탈)", "금융/임대/리스": "금융 (여신/렌탈)",
-    "Steel": "철강 & 금속", "철강": "철강 & 금속", "Other Metals/Minerals": "비철금속 & 광물", "기타 금속/광물": "비철금속 & 광물",
+    "Chemicals: Major Diversified": "화학", "화학: 주요 다각화": "화학", "화학": "화학", 
+    "Chemicals: Specialty": "화학", "특수 화학": "화학",
+    "Pharmaceuticals: Major": "제약 & 바이오", "제약: 주요": "제약 & 바이오", 
+    "Biotechnology": "제약 & 바이오", "생명공학": "제약 & 바이오",
+    "Medical Specialties": "의료 기기", "의료 전문": "의료 기기",
+    "Major Banks": "은행", "주요 은행": "은행", "Regional Banks": "은행", "지역 은행": "은행",
+    "Investment Banks/Brokers": "증권", "투자 은행/브로커": "증권", "투자 은행/중개인": "증권",
+    "Life/Health Insurance": "보험", "생명/건강 보험": "보험", 
+    "Property/Casualty Insurance": "보험", "재산/상해 보험": "보험",
+    "Financial Conglomerates": "기타 금융", "금융 대기업": "기타 금융", 
+    "Finance/Rental/Leasing": "기타 금융", "금융/임대/리스": "기타 금융",
+    "Steel": "철강", "철강": "철강", 
+    "Other Metals/Minerals": "비철금속 & 광물", "기타 금속/광물": "비철금속 & 광물",
     "Marine Shipping": "조선 & 해운", "해상 운송": "조선 & 해운", "해양 해운": "조선 & 해운",
     "Aerospace & Defense": "우주항공 & 국방", "항공 우주 & 국방": "우주항공 & 국방",
-    "Electric Utilities": "전력 & 에너지", "전기 유틸리티": "전력 & 에너지", "Oil & Gas Production": "정유 & 가스", "석유 & 가스 생산": "정유 & 가스", "Integrated Oil": "정유 & 가스", "통합 석유": "정유 & 가스",
-    "Engineering & Construction": "건설 & 인프라", "엔지니어링 & 건설": "건설 & 인프라", "Homebuilding": "건설 & 인프라", "주택 건설": "건설 & 인프라",
-    "Food: Major Diversified": "식음료", "음식: 주요 다각화": "식음료", "식품: 주요 다각화": "식음료", "Food: Specialty/Candy": "식음료", "식품: 특수/캔디": "식음료", "Beverages: Non-Alcoholic": "식음료", "음료: 비알코올": "식음료",
-    "Apparel/Footwear": "의류 & 소비재", "의류/신발": "의류 & 소비재", "Apparel/Footwear Retail": "의류 & 소비재 유통", "의류/신발 소매": "의류 & 소비재 유통",
-    "Specialty Stores": "전문 유통", "전문 상점": "전문 유통", "Discount Stores": "할인 마트", "할인 상점": "할인 마트", "Internet Retail": "이커머스", "인터넷 소매": "이커머스",
-    "Broadcasting": "미디어 & 방송", "방송": "미디어 & 방송", "Movies/Entertainment": "미디어 & 엔터테인먼트", "영화/엔터테인먼트": "미디어 & 엔터테인먼트", "Advertising/Marketing Services": "광고 & 마케팅", "광고/마케팅 서비스": "광고 & 마케팅",
+    "Electric Utilities": "전력 & 에너지", "전기 유틸리티": "전력 & 에너지", 
+    "Oil & Gas Production": "정유 & 가스", "석유 & 가스 생산": "정유 & 가스", 
+    "Integrated Oil": "정유 & 가스", "통합 석유": "정유 & 가스",
+    "Engineering & Construction": "건설 & 인프라", "엔지니어링 & 건설": "건설 & 인프라", 
+    "Homebuilding": "건설 & 인프라", "주택 건설": "건설 & 인프라",
+    "Food: Major Diversified": "식음료", "음식: 주요 다각화": "식음료", "식품: 주요 다각화": "식음료", 
+    "Food: Specialty/Candy": "식음료", "식품: 특수/캔디": "식음료", 
+    "Beverages: Non-Alcoholic": "식음료", "음료: 비알코올": "식음료",
+    "Apparel/Footwear": "의류 & 소비재", "의류/신발": "의류 & 소비재", 
+    "Apparel/Footwear Retail": "의류 & 소비재", "의류/신발 소매": "의류 & 소비재",
+    "Specialty Stores": "유통 & 이커머스", "전문 상점": "유통 & 이커머스", 
+    "Discount Stores": "유통 & 이커머스", "할인 상점": "유통 & 이커머스", 
+    "Internet Retail": "유통 & 이커머스", "인터넷 소매": "유통 & 이커머스",
+    "Broadcasting": "미디어 & 엔터", "방송": "미디어 & 엔터", 
+    "Movies/Entertainment": "미디어 & 엔터", "영화/엔터테인먼트": "미디어 & 엔터", 
+    "Advertising/Marketing Services": "광고 & 마케팅", "광고/마케팅 서비스": "광고 & 마케팅",
     "Airlines": "항공", "항공사": "항공", "Railroads": "철도", "철도": "철도",
-    "Trucks/Construction/Farm Machinery": "중장비 & 기계", "트럭/건설/농기계": "중장비 & 기계", "Industrial Machinery": "산업 기계", "산업 기계": "산업 기계",
+    "Trucks/Construction/Farm Machinery": "중장비 & 기계", "트럭/건설/농기계": "중장비 & 기계", 
+    "Industrial Machinery": "산업 기계", "산업 기계": "산업 기계",
     "Household/Personal Care": "생활용품", "가정/개인 관리": "생활용품",
-    "Other Transportation": "물류 & 운송", "기타 운송": "물류 & 운송", "Air Freight/Couriers": "항공 물류 & 택배", "항공 화물/택배": "항공 물류 & 택배"
+    "Other Transportation": "물류 & 운송", "기타 운송": "물류 & 운송", 
+    "Air Freight/Couriers": "물류 & 운송", "항공 화물/택배": "물류 & 운송"
 }
 
 def format_krw_direct(krw_val):
@@ -76,7 +95,6 @@ def render_kr_map_tab():
         with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다..."):
             try:
                 url = "https://scanner.tradingview.com/korea/scan"
-                # 💡 현재주가(close) 및 1일/1주/1달 변동성(change) 데이터를 함께 수집하도록 업그레이드!
                 payload = {
                     "filter": [
                         {"left": "market_cap_basic", "operation": "nempty"}, 
@@ -263,7 +281,7 @@ def render_kr_map_tab():
 
         st.markdown("---")
 
-        # 3. 4단계 스캔 (코드 압축 해제, 가독성 향상)
+        # 3. 4단계 스캔
         yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
         ui_symbols = st.session_state.kospi100_state_df['Symbol'].tolist()
         chunks_yf = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
@@ -340,7 +358,7 @@ def render_kr_map_tab():
                         except Exception as e: 
                             st.error(f"오류: {e}")
 
-        # 4. 데이터프레임 렌더링 (💡 너비 최적화 및 신규 컬럼 반영)
+        # 4. 데이터프레임 렌더링 (💡 업데이트 날짜 삭제 및 너비 최적화)
         display_cols_kr = ['순위', 'Symbol', 'Name', '현재주가', '1일 변동', '7일 변동', '30일 변동', '산업군(Industry)', '시총', '분야 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
         
         st.dataframe(
@@ -348,6 +366,10 @@ def render_kr_map_tab():
             column_config={
                 "순위": st.column_config.NumberColumn(width="small"),
                 "Symbol": st.column_config.TextColumn("심볼", width="small"),
+                "현재주가": st.column_config.TextColumn("현재주가", width="small"),
+                "1일 변동": st.column_config.TextColumn("1일", width="small"),
+                "7일 변동": st.column_config.TextColumn("7일", width="small"),
+                "30일 변동": st.column_config.TextColumn("30일", width="small"),
                 "시총": st.column_config.TextColumn("시총", width="small"),
                 "분야 순위": st.column_config.TextColumn("분야순위", width="small"),
                 "크로스 당시 주가": st.column_config.TextColumn("크로스가격", width="small")
