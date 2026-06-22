@@ -5,6 +5,8 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 import time
 import random
+import re
+import numpy as np
 import yfinance as yf
 
 def get_robust_session():
@@ -24,10 +26,11 @@ def get_robust_session():
     
     crumb = ""
     try:
-        session.get("https://finance.yahoo.com/quote/AAPL", timeout=5)
-        time.sleep(0.5)
-        res = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=5)
-        if res.status_code == 200: crumb = res.text.strip()
+        # 💡 [핵심 패치 1] 구형 API가 아닌 메인 웹페이지 HTML 소스에서 직접 Crumb(토큰) 해킹 추출
+        res = session.get("https://finance.yahoo.com/quote/AAPL", timeout=5)
+        match = re.search(r'"crumb":"([^"]+)"', res.text)
+        if match:
+            crumb = match.group(1).encode('utf-8').decode('unicode_escape')
     except: pass
         
     return session, crumb
@@ -69,60 +72,83 @@ def fetch_investing_news(ticker):
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_yahoo_earnings_direct(ticker, session, crumb=""):
-    """💡 [핵심 패치] 불안정한 yfinance를 버리고, 야후 내부 v10 API를 다이렉트로 해킹하여 과거/미래 실적을 100% 강제 추출합니다."""
-    url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
-    if crumb: url += f"&crumb={crumb}"
+    """💡 [핵심 패치 2] 3중 방어막 무적 실적 크롤러: API -> HTML 표 강제 추출 -> yfinance 순차 적용"""
     
+    # 1단계: Yahoo v10 API 직접 통신
     try:
+        url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
+        if crumb: url += f"&crumb={crumb}"
         res = session.get(url, timeout=5)
-        if res.status_code != 200: return pd.DataFrame()
-        data = res.json()
-        
-        result_list = data.get('quoteSummary', {}).get('result', [])
-        if not result_list: return pd.DataFrame()
-        
-        result = result_list[0]
-        records = []
-        
-        # 1. 과거 4분기 실적 추출
-        history_list = result.get('earningsHistory', {}).get('history', [])
-        for h in history_list:
-            date_str = h.get('quarter', {}).get('fmt', '')
-            if not date_str: continue
+        if res.status_code == 200:
+            data = res.json()
+            result_list = data.get('quoteSummary', {}).get('result', [])
+            if result_list:
+                result = result_list[0]
+                records = []
+                
+                for h in result.get('earningsHistory', {}).get('history', []):
+                    date_str = h.get('quarter', {}).get('fmt', '')
+                    if not date_str: continue
+                    records.append({
+                        'earnings_date': pd.to_datetime(date_str).tz_localize('UTC'),
+                        'epsestimate': h.get('epsEstimate', {}).get('raw', pd.NA),
+                        'epsactual': h.get('epsActual', {}).get('raw', pd.NA),
+                        'surprisepercent': h.get('surprisePercent', {}).get('raw', pd.NA)
+                    })
+                    
+                events = result.get('calendarEvents', {}).get('earnings', {})
+                for nd in events.get('earningsDate', []):
+                    ts = nd.get('raw')
+                    if ts:
+                        records.append({
+                            'earnings_date': pd.to_datetime(ts, unit='s').tz_localize('UTC'),
+                            'epsestimate': events.get('earningsAverage', {}).get('raw', pd.NA),
+                            'epsactual': pd.NA,
+                            'surprisepercent': pd.NA
+                        })
+                
+                if records:
+                    return pd.DataFrame(records).drop_duplicates(subset=['earnings_date']).set_index('earnings_date').sort_index(ascending=False)
+    except: pass
+
+    # 2단계: API가 막혔다면 Yahoo 어닝 캘린더 웹페이지(HTML) 표를 통째로 뜯어오기
+    try:
+        url = f"https://finance.yahoo.com/calendar/earnings?symbol={ticker}"
+        res = session.get(url, timeout=5)
+        dfs = pd.read_html(res.text)
+        if dfs:
+            df = dfs[0]
+            df = df.rename(columns={'Earnings Date': 'earnings_date', 'EPS Estimate': 'epsestimate', 'Reported EPS': 'epsactual', 'Surprise(%)': 'surprisepercent'})
             
-            eps_act = h.get('epsActual', {}).get('raw', pd.NA)
-            eps_est = h.get('epsEstimate', {}).get('raw', pd.NA)
-            surp = h.get('surprisePercent', {}).get('raw', pd.NA)
+            def parse_date(d_str):
+                try: return pd.to_datetime(str(d_str).rsplit(' ', 1)[0]).tz_localize('UTC')
+                except: return pd.NaT
             
-            records.append({
-                'earnings_date': pd.to_datetime(date_str).tz_localize('UTC'),
-                'epsestimate': eps_est,
-                'epsactual': eps_act,
-                'surprisepercent': surp
-            })
+            df['earnings_date'] = df['earnings_date'].apply(parse_date)
+            df = df.dropna(subset=['earnings_date']).set_index('earnings_date').sort_index(ascending=False)
             
-        # 2. 다가오는 미래 1분기 예상 실적 추출
-        events = result.get('calendarEvents', {}).get('earnings', {})
-        next_dates = events.get('earningsDate', [])
-        eps_avg = events.get('earningsAverage', {}).get('raw', pd.NA)
-        
-        for nd in next_dates:
-            ts = nd.get('raw')
-            if ts:
-                records.append({
-                    'earnings_date': pd.to_datetime(ts, unit='s').tz_localize('UTC'),
-                    'epsestimate': eps_avg,
-                    'epsactual': pd.NA,
-                    'surprisepercent': pd.NA
-                })
-        
-        if not records: return pd.DataFrame()
-        
-        df = pd.DataFrame(records)
-        df = df.drop_duplicates(subset=['earnings_date']).set_index('earnings_date').sort_index(ascending=False)
-        return df
-    except Exception as e:
-        return pd.DataFrame()
+            for col in ['epsestimate', 'epsactual', 'surprisepercent']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col].astype(str).str.replace('%', '').replace('-', np.nan), errors='coerce')
+            
+            if 'surprisepercent' in df.columns:
+                df['surprisepercent'] = df['surprisepercent'] / 100.0 # 포맷 맞춤
+                
+            if not df.empty: return df
+    except: pass
+
+    # 3단계: 최후의 보루 yfinance 모듈
+    try:
+        earn_history = yf.Ticker(ticker, session=session).get_earnings_history()
+        if earn_history:
+            df = pd.DataFrame(earn_history)
+            df['earnings_date'] = pd.to_datetime(df['earnings_date'])
+            if df['earnings_date'].dt.tz is None: df['earnings_date'] = df['earnings_date'].dt.tz_localize('UTC')
+            else: df['earnings_date'] = df['earnings_date'].dt.tz_convert('UTC')
+            return df.set_index('earnings_date').sort_index(ascending=False)
+    except: pass
+
+    return pd.DataFrame()
 
 def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_korean, benchmark_name):
     """직접 긁어온 실적 데이터와 차트 데이터를 비교하여 D-1, D, D+1 주가 변동률을 계산합니다."""
@@ -142,7 +168,7 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
         hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
 
     try:
-        # 💡 [핵심 패치 적용] 고장난 tkr.get_earnings_dates() 대신 우리가 만든 무적 크롤러 사용!
+        # 💡 우리가 만든 [3중 방어막 무적 크롤러]를 호출합니다!
         earn_df = get_yahoo_earnings_direct(ticker, session, crumb)
         
         if not earn_df.empty:
