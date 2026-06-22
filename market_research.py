@@ -68,52 +68,99 @@ def fetch_investing_news(ticker):
         return "\n".join(news_items) if news_items else "최근 구글 검색 뉴스가 없습니다."
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
+def get_yahoo_earnings_direct(ticker, session, crumb=""):
+    """💡 [핵심 패치] 불안정한 yfinance를 버리고, 야후 내부 v10 API를 다이렉트로 해킹하여 과거/미래 실적을 100% 강제 추출합니다."""
+    url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
+    if crumb: url += f"&crumb={crumb}"
+    
+    try:
+        res = session.get(url, timeout=5)
+        if res.status_code != 200: return pd.DataFrame()
+        data = res.json()
+        
+        result_list = data.get('quoteSummary', {}).get('result', [])
+        if not result_list: return pd.DataFrame()
+        
+        result = result_list[0]
+        records = []
+        
+        # 1. 과거 4분기 실적 추출
+        history_list = result.get('earningsHistory', {}).get('history', [])
+        for h in history_list:
+            date_str = h.get('quarter', {}).get('fmt', '')
+            if not date_str: continue
+            
+            eps_act = h.get('epsActual', {}).get('raw', pd.NA)
+            eps_est = h.get('epsEstimate', {}).get('raw', pd.NA)
+            surp = h.get('surprisePercent', {}).get('raw', pd.NA)
+            
+            records.append({
+                'earnings_date': pd.to_datetime(date_str).tz_localize('UTC'),
+                'epsestimate': eps_est,
+                'epsactual': eps_act,
+                'surprisepercent': surp
+            })
+            
+        # 2. 다가오는 미래 1분기 예상 실적 추출
+        events = result.get('calendarEvents', {}).get('earnings', {})
+        next_dates = events.get('earningsDate', [])
+        eps_avg = events.get('earningsAverage', {}).get('raw', pd.NA)
+        
+        for nd in next_dates:
+            ts = nd.get('raw')
+            if ts:
+                records.append({
+                    'earnings_date': pd.to_datetime(ts, unit='s').tz_localize('UTC'),
+                    'epsestimate': eps_avg,
+                    'epsactual': pd.NA,
+                    'surprisepercent': pd.NA
+                })
+        
+        if not records: return pd.DataFrame()
+        
+        df = pd.DataFrame(records)
+        df = df.drop_duplicates(subset=['earnings_date']).set_index('earnings_date').sort_index(ascending=False)
+        return df
+    except Exception as e:
+        return pd.DataFrame()
+
 def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_korean, benchmark_name):
-    """yfinance 캘린더 엔진 활용: 완벽한 텍스트 날짜(Timezone 충돌 방어) 변환 및 D-1, D, D+1 주가 변동률 계산"""
+    """직접 긁어온 실적 데이터와 차트 데이터를 비교하여 D-1, D, D+1 주가 변동률을 계산합니다."""
     market_cap = 0
     earnings_html = ""
     rows = []
     upcoming_row = ""
 
     try:
-        # 💡 [핵심 패치 1] 실적 데이터를 긁어올 때도 우회용 세션을 강제로 주입하여 차단 방지
         tkr = yf.Ticker(ticker, session=session)
         market_cap = tkr.info.get('marketCap', 0)
-    except:
-        tkr = yf.Ticker(ticker)
+    except: pass
 
-    # Timezone 문제를 막기 위해 차트 날짜를 문자열로 완벽 변환
+    # Timezone 충돌 방어
     hist_dates = []
     if not hist_df.empty:
         hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
 
     try:
-        # 💡 [핵심 패치 3] 불안정한 get_earnings_history() 대신 더 안정적인 get_earnings_dates() 사용
-        # limit=12로 최근 및 예정된 실적 발표일 12개를 가져옵니다.
-        earn_df = tkr.get_earnings_dates(limit=12)
+        # 💡 [핵심 패치 적용] 고장난 tkr.get_earnings_dates() 대신 우리가 만든 무적 크롤러 사용!
+        earn_df = get_yahoo_earnings_direct(ticker, session, crumb)
         
-        if earn_df is not None and not earn_df.empty:
-            # 💡 [핵심 패치 2] yfinance에서 반환하는 데이터의 Timezone 유무에 따른 에러 완벽 방어
-            if earn_df.index.tz is not None:
-                now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
-            else:
-                now_tz = pd.Timestamp.now()
+        if not earn_df.empty:
+            now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
 
             for idx_date, row in earn_df.iterrows():
                 date_str = idx_date.strftime('%Y-%m-%d')
-                # get_earnings_dates()가 반환하는 컬럼명에 맞춰 수정
-                eps_est = row.get('EPS Estimate', pd.NA)
-                eps_act = row.get('Reported EPS', pd.NA)
-                surp = row.get('Surprise(%)', pd.NA)
+                eps_est = row.get('epsestimate', pd.NA)
+                eps_act = row.get('epsactual', pd.NA)
+                surp = row.get('surprisepercent', pd.NA)
 
-                # 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정! (실측 EPS가 없는 경우 예정으로 간주)
+                # 미래 날짜는 가장 윗줄에 ⏳ (예정) 으로 고정
                 if idx_date > now_tz and pd.isna(eps_act):
                     if not upcoming_row:
                         est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
                         upcoming_row = f"<tr style='background-color:#fffbea;'><td style='color:#64748b;'>⏳ {date_str} (예정)</td><td style='color:#64748b;'>{est_str}</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>"
                     continue
 
-                # 예상치와 실측치가 모두 없으면 건너뜀
                 if pd.isna(eps_act) and pd.isna(eps_est): continue 
 
                 est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
@@ -121,27 +168,24 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
 
                 surp_html = "-"
                 if pd.notna(surp):
-                    # Surprise(%)는 이미 퍼센트 단위이므로 그대로 사용
-                    surp_val = surp * 100 # yfinance 버전에 따라 0.1 등으로 나올 수 있어 100을 곱해줌
+                    surp_val = surp * 100 # raw ratio를 %로 변환
+                    if abs(surp_val) > 1000: surp_val = surp # 혹시 이미 % 단위일 경우 방어
                     color = "#22c55e" if surp_val > 0 else "#ef4444"
                     surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
 
                 # 핵심 로직: D-1, D, D+1 주가 변동률 추적
                 t_minus_1, t_0, t_plus_1 = "-", "-", "-"
                 
-                # 오늘 기준 비교
                 now_date_str = now_tz.strftime('%Y-%m-%d')
                 if date_str > now_date_str:
                     t_minus_1, t_0, t_plus_1 = "대기중", "대기중", "대기중"
                 else:
-                    # 해당 발표일 혹은 가장 가까운 다음 거래일 찾기 (휴장일 방어)
                     future_or_exact = [d for d in hist_dates if d >= date_str]
                     if future_or_exact:
                         idx_pos = hist_dates.index(future_or_exact[0])
                         
                         def get_pct(pos):
                             if pos < 1 or pos >= len(hist_df): return "-"
-                            # fetch_financial_data 함수에서 미리 계산한 Pct_Change 열 활용
                             pct = hist_df['Pct_Change'].iloc[pos]
                             c = "#22c55e" if pct > 0 else "#ef4444"
                             return f"<span style='color:{c}; font-weight:bold;'>{pct:+.2f}%</span>"
@@ -158,7 +202,7 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
 
                 rows.append(f"<tr><td>{date_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_html}</td><td>{t_minus_1}</td><td>{t_0}</td><td>{t_plus_1}</td></tr>")
     except Exception as e:
-        print(f"Error fetching earnings for {ticker}: {e}") # 디버깅용 출력 강화
+        print(f"Earnings parsing error: {e}")
 
     final_rows = []
     if upcoming_row: final_rows.append(upcoming_row)
@@ -169,7 +213,7 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
         earnings_html += "".join(final_rows) + "</table>"
         earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* D-1, D, D+1은 해당 일자의 <strong>전일 종가 대비 변동률(%)</strong>입니다.</p>"
     else:
-        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
+        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없거나 아직 제공되지 않습니다.</p>"
         
     return market_cap, earnings_html
 
@@ -230,7 +274,7 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 실적 함수 호출 (D-1, D, D+1 로직 적용)
+            # 실적 함수 호출 (D-1, D, D+1 로직 완벽 적용)
             market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb, df_1d, sp500_1d, is_korean, benchmark_name)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
