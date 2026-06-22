@@ -76,9 +76,11 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
     upcoming_row = ""
 
     try:
-        tkr = yf.Ticker(ticker)
+        # 💡 [핵심 패치 1] 실적 데이터를 긁어올 때도 우회용 세션을 강제로 주입하여 차단 방지
+        tkr = yf.Ticker(ticker, session=session)
         market_cap = tkr.info.get('marketCap', 0)
-    except: pass
+    except:
+        tkr = yf.Ticker(ticker)
 
     # Timezone 문제를 막기 위해 차트 날짜를 문자열로 완벽 변환
     hist_dates = []
@@ -89,7 +91,11 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
         earn_df = tkr.get_earnings_dates(limit=8)
         if earn_df is not None and not earn_df.empty:
             
-            now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
+            # 💡 [핵심 패치 2] yfinance에서 반환하는 데이터의 Timezone 유무에 따른 에러 완벽 방어
+            if earn_df.index.tz is not None:
+                now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
+            else:
+                now_tz = pd.Timestamp.now()
 
             for idx_date, row in earn_df.iterrows():
                 date_str = idx_date.strftime('%Y-%m-%d')
@@ -97,7 +103,7 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
                 eps_act = row.get('Reported EPS', pd.NA)
                 surp = row.get('Surprise(%)', pd.NA)
 
-                # 💡 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정!
+                # 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정!
                 if idx_date > now_tz and pd.isna(eps_act):
                     if not upcoming_row:
                         est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
@@ -115,7 +121,7 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
                     color = "#22c55e" if surp_val > 0 else "#ef4444"
                     surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
 
-                # 💡 핵심 로직: D-1, D, D+1 주가 변동률 추적
+                # 핵심 로직: D-1, D, D+1 주가 변동률 추적
                 t_minus_1, t_0, t_plus_1 = "-", "-", "-"
                 
                 # 오늘 기준 비교
