@@ -390,24 +390,27 @@ def render_kr_map_tab():
                             st.error(f"오류: {e}")
 
         # 4. 데이터프레임 렌더링 (💡 변동성 추가 및 극한의 너비 다이어트)
-        display_cols_kr = ['순위', 'Symbol', '시총', 'Name', '산업군(Industry)', '분야 순위', '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
+        display_cols_kr = ['순위', 'Symbol', '시총', 'Name', '산업군(Industry)', '분야 순위', '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
         
         st.dataframe(
-            st.session_state.kospi100_state_df[display_cols_kr].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동']),
+            st.session_state.kospi100_state_df[display_cols_kr].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동']),
             column_config={
-                "순위": st.column_config.NumberColumn(width="small"),
-                "Symbol": st.column_config.TextColumn("심볼", width="small"),
-                "시총": st.column_config.TextColumn("시총", width="small"),
-                "산업군(Industry)": st.column_config.TextColumn("산업군", width="small"),
-                "분야 순위": st.column_config.TextColumn("분야순위", width="small"),
-                "현재주가": st.column_config.TextColumn("현재가", width="small"),
-                "RSI": st.column_config.TextColumn("RSI", width="small"),
-                "1일 변동": st.column_config.TextColumn("1일", width="small"),
-                "7일 변동": st.column_config.TextColumn("7일", width="small"),
-                "30일 변동": st.column_config.TextColumn("30일", width="small"),
-                "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width="small"),
-                "크로스 날짜": st.column_config.TextColumn("크로스날짜", width="small"),
-                "크로스 당시 주가": st.column_config.TextColumn("크로스가", width="small")
+                "순위": st.column_config.NumberColumn(width=40),
+                "Symbol": st.column_config.TextColumn("심볼", width=50),
+                "시총": st.column_config.TextColumn("시총", width=70),
+                "산업군(Industry)": st.column_config.TextColumn("산업군", width=90),
+                "분야 순위": st.column_config.TextColumn("분야순위", width=60),
+                "현재주가": st.column_config.TextColumn("현재가", width=70),
+                "RSI": st.column_config.TextColumn("RSI", width=50),
+                "1일 변동": st.column_config.TextColumn("1일", width=55),
+                "7일 변동": st.column_config.TextColumn("7일", width=55),
+                "30일 변동": st.column_config.TextColumn("30일", width=55),
+                "60일 변동": st.column_config.TextColumn("60일", width=55),
+                "120일 변동": st.column_config.TextColumn("120일", width=55),
+                "200일 변동": st.column_config.TextColumn("200일", width=55),
+                "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width=90),
+                "크로스 날짜": st.column_config.TextColumn("크로스날짜", width=90),
+                "크로스 당시 주가": st.column_config.TextColumn("크로스가", width=70)
             },
             use_container_width=True, 
             hide_index=True, 
