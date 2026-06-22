@@ -62,7 +62,6 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
-# 💡 등락률 %를 받아 색상을 입히는 함수 (코스피와 동일하게 적용)
 def color_pct(val):
     if isinstance(val, str) and '%' in val:
         try:
@@ -83,7 +82,6 @@ def render_us_map_tab():
         with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
             try:
                 url = "https://scanner.tradingview.com/america/scan"
-                # 💡 장기 변동성(3개월, 6개월, 1년) 및 주가, RSI 데이터 추가 호출!
                 payload = {
                     "filter": [
                         {"left": "market_cap_basic", "operation": "nempty"},
@@ -115,10 +113,10 @@ def render_us_map_tab():
                     chg_1d = item['d'][6]
                     chg_1w = item['d'][7]
                     chg_1m = item['d'][8]
-                    chg_3m = item['d'][9]  # 60일(3개월) 변동
-                    chg_6m = item['d'][10] # 120일(6개월) 변동
-                    chg_1y = item['d'][11] # 200일(1년) 변동
-                    rsi_val = item['d'][12] # RSI 지표
+                    chg_3m = item['d'][9]  
+                    chg_6m = item['d'][10] 
+                    chg_1y = item['d'][11] 
+                    rsi_val = item['d'][12]
                     
                     base_ticker = re.split(r'[-/.]', sym)[0]
                     if base_ticker == 'BML': continue
@@ -138,7 +136,7 @@ def render_us_map_tab():
                     ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) if ind_raw else "기타"
                     name_trans = NAME_TRANSLATIONS.get(sym_clean, name_raw) 
                     
-                    # 💡 RSI가 25 미만이면 🚨 응급 이모지 추가
+                    # RSI가 25 미만이면 응급 이모지 추가
                     if rsi_val:
                         rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
                     else:
@@ -203,7 +201,8 @@ def render_us_map_tab():
         
         st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
         try:
-            session = get_robust_session()[0]
+            # 💡 [버그 픽스] 튜플 참조 에러([0])를 제거하여 야후 파이낸스 데이터를 정상적으로 받아옵니다.
+            session = get_robust_session()
             sp500_df = pd.DataFrame()
             for tkr in ["^NDX", "QQQ"]:
                 for _ in range(2):
@@ -240,6 +239,7 @@ def render_us_map_tab():
 
         st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (일봉 실시간 차트)")
         
+        # 💡 [버그 픽스] 심볼을 "OANDA:NAS100USD"로 변경하여 애플(AAPL)로 튕기는 현상을 막고 나스닥 지수가 정상 표시되게 했습니다.
         tv_widget_us = """
         <div class="tradingview-widget-container" style="height:750px;width:100%; margin-bottom: 20px;">
           <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
@@ -247,7 +247,7 @@ def render_us_map_tab():
           <script type="text/javascript">
           new TradingView.widget({
           "autosize": true,
-          "symbol": "NASDAQ:NDX",
+          "symbol": "OANDA:NAS100USD",
           "interval": "D",
           "timezone": "Etc/UTC",
           "theme": "light",
@@ -284,7 +284,8 @@ def render_us_map_tab():
                     with st.spinner(f"나스닥 {labels_us[i]} 실시간 데이터 스캔 중..."):
                         time.sleep(2)
                         try:
-                            session = get_robust_session()[0]
+                            # 💡 [버그 픽스] 여기도 session = get_robust_session() 으로 고쳐 에러 방지
+                            session = get_robust_session()
                             data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False, session=session)
                             data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False, session=session)
                             
@@ -341,32 +342,31 @@ def render_us_map_tab():
                         except Exception as e:
                             st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
-        # 💡 코스피와 100% 동일한 순서 배열 및 극한의 너비 다이어트 적용
+        # 💡 코스피와 100% 동일한 순서 배열 및 극한의 너비 다이어트 적용 완료
         display_cols_us = [
-            '순위', 'Symbol', '시총', 'Name', '산업군(Industry)', '분야 순위', 
-            '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '60일 변동', 
-            '120일 변동', '200일 변동', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가'
+            '순위', 'Symbol', '시총', 'Name', '분야 순위', '현재주가', 'RSI', 
+            '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', 
+            '산업군(Industry)', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가'
         ]
         
         st.dataframe(
             st.session_state.sp100_state_df[display_cols_us].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동']),
             column_config={
-                "순위": st.column_config.NumberColumn(width=40),
-                "Symbol": st.column_config.TextColumn("심볼", width=50),
-                "시총": st.column_config.TextColumn("시총", width=70),
-                "산업군(Industry)": st.column_config.TextColumn("산업군", width=90),
-                "분야 순위": st.column_config.TextColumn("분야순위", width=60),
-                "현재주가": st.column_config.TextColumn("현재가", width=70),
-                "RSI": st.column_config.TextColumn("RSI", width=50),
-                "1일 변동": st.column_config.TextColumn("1일", width=55),
-                "7일 변동": st.column_config.TextColumn("7일", width=55),
-                "30일 변동": st.column_config.TextColumn("30일", width=55),
-                "60일 변동": st.column_config.TextColumn("60일", width=55),
-                "120일 변동": st.column_config.TextColumn("120일", width=55),
-                "200일 변동": st.column_config.TextColumn("200일", width=55),
-                "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width=90),
-                "크로스 날짜": st.column_config.TextColumn("크로스날짜", width=90),
-                "크로스 당시 주가": st.column_config.TextColumn("크로스가", width=70)
+                "순위": st.column_config.NumberColumn(width="small"),
+                "Symbol": st.column_config.TextColumn("심볼", width="small"),
+                "시총": st.column_config.TextColumn("시총", width="small"),
+                "분야 순위": st.column_config.TextColumn("분야순위", width="small"),
+                "현재주가": st.column_config.TextColumn("현재가", width="small"),
+                "RSI": st.column_config.TextColumn("RSI", width="small"),
+                "1일 변동": st.column_config.TextColumn("1일", width="small"),
+                "7일 변동": st.column_config.TextColumn("7일", width="small"),
+                "30일 변동": st.column_config.TextColumn("30일", width="small"),
+                "60일 변동": st.column_config.TextColumn("60일", width="small"),
+                "120일 변동": st.column_config.TextColumn("120일", width="small"),
+                "200일 변동": st.column_config.TextColumn("200일", width="small"),
+                "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width="small"),
+                "크로스 날짜": st.column_config.TextColumn("크로스날짜", width="small"),
+                "크로스 당시 주가": st.column_config.TextColumn("크로스가", width="small")
             },
             use_container_width=True, 
             hide_index=True, 
