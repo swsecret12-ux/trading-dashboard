@@ -95,6 +95,7 @@ def render_kr_map_tab():
         with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다..."):
             try:
                 url = "https://scanner.tradingview.com/korea/scan"
+                # 💡 columns 에 RSI 추가! 한 번의 스캔으로 RSI 지표까지 즉시 긁어옵니다.
                 payload = {
                     "filter": [
                         {"left": "market_cap_basic", "operation": "nempty"}, 
@@ -103,7 +104,7 @@ def render_kr_map_tab():
                     ],
                     "options": {"lang": "ko"},
                     "markets": ["korea"],
-                    "columns": ["name", "description", "sector", "industry", "market_cap_basic", "close", "change", "Perf.W", "Perf.1M"],
+                    "columns": ["name", "description", "sector", "industry", "market_cap_basic", "close", "change", "Perf.W", "Perf.1M", "RSI"],
                     "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
                     "range": [0, 200]
                 }
@@ -123,6 +124,7 @@ def render_kr_map_tab():
                     chg_1d = item['d'][6]
                     chg_1w = item['d'][7]
                     chg_1m = item['d'][8]
+                    rsi_val = item['d'][9] # RSI 지표 추출
                     
                     base_ticker = sym.split(':')[-1]
                     if (len(base_ticker) == 6 and not base_ticker.endswith('0')) or "우" in name_raw: continue
@@ -138,6 +140,7 @@ def render_kr_map_tab():
                         'YF_Symbol': f"{base_ticker}.KS",
                         'Name': name_raw,
                         '현재주가': f"₩{close_p:,.0f}" if close_p else "-",
+                        'RSI': f"{rsi_val:.1f}" if rsi_val else "-", # RSI 열 추가
                         '1일 변동': f"{chg_1d:+.2f}%" if chg_1d else "-",
                         '7일 변동': f"{chg_1w:+.2f}%" if chg_1w else "-",
                         '30일 변동': f"{chg_1m:+.2f}%" if chg_1m else "-",
@@ -153,7 +156,7 @@ def render_kr_map_tab():
                 new_df = pd.DataFrame(df_list)
                 new_df['분야 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min').apply(lambda x: f"산업 {int(x)}위")
                 st.session_state.kospi100_state_df = new_df.drop(columns=['시가총액_num'])
-                st.success("✅ 업데이트 완료! (주가 및 변동성 데이터 포함)")
+                st.success("✅ 업데이트 완료! (주가, 변동성, RSI 데이터 포함)")
             except Exception as e: 
                 st.error(f"오류: {e}")
 
@@ -358,20 +361,21 @@ def render_kr_map_tab():
                         except Exception as e: 
                             st.error(f"오류: {e}")
 
-        # 4. 데이터프레임 렌더링 (💡 업데이트 날짜 삭제 및 너비 최적화)
-        display_cols_kr = ['순위', 'Symbol', 'Name', '현재주가', '1일 변동', '7일 변동', '30일 변동', '산업군(Industry)', '시총', '분야 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
+        # 4. 데이터프레임 렌더링 (💡 열 순서 전면 재배치 및 너비 최적화 적용)
+        display_cols_kr = ['순위', 'Symbol', '시총', 'Name', '분야 순위', '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '산업군(Industry)', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
         
         st.dataframe(
             st.session_state.kospi100_state_df[display_cols_kr].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동']),
             column_config={
                 "순위": st.column_config.NumberColumn(width="small"),
                 "Symbol": st.column_config.TextColumn("심볼", width="small"),
+                "시총": st.column_config.TextColumn("시총", width="small"),
+                "분야 순위": st.column_config.TextColumn("분야순위", width="small"),
                 "현재주가": st.column_config.TextColumn("현재주가", width="small"),
+                "RSI": st.column_config.TextColumn("RSI", width="small"),
                 "1일 변동": st.column_config.TextColumn("1일", width="small"),
                 "7일 변동": st.column_config.TextColumn("7일", width="small"),
                 "30일 변동": st.column_config.TextColumn("30일", width="small"),
-                "시총": st.column_config.TextColumn("시총", width="small"),
-                "분야 순위": st.column_config.TextColumn("분야순위", width="small"),
                 "크로스 당시 주가": st.column_config.TextColumn("크로스가격", width="small")
             },
             use_container_width=True, 
