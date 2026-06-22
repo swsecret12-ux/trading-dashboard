@@ -6,7 +6,6 @@ import time
 from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
-from market_research import get_robust_session
 
 INDUSTRY_GROUPING = {
     "Semiconductors": "반도체 및 장비", "Computer Processing Hardware": "IT 하드웨어", "Computer Communications": "네트워크 통신 장비",
@@ -136,11 +135,8 @@ def render_us_map_tab():
                     ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) if ind_raw else "기타"
                     name_trans = NAME_TRANSLATIONS.get(sym_clean, name_raw) 
                     
-                    # RSI가 25 미만이면 응급 이모지 추가
-                    if rsi_val:
-                        rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
-                    else:
-                        rsi_str = "-"
+                    if rsi_val: rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
+                    else: rsi_str = "-"
                     
                     df_list.append({
                         '순위': len(df_list) + 1,
@@ -171,15 +167,16 @@ def render_us_map_tab():
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
     if not st.session_state.sp100_state_df.empty:
-        st.markdown("#### 🗺️ S&P 500 주도주 히트맵 (실시간 자금 흐름)")
+        # 💡 히트맵 Data Source를 "NDX"(나스닥 100)로 완벽히 수정하여 하단 표 데이터와 일치시켰습니다.
+        st.markdown("#### 🗺️ 나스닥 100 주도주 히트맵 (실시간 자금 흐름)")
         st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
         heatmap_widget = """
         <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
           <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
           {
-          "exchanges": ["NYSE", "NASDAQ", "AMEX"],
-          "dataSource": "SPX500",
+          "exchanges": ["NASDAQ"],
+          "dataSource": "NDX",
           "grouping": "sector",
           "blockSize": "market_cap_basic",
           "blockColor": "change",
@@ -201,13 +198,12 @@ def render_us_map_tab():
         
         st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
         try:
-            # 💡 [버그 픽스] 튜플 참조 에러([0])를 제거하여 야후 파이낸스 데이터를 정상적으로 받아옵니다.
-            session = get_robust_session()
+            # 💡 야후 파이낸스 자체 Session(오류 원인) 제거 완료!
             sp500_df = pd.DataFrame()
             for tkr in ["^NDX", "QQQ"]:
                 for _ in range(2):
                     try:
-                        temp_df = yf.download(tkr, period="4y", interval="1d", progress=False, session=session)
+                        temp_df = yf.download(tkr, period="4y", interval="1d", progress=False)
                         if not temp_df.empty:
                             sp500_df = temp_df
                             break
@@ -226,12 +222,8 @@ def render_us_map_tab():
                 ndx_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                 ndx_df = pd.DataFrame([ndx_data])
                 
-                def color_val(val):
-                    color = '#ef4444' if val < 0 else '#22c55e'
-                    return f"color: {color}; font-weight: bold;"
-                    
                 formatted_df = ndx_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
-                st.dataframe(formatted_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
+                st.dataframe(formatted_df.style.map(lambda x: color_pct(str(x))), use_container_width=True, hide_index=True)
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
@@ -239,7 +231,6 @@ def render_us_map_tab():
 
         st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (일봉 실시간 차트)")
         
-        # 💡 [버그 픽스] 심볼을 "OANDA:NAS100USD"로 변경하여 애플(AAPL)로 튕기는 현상을 막고 나스닥 지수가 정상 표시되게 했습니다.
         tv_widget_us = """
         <div class="tradingview-widget-container" style="height:750px;width:100%; margin-bottom: 20px;">
           <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
@@ -284,10 +275,9 @@ def render_us_map_tab():
                     with st.spinner(f"나스닥 {labels_us[i]} 실시간 데이터 스캔 중..."):
                         time.sleep(2)
                         try:
-                            # 💡 [버그 픽스] 여기도 session = get_robust_session() 으로 고쳐 에러 방지
-                            session = get_robust_session()
-                            data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False, session=session)
-                            data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False, session=session)
+                            # 💡 야후 파이낸스 자체 Session(오류 원인) 제거 완료!
+                            data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False)
+                            data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False)
                             
                             data_1d = data_1d_raw.get('Close', pd.DataFrame())
                             data_1h = data_1h_raw.get('Close', pd.DataFrame())
