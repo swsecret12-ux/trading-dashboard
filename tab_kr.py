@@ -57,6 +57,19 @@ INDUSTRY_GROUPING_KR = {
     "Air Freight/Couriers": "물류 & 운송", "항공 화물/택배": "물류 & 운송"
 }
 
+# 💡 대한민국 주식시장의 현실에 맞춘 핵심 주도주 강제 교정 딕셔너리 (삼성, 하이닉스, 2차전지 등)
+CUSTOM_TICKER_INDUSTRY = {
+    "005930": "반도체", "000660": "반도체", "042700": "반도체", # 삼성전자, SK하이닉스, 한미반도체
+    "373220": "2차전지", "006400": "2차전지", "096770": "2차전지", # LG엔솔, 삼성SDI, SK이노베이션
+    "051910": "화학 & 2차전지", "003670": "2차전지 소재", "247540": "2차전지 소재", "086520": "2차전지 소재", # LG화학, 포스코퓨처엠, 에코프로 형제
+    "005380": "자동차", "000270": "자동차", "012330": "자동차 부품", # 현대차, 기아, 현대모비스
+    "207940": "제약 & 바이오", "068270": "제약 & 바이오", "000100": "제약 & 바이오", # 삼바, 셀트리온, 유한양행
+    "035420": "소프트웨어 & 인터넷", "035720": "소프트웨어 & 인터넷", # 네이버, 카카오
+    "005490": "철강 & 2차전지 소재", # POSCO홀딩스
+    "105560": "금융지주", "055550": "금융지주", "086790": "금융지주", "316140": "금융지주", # KB, 신한, 하나, 우리
+    "032830": "생명보험", "032640": "통신", "017670": "통신", "030200": "통신"
+}
+
 def format_krw_direct(krw_val):
     try:
         val = float(krw_val)
@@ -134,8 +147,11 @@ def render_kr_map_tab():
                     if base_ticker in seen_tickers: continue
                     seen_tickers.add(base_ticker)
                     
-                    # 산업군 번역 적용
-                    ind_trans = INDUSTRY_GROUPING_KR.get(ind_raw, ind_raw) if ind_raw else "기타"
+                    # 💡 산업군 번역 및 강제 교정 적용
+                    if base_ticker in CUSTOM_TICKER_INDUSTRY:
+                        ind_trans = CUSTOM_TICKER_INDUSTRY[base_ticker]
+                    else:
+                        ind_trans = INDUSTRY_GROUPING_KR.get(ind_raw, ind_raw) if ind_raw else "기타"
                     
                     # 💡 RSI가 25 미만이면 🚨 응급 이모지 추가
                     if rsi_val:
@@ -374,23 +390,21 @@ def render_kr_map_tab():
                             st.error(f"오류: {e}")
 
         # 4. 데이터프레임 렌더링 (💡 변동성 추가 및 극한의 너비 다이어트)
-        display_cols_kr = ['순위', 'Symbol', '시총', 'Name', '분야 순위', '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', '산업군(Industry)', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
+        display_cols_kr = ['순위', 'Symbol', '시총', 'Name', '산업군(Industry)', '분야 순위', '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
         
         st.dataframe(
-            st.session_state.kospi100_state_df[display_cols_kr].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동']),
+            st.session_state.kospi100_state_df[display_cols_kr].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동']),
             column_config={
                 "순위": st.column_config.NumberColumn(width="small"),
                 "Symbol": st.column_config.TextColumn("심볼", width="small"),
                 "시총": st.column_config.TextColumn("시총", width="small"),
+                "산업군(Industry)": st.column_config.TextColumn("산업군", width="small"),
                 "분야 순위": st.column_config.TextColumn("분야순위", width="small"),
                 "현재주가": st.column_config.TextColumn("현재가", width="small"),
                 "RSI": st.column_config.TextColumn("RSI", width="small"),
                 "1일 변동": st.column_config.TextColumn("1일", width="small"),
                 "7일 변동": st.column_config.TextColumn("7일", width="small"),
                 "30일 변동": st.column_config.TextColumn("30일", width="small"),
-                "60일 변동": st.column_config.TextColumn("60일", width="small"),
-                "120일 변동": st.column_config.TextColumn("120일", width="small"),
-                "200일 변동": st.column_config.TextColumn("200일", width="small"),
                 "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width="small"),
                 "크로스 날짜": st.column_config.TextColumn("크로스날짜", width="small"),
                 "크로스 당시 주가": st.column_config.TextColumn("크로스가", width="small")
