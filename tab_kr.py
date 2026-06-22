@@ -190,14 +190,38 @@ def render_kr_map_tab():
 
     if not st.session_state.kospi100_state_df.empty:
         # 1. 수익률 표시
+        st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
-            kospi = yf.download("^KS11", period="4y", interval="1d", progress=False)['Close'].dropna()
-            curr = kospi.iloc[-1]
-            def ret(d): return float((curr - kospi.iloc[-(d+1)]) / kospi.iloc[-(d+1)] * 100)
-            kr_df = pd.DataFrame([{"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}])
-            st.dataframe(kr_df.map(lambda x: f"{x:+.2f}%").style.map(lambda x: "color: red" if float(x.replace('%',''))<0 else "color: green"), use_container_width=True)
-        except: 
-            st.warning("수익률 데이터 로딩 실패")
+            kospi_df = pd.DataFrame()
+            for _ in range(2):
+                try:
+                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
+                    if not temp_df.empty:
+                        kospi_df = temp_df
+                        break
+                except: time.sleep(1)
+
+            if not kospi_df.empty:
+                # 💡 yfinance 최신 MultiIndex 버그 방어 코드 적용
+                if isinstance(kospi_df.columns, pd.MultiIndex): 
+                    close_series = kospi_df['Close'].iloc[:, 0].dropna()
+                else: 
+                    close_series = kospi_df['Close'].dropna()
+                
+                curr = close_series.iloc[-1]
+                def ret(days):
+                    if len(close_series) > days: return float((curr - close_series.iloc[-(days+1)]) / close_series.iloc[-(days+1)] * 100)
+                    return 0.0
+                
+                kr_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
+                kr_df = pd.DataFrame([kr_data])
+                
+                formatted_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
+                st.dataframe(formatted_df.style.map(lambda x: color_pct(str(x))), use_container_width=True, hide_index=True)
+            else: 
+                st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+        except Exception as e: 
+            st.warning(f"수익률 데이터 로딩 실패: {e}")
 
         # 2. 종합 차트 렌더링 (인터랙티브 툴팁, RSI, 거래량 포함)
         st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 종합 차트)")
