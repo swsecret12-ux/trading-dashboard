@@ -62,6 +62,16 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
+# 💡 등락률 %를 받아 색상을 입히는 함수 (코스피와 동일하게 적용)
+def color_pct(val):
+    if isinstance(val, str) and '%' in val:
+        try:
+            num = float(val.replace('%', '').replace('+', ''))
+            color = '#ef4444' if num < 0 else '#22c55e'
+            return f'color: {color}; font-weight: bold;'
+        except: pass
+    return ''
+
 def render_us_map_tab():
     if "sp100_state_df" not in st.session_state:
         st.session_state.sp100_state_df = pd.DataFrame()
@@ -73,6 +83,7 @@ def render_us_map_tab():
         with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
             try:
                 url = "https://scanner.tradingview.com/america/scan"
+                # 💡 장기 변동성(3개월, 6개월, 1년) 및 주가, RSI 데이터 추가 호출!
                 payload = {
                     "filter": [
                         {"left": "market_cap_basic", "operation": "nempty"},
@@ -82,7 +93,7 @@ def render_us_map_tab():
                     "options": {"lang": "en"},
                     "markets": ["america"],
                     "symbols": {"query": {"types": []}, "tickers": []},
-                    "columns": ["name", "description", "sector", "industry", "market_cap_basic"],
+                    "columns": ["name", "description", "sector", "industry", "market_cap_basic", "close", "change", "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "RSI"],
                     "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
                     "range": [0, 250] 
                 }
@@ -100,6 +111,15 @@ def render_us_map_tab():
                     name_raw = item['d'][1]
                     ind_raw = item['d'][3]
                     mcap = item['d'][4]
+                    close_p = item['d'][5]
+                    chg_1d = item['d'][6]
+                    chg_1w = item['d'][7]
+                    chg_1m = item['d'][8]
+                    chg_3m = item['d'][9]  # 60일(3개월) 변동
+                    chg_6m = item['d'][10] # 120일(6개월) 변동
+                    chg_1y = item['d'][11] # 200일(1년) 변동
+                    rsi_val = item['d'][12] # RSI 지표
+                    
                     base_ticker = re.split(r'[-/.]', sym)[0]
                     if base_ticker == 'BML': continue
                     if base_ticker in target_exact:
@@ -115,30 +135,40 @@ def render_us_map_tab():
                     seen_tickers.add(base_ticker)
                     
                     sym_clean = sym.replace('.', '-').replace('/', '-')
-                    ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) 
+                    ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) if ind_raw else "기타"
                     name_trans = NAME_TRANSLATIONS.get(sym_clean, name_raw) 
+                    
+                    # 💡 RSI가 25 미만이면 🚨 응급 이모지 추가
+                    if rsi_val:
+                        rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
+                    else:
+                        rsi_str = "-"
                     
                     df_list.append({
                         '순위': len(df_list) + 1,
-                        '시총': format_mcap_krw(mcap),
                         'Symbol': sym_clean,
+                        '시총': format_mcap_krw(mcap),
                         'Name': name_trans,
                         '산업군(Industry)': ind_trans,
-                        '시가총액_num': mcap,
                         '분야 순위': "-",
+                        '현재주가': f"${close_p:,.2f}" if close_p else "-",
+                        'RSI': rsi_str,
+                        '1일 변동': f"{chg_1d:+.2f}%" if chg_1d else "-",
+                        '7일 변동': f"{chg_1w:+.2f}%" if chg_1w else "-",
+                        '30일 변동': f"{chg_1m:+.2f}%" if chg_1m else "-",
+                        '60일 변동': f"{chg_3m:+.2f}%" if chg_3m else "-",
+                        '120일 변동': f"{chg_6m:+.2f}%" if chg_6m else "-",
+                        '200일 변동': f"{chg_1y:+.2f}%" if chg_1y else "-",
+                        '시가총액_num': mcap,
                         '크로스 상태 (4H/1D EMA200)': "대기 중",
                         '크로스 날짜': "-",
-                        '크로스 당시 주가': "-",
-                        '업데이트 날짜': "-"
+                        '크로스 당시 주가': "-"
                     })
                 
                 new_df = pd.DataFrame(df_list)
-                new_df['분야 내 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min')
-                new_df['분야 순위'] = new_df['분야 내 순위'].apply(lambda x: f"산업 {int(x)}위" if pd.notna(x) else "-")
-                new_df = new_df.drop(columns=['분야 내 순위'])
-                
-                st.session_state.sp100_state_df = new_df
-                st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료!")
+                new_df['분야 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min').apply(lambda x: f"산업 {int(x)}위")
+                st.session_state.sp100_state_df = new_df.drop(columns=['시가총액_num'])
+                st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료! (주가, 변동성 6종, RSI 포함)")
             except Exception as e:
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
@@ -206,24 +236,28 @@ def render_us_map_tab():
             else: st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: st.error(f"데이터를 불러오는 중 오류 발생: {e}")
             
+        st.markdown("---")
+
         st.markdown("#### 📊 나스닥 100 (US TECH 100 CASH) 최근 1년 흐름 (일봉 실시간 차트)")
-        # 💡 높이 750 확장 + RSI / 200일선 추가 + 상단 툴바 활성화
-        ndx_tv_widget = """
+        
+        tv_widget_us = """
         <div class="tradingview-widget-container" style="height:750px;width:100%; margin-bottom: 20px;">
           <div id="tradingview_ndx" style="height:calc(100% - 32px);width:100%"></div>
           <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
           <script type="text/javascript">
           new TradingView.widget({
-          "autosize": true, 
-          "symbol": "OANDA:NAS100USD", 
-          "interval": "D", 
+          "autosize": true,
+          "symbol": "NASDAQ:NDX",
+          "interval": "D",
           "timezone": "Etc/UTC",
-          "theme": "light", 
-          "style": "1", 
-          "locale": "kr", 
+          "theme": "light",
+          "style": "1",
+          "locale": "kr",
           "enable_publishing": false,
-          "hide_top_toolbar": false, 
-          "hide_legend": false, 
+          "backgroundColor": "rgba(255, 255, 255, 1)",
+          "gridColor": "rgba(240, 243, 250, 0)",
+          "hide_top_toolbar": false,
+          "hide_legend": false,
           "save_image": false,
           "container_id": "tradingview_ndx",
           "studies": [
@@ -234,38 +268,40 @@ def render_us_map_tab():
           </script>
         </div>
         """
-        components.html(ndx_tv_widget, height=750)
+        components.html(tv_widget_us, height=750)
+        
         st.markdown("---")
 
-        symbols = st.session_state.sp100_state_df['Symbol'].tolist()
-        chunks = [symbols[i:i+25] for i in range(0, 100, 25)]
-        labels = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
+        yf_symbols = st.session_state.sp100_state_df['Symbol'].tolist()
+        chunks = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
+        labels_us = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
+        
         st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 '4시간봉 EMA 200 vs 1일봉 EMA 200' 크로스 현황을 정밀 스캔합니다.")
-        cols = st.columns(4)
+        cols_us = st.columns(4)
         for i in range(4):
             if i < len(chunks):
-                if cols[i].button(f"🚀 {labels[i]} 스캔", use_container_width=True, key=f"btn_us_scan_{i}"):
-                    with st.spinner(f"{labels[i]} 실시간 데이터 스캔 중..."):
+                if cols_us[i].button(f"🚀 나스닥 {labels_us[i]} 스캔", use_container_width=True, key=f"btn_us_{i}"):
+                    with st.spinner(f"나스닥 {labels_us[i]} 실시간 데이터 스캔 중..."):
                         time.sleep(2)
                         try:
                             session = get_robust_session()[0]
                             data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False, session=session)
                             data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False, session=session)
                             
-                            if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
-                            else: data_1d = data_1d_raw
-                            if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
-                            else: data_1h = data_1h_raw
+                            data_1d = data_1d_raw.get('Close', pd.DataFrame())
+                            data_1h = data_1h_raw.get('Close', pd.DataFrame())
+                            
                             if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks[i][0])
                             if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks[i][0])
-                            current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             
                             for sym in chunks[i]:
-                                if sym not in data_1d.columns or sym not in data_1h.columns: c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                if sym not in data_1d.columns or sym not in data_1h.columns: 
+                                    c_type, c_date, c_price = "데이터 부족", "-", "-"
                                 else:
                                     df_sym_1d = data_1d[sym].dropna()
                                     df_sym_1h = data_1h[sym].dropna()
-                                    if len(df_sym_1d) < 150 or len(df_sym_1h) < 150: c_type, c_date, c_price = "상장기간 부족", "-", "-"
+                                    if len(df_sym_1d) < 150 or len(df_sym_1h) < 150: 
+                                        c_type, c_date, c_price = "상장기간 부족", "-", "-"
                                     else:
                                         df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
                                         df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
@@ -275,10 +311,8 @@ def render_us_map_tab():
                                         
                                         df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
                                         df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
-                                        df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
-                                        df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
                                         
-                                        merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
+                                        merged = pd.merge_asof(df_4h_ma[['EMA200_4H', 'Close']], df_1d_ma[['EMA200_1D']], left_index=True, right_index=True, direction='backward').dropna()
                                         merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
                                         merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
                                         
@@ -295,17 +329,46 @@ def render_us_map_tab():
                                             c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
                                             c_price = f"${merged.loc[latest_idx, 'Close']:.2f}"
                                         else:
-                                            c_type, c_date, c_price = "최근 1년 내 크로스 없음", "-", "-"
+                                            c_type, c_date, c_price = "최근 1년 내 없음", "-", "-"
                                 
                                 mask = st.session_state.sp100_state_df['Symbol'] == sym
                                 st.session_state.sp100_state_df.loc[mask, '크로스 상태 (4H/1D EMA200)'] = c_type
                                 st.session_state.sp100_state_df.loc[mask, '크로스 날짜'] = c_date
                                 st.session_state.sp100_state_df.loc[mask, '크로스 당시 주가'] = c_price
-                                st.session_state.sp100_state_df.loc[mask, '업데이트 날짜'] = current_update_time
-                            st.success(f"✅ {current_update_time} 기준, {labels[i]} 크로스 분석 완료!")
+                            
+                            st.success(f"✅ 나스닥 {labels_us[i]} 스캔 완료!")
                             st.rerun() 
                         except Exception as e:
-                            st.error(f"야후 파이낸스 스캔 중 오류 발생 (잠시 후 다시 시도해주세요): {str(e)}")
+                            st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
-        display_cols = ['순위', '시총', 'Symbol', 'Name', '산업군(Industry)', '분야 순위', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜']
-        st.dataframe(st.session_state.sp100_state_df[display_cols], use_container_width=True, hide_index=True, height=1100)
+        # 💡 코스피와 100% 동일한 순서 배열 및 극한의 너비 다이어트 적용
+        display_cols_us = [
+            '순위', 'Symbol', '시총', 'Name', '산업군(Industry)', '분야 순위', 
+            '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '60일 변동', 
+            '120일 변동', '200일 변동', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가'
+        ]
+        
+        st.dataframe(
+            st.session_state.sp100_state_df[display_cols_us].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동']),
+            column_config={
+                "순위": st.column_config.NumberColumn(width=40),
+                "Symbol": st.column_config.TextColumn("심볼", width=50),
+                "시총": st.column_config.TextColumn("시총", width=70),
+                "산업군(Industry)": st.column_config.TextColumn("산업군", width=90),
+                "분야 순위": st.column_config.TextColumn("분야순위", width=60),
+                "현재주가": st.column_config.TextColumn("현재가", width=70),
+                "RSI": st.column_config.TextColumn("RSI", width=50),
+                "1일 변동": st.column_config.TextColumn("1일", width=55),
+                "7일 변동": st.column_config.TextColumn("7일", width=55),
+                "30일 변동": st.column_config.TextColumn("30일", width=55),
+                "60일 변동": st.column_config.TextColumn("60일", width=55),
+                "120일 변동": st.column_config.TextColumn("120일", width=55),
+                "200일 변동": st.column_config.TextColumn("200일", width=55),
+                "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width=90),
+                "크로스 날짜": st.column_config.TextColumn("크로스날짜", width=90),
+                "크로스 당시 주가": st.column_config.TextColumn("크로스가", width=70)
+            },
+            use_container_width=True, 
+            hide_index=True, 
+            height=1100
+        )
