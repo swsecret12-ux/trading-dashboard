@@ -88,9 +88,11 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
         hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
 
     try:
-        earn_df = tkr.get_earnings_dates(limit=8)
+        # 💡 [핵심 패치 3] 불안정한 get_earnings_history() 대신 더 안정적인 get_earnings_dates() 사용
+        # limit=12로 최근 및 예정된 실적 발표일 12개를 가져옵니다.
+        earn_df = tkr.get_earnings_dates(limit=12)
+        
         if earn_df is not None and not earn_df.empty:
-            
             # 💡 [핵심 패치 2] yfinance에서 반환하는 데이터의 Timezone 유무에 따른 에러 완벽 방어
             if earn_df.index.tz is not None:
                 now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
@@ -99,17 +101,19 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
 
             for idx_date, row in earn_df.iterrows():
                 date_str = idx_date.strftime('%Y-%m-%d')
+                # get_earnings_dates()가 반환하는 컬럼명에 맞춰 수정
                 eps_est = row.get('EPS Estimate', pd.NA)
                 eps_act = row.get('Reported EPS', pd.NA)
                 surp = row.get('Surprise(%)', pd.NA)
 
-                # 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정!
+                # 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정! (실측 EPS가 없는 경우 예정으로 간주)
                 if idx_date > now_tz and pd.isna(eps_act):
                     if not upcoming_row:
                         est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
                         upcoming_row = f"<tr style='background-color:#fffbea;'><td style='color:#64748b;'>⏳ {date_str} (예정)</td><td style='color:#64748b;'>{est_str}</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>"
                     continue
 
+                # 예상치와 실측치가 모두 없으면 건너뜀
                 if pd.isna(eps_act) and pd.isna(eps_est): continue 
 
                 est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
@@ -117,7 +121,8 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
 
                 surp_html = "-"
                 if pd.notna(surp):
-                    surp_val = surp * 100
+                    # Surprise(%)는 이미 퍼센트 단위이므로 그대로 사용
+                    surp_val = surp * 100 # yfinance 버전에 따라 0.1 등으로 나올 수 있어 100을 곱해줌
                     color = "#22c55e" if surp_val > 0 else "#ef4444"
                     surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
 
@@ -152,7 +157,8 @@ def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_ko
                         t_minus_1, t_0, t_plus_1 = "-", "-", "-"
 
                 rows.append(f"<tr><td>{date_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_html}</td><td>{t_minus_1}</td><td>{t_0}</td><td>{t_plus_1}</td></tr>")
-    except Exception as e: pass
+    except Exception as e:
+        print(f"Error fetching earnings for {ticker}: {e}") # 디버깅용 출력 강화
 
     final_rows = []
     if upcoming_row: final_rows.append(upcoming_row)
