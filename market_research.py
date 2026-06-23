@@ -7,6 +7,7 @@ import time
 import random
 import yfinance as yf
 import numpy as np
+import json
 
 def get_robust_session():
     """야후 파이낸스 접속 차단을 완벽히 우회하기 위한 스텔스 세션 헤더 및 토큰 획득"""
@@ -69,69 +70,95 @@ def fetch_investing_news(ticker):
         return "\n".join(news_items) if news_items else "최근 구글 검색 뉴스가 없습니다."
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
-def get_yahoo_earnings_pure_api(ticker):
+def get_earnings_alternative(ticker):
     """
-    💡 [최종 우주 방어 패치]
-    1. lxml 에러를 뿜는 yfinance 달력 함수를 완전히 버립니다.
-    2. Crumb(보안 토큰)을 요구해서 401 에러를 내던 quoteSummary API도 버립니다.
-    3. 1d/1h 차트를 그릴 때 사용하는 '절대 막히지 않는 차트 API(v8)'에 'events=earnings' 옵션만 몰래 붙여서 실적을 100% 안전하게 빼옵니다.
+    💡 [탈(脫) 야후 무적 패치] 
+    1. 에러를 뿜는 야후 파이낸스를 완전히 버리고 나스닥(NASDAQ) 공식 API를 1차로 뚫고 들어갑니다.
+    2. 나스닥도 막히면, AllOrigins 글로벌 프록시 네트워크를 통해 다른 나라 IP로 우회하여 강제 추출합니다.
     """
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    })
-    
+    clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
     records = []
     
-    # 1. 차트 API에서 과거 실적(EPS) 스캔 (Crumb 인증 100% 우회)
+    # [1단계] 나스닥(NASDAQ) 공식 API 다이렉트 호출
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://www.nasdaq.com",
+        "Referer": "https://www.nasdaq.com/"
+    }
+    
     try:
-        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?range=2y&interval=1d&events=earnings"
-        res = session.get(url, timeout=5)
+        # 1-1. 과거 실적 및 서프라이즈
+        url_history = f"https://api.nasdaq.com/api/company/{clean_ticker}/earnings-surprise"
+        res = requests.get(url_history, headers=headers, timeout=5)
         if res.status_code == 200:
-            data = res.json()
-            earnings = data.get('chart', {}).get('result', [{}])[0].get('events', {}).get('earnings', {})
-            for ts_str, ev in earnings.items():
+            rows = res.json().get('data', {}).get('earningsSurpriseTable', {}).get('rows', [])
+            for r in rows:
+                date_str = r.get('dateReported')
+                if not date_str: continue
                 try:
-                    dt = pd.to_datetime(int(ts_str), unit='s').tz_localize('UTC')
-                    eps_est = ev.get('epsEstimate', pd.NA)
-                    eps_act = ev.get('epsActual', pd.NA)
-                    surp = pd.NA
-                    # 수동으로 서프라이즈 퍼센트 정확하게 계산
-                    if pd.notna(eps_est) and pd.notna(eps_act) and eps_est != 0:
-                        surp = (eps_act - eps_est) / abs(eps_est)
-                        
+                    dt = pd.to_datetime(date_str).tz_localize('UTC')
+                    eps_est = float(r.get('consensusForecast')) if r.get('consensusForecast') else pd.NA
+                    eps_act = float(r.get('eps')) if r.get('eps') else pd.NA
+                    surp = float(r.get('percentageSurprise')) / 100.0 if r.get('percentageSurprise') else pd.NA
                     records.append({
-                        'Date': dt,
-                        'EPS Estimate': eps_est,
-                        'Reported EPS': eps_act,
-                        'Surprise(%)': surp
+                        'Date': dt, 'EPS Estimate': eps_est, 'Reported EPS': eps_act, 'Surprise(%)': surp
                     })
                 except: continue
+                
+        # 1-2. 다가오는 미래 실적 발표일
+        url_next = f"https://api.nasdaq.com/api/analyst/{clean_ticker}/earnings-date"
+        res_next = requests.get(url_next, headers=headers, timeout=5)
+        if res_next.status_code == 200:
+            announcement = res_next.json().get('data', {}).get('announcement', '')
+            if announcement:
+                dt_next = pd.to_datetime(announcement).tz_localize('UTC')
+                exists = any(r['Date'].strftime('%Y-%m-%d') == dt_next.strftime('%Y-%m-%d') for r in records)
+                if not exists:
+                    records.append({
+                        'Date': dt_next, 'EPS Estimate': pd.NA, 'Reported EPS': pd.NA, 'Surprise(%)': pd.NA
+                    })
     except: pass
-    
-    # 2. 다가오는 미래 실적 일정 스캔 (JSON 통신이므로 lxml 에러 발생 안 함)
-    try:
-        tkr = yf.Ticker(ticker)
-        info = tkr.info
-        next_ts = info.get('earningsTimestamp') or info.get('earningsTimestampStart')
-        if next_ts:
-            next_dt = pd.to_datetime(next_ts, unit='s').tz_localize('UTC')
-            # 과거 데이터와 중복되는지 방어
-            exists = False
-            for r in records:
-                if r['Date'].strftime('%Y-%m-%d') == next_dt.strftime('%Y-%m-%d'):
-                    exists = True
-                    break
-            if not exists:
-                records.append({
-                    'Date': next_dt,
-                    'EPS Estimate': pd.NA,
-                    'Reported EPS': pd.NA,
-                    'Surprise(%)': pd.NA
-                })
-    except: pass
-    
-    if not records: return pd.DataFrame()
+
+    # [2단계] 나스닥 API도 서버를 튕겨낸다면? -> AllOrigins (글로벌 프록시 우회) API 호출!
+    # 스트림릿 서버 IP가 아닌, 프록시 서버의 IP를 통해 야후 데이터를 몰래 빼옵니다.
+    if not records:
+        try:
+            target_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
+            proxy_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
+            
+            res_proxy = requests.get(proxy_url, timeout=10)
+            if res_proxy.status_code == 200:
+                proxy_contents = res_proxy.json().get('contents', '{}')
+                proxy_data = json.loads(proxy_contents)
+                result = proxy_data.get('quoteSummary', {}).get('result', [])
+                
+                if result:
+                    hist = result[0].get("earningsHistory", {}).get("history", [])
+                    for h in hist:
+                        dt_fmt = h.get("quarter", {}).get("fmt")
+                        if not dt_fmt: continue
+                        records.append({
+                            "Date": pd.to_datetime(dt_fmt).tz_localize('UTC'),
+                            "EPS Estimate": h.get("epsEstimate", {}).get("raw", pd.NA),
+                            "Reported EPS": h.get("epsActual", {}).get("raw", pd.NA),
+                            "Surprise(%)": h.get("surprisePercent", {}).get("raw", pd.NA)
+                        })
+                    
+                    cal = result[0].get("calendarEvents", {}).get("earnings", {})
+                    for nd in cal.get("earningsDate", []):
+                        ts = nd.get("raw")
+                        if ts:
+                            records.append({
+                                "Date": pd.to_datetime(ts, unit="s").tz_localize('UTC'),
+                                "EPS Estimate": cal.get("earningsAverage", {}).get("raw", pd.NA),
+                                "Reported EPS": pd.NA,
+                                "Surprise(%)": pd.NA
+                            })
+        except: pass
+
+    if not records:
+        return pd.DataFrame()
     
     df = pd.DataFrame(records)
     df = df.sort_values('Date', ascending=False).drop_duplicates(subset=['Date'])
@@ -154,8 +181,8 @@ def get_market_cap_and_earnings(ticker, hist_df):
     if not hist_df.empty:
         hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
 
-    # 💡 고장난 yfinance 모듈 대신 직접 만든 무적 크롤러 호출!
-    earn_df = get_yahoo_earnings_pure_api(ticker)
+    # 💡 야후 모듈을 버리고, 나스닥 & 프록시 우회 크롤러를 호출합니다!
+    earn_df = get_earnings_alternative(ticker)
 
     if not earn_df.empty:
         now_tz = pd.Timestamp.now(tz='UTC')
@@ -285,7 +312,7 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 💡 [무적 API 실적 호출] - DataFrame과 함께 D-1, D, D+1 계산을 완벽 수행합니다!
+            # 💡 [나스닥 API + 글로벌 프록시 하이브리드 추출]
             market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
