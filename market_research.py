@@ -68,48 +68,64 @@ def fetch_investing_news(ticker):
         return "\n".join(news_items) if news_items else "최근 구글 검색 뉴스가 없습니다."
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
-def get_market_cap_and_earnings(ticker):
+def get_market_cap_and_earnings(ticker, session=None):
     """
-    영우 님께서 말씀하신 '완벽하게 잘 되던 시절'의 그 로직입니다.
-    세션 우회나 복잡한 헤더 주입 없이 yfinance 표준 메서드만 사용하여 
-    데이터 수집 안정성을 확보했습니다.
+    영우 님께서 말씀하신 '완벽하게 잘 되던 시절'의 순정 로직입니다.
+    여기에 야후의 Too Many Requests (Rate Limit) 차단을 뚫기 위한
+    세션 우회 + 3단 재시도 장치만 살짝 씌웠습니다.
     """
-    try:
-        # 1. 순정 Ticker 객체 생성 (가장 안정적)
-        tkr = yf.Ticker(ticker)
-        
-        # 2. 시가총액 정보
-        info = tkr.info
-        market_cap = info.get('marketCap', 0)
-        
-        # 3. 실적 데이터 수집 (안정적인 방식)
-        earn_df = tkr.get_earnings_dates(limit=8)
-        
-        if earn_df is None or earn_df.empty:
-            return market_cap, "<p style='color:#ef4444;'>실적 데이터가 존재하지 않습니다.</p>"
+    market_cap = 0
+    earn_df = None
+    last_error = ""
 
-        # 4. 표 생성 로직 (영우 님의 원본 로직 유지)
-        html = "<table class='ma-table'><tr><th>발표일</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th></tr>"
-        
-        # 날짜 포맷팅을 위해 인덱스 처리
-        for date, row in earn_df.iterrows():
-            date_str = date.strftime('%Y-%m-%d')
-            eps_est = row.get('EPS Estimate', '-')
-            eps_act = row.get('Reported EPS', '-')
-            surp = row.get('Surprise(%)', '-')
+    for attempt in range(3):
+        try:
+            # 1. Ticker 객체 생성 (실패 시 매번 새로운 스텔스 세션으로 IP 변장)
+            current_session = session if attempt == 0 and session else get_robust_session()[0]
+            tkr = yf.Ticker(ticker, session=current_session)
             
-            # 수치 처리
-            surp_text = "-"
-            if isinstance(surp, (int, float)):
-                surp_text = f"{surp*100:+.1f}%"
+            # 2. 시가총액 정보
+            try:
+                info = tkr.info
+                market_cap = info.get('marketCap', 0)
+            except:
+                pass
             
-            html += f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_text}</td></tr>"
+            # 3. 실적 데이터 수집 (안정적인 방식)
+            earn_df = tkr.get_earnings_dates(limit=8)
             
-        html += "</table>"
-        return market_cap, html
+            # 오류 없이 데이터를 잘 받아왔다면 반복문 탈출!
+            if earn_df is not None:
+                break
 
-    except Exception as e:
-        return 0, f"<p style='color:#ef4444;'>데이터 로딩 실패: {str(e)}</p>"
+        except Exception as e:
+            last_error = str(e)
+            time.sleep(2) # Rate Limited 발생 시 2초 대기 후 새로운 세션으로 재돌파!
+            continue
+
+    if earn_df is None or earn_df.empty:
+        error_msg = f"<br><small>(사유: {last_error})</small>" if last_error else ""
+        return market_cap, f"<p style='color:#ef4444;'>실적 데이터가 존재하지 않거나 야후 통신망이 일시 지연되었습니다.{error_msg}</p>"
+
+    # 4. 표 생성 로직 (영우 님의 원본 로직 100% 유지)
+    html = "<table class='ma-table'><tr><th>발표일</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th></tr>"
+    
+    # 날짜 포맷팅을 위해 인덱스 처리
+    for date, row in earn_df.iterrows():
+        date_str = date.strftime('%Y-%m-%d')
+        eps_est = row.get('EPS Estimate', '-')
+        eps_act = row.get('Reported EPS', '-')
+        surp = row.get('Surprise(%)', '-')
+        
+        # 수치 처리
+        surp_text = "-"
+        if isinstance(surp, (int, float)):
+            surp_text = f"{surp*100:+.1f}%"
+        
+        html += f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_text}</td></tr>"
+        
+    html += "</table>"
+    return market_cap, html
 
 def fetch_financial_data(ticker_symbol):
     """IP 차단 에러를 근본적으로 막은 무결점 메인 로직"""
@@ -168,8 +184,8 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 💡 [가장 잘 되던 순정 로직 호출]
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol)
+            # 💡 [가장 잘 되던 순정 로직 호출 + 세션 우회 파라미터 추가]
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
