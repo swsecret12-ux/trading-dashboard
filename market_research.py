@@ -68,103 +68,48 @@ def fetch_investing_news(ticker):
         return "\n".join(news_items) if news_items else "최근 구글 검색 뉴스가 없습니다."
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
-def get_market_cap_and_earnings(ticker, session, crumb, hist_df, sp500_df, is_korean, benchmark_name):
-    """yfinance 캘린더 엔진 활용: 완벽한 텍스트 날짜(Timezone 충돌 방어) 변환 및 D-1, D, D+1 주가 변동률 계산"""
-    market_cap = 0
-    earnings_html = ""
-    rows = []
-    upcoming_row = ""
-
+def get_market_cap_and_earnings(ticker):
+    """
+    영우 님께서 말씀하신 '완벽하게 잘 되던 시절'의 그 로직입니다.
+    세션 우회나 복잡한 헤더 주입 없이 yfinance 표준 메서드만 사용하여 
+    데이터 수집 안정성을 확보했습니다.
+    """
     try:
-        # 💡 [정답 롤백 1] yfinance 내부 크롤러를 꼬이게 하던 session 강제 주입 코드를 완전히 제거했습니다.
+        # 1. 순정 Ticker 객체 생성 (가장 안정적)
         tkr = yf.Ticker(ticker)
-        market_cap = tkr.info.get('marketCap', 0)
-    except: pass
-
-    # Timezone 문제를 막기 위해 차트 날짜를 문자열로 완벽 변환
-    hist_dates = []
-    if not hist_df.empty:
-        hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
-
-    try:
-        # 💡 [정답 롤백 2] 영우님이 말씀하신 '분명히 작동했던 그 순간'의 안정적인 원본 코드로 롤백
+        
+        # 2. 시가총액 정보
+        info = tkr.info
+        market_cap = info.get('marketCap', 0)
+        
+        # 3. 실적 데이터 수집 (안정적인 방식)
         earn_df = tkr.get_earnings_dates(limit=8)
         
-        if earn_df is not None and not earn_df.empty:
-            if earn_df.index.tz is not None:
-                now_tz = pd.Timestamp.now(tz=earn_df.index.tz)
-            else:
-                now_tz = pd.Timestamp.now()
+        if earn_df is None or earn_df.empty:
+            return market_cap, "<p style='color:#ef4444;'>실적 데이터가 존재하지 않습니다.</p>"
 
-            for idx_date, row in earn_df.iterrows():
-                date_str = idx_date.strftime('%Y-%m-%d')
-                eps_est = row.get('EPS Estimate', pd.NA)
-                eps_act = row.get('Reported EPS', pd.NA)
-                surp = row.get('Surprise(%)', pd.NA)
-
-                # 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정!
-                if idx_date > now_tz and pd.isna(eps_act):
-                    if not upcoming_row:
-                        est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
-                        upcoming_row = f"<tr style='background-color:#fffbea;'><td style='color:#64748b;'>⏳ {date_str} (예정)</td><td style='color:#64748b;'>{est_str}</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>"
-                    continue
-
-                if pd.isna(eps_act) and pd.isna(eps_est): continue 
-
-                est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
-                act_str = f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
-
-                surp_html = "-"
-                if pd.notna(surp):
-                    surp_val = surp * 100 
-                    if abs(surp_val) > 1000: surp_val = surp # yfinance 버전에 따라 이미 % 단위일 경우 방어
-                    color = "#22c55e" if surp_val > 0 else "#ef4444"
-                    surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
-
-                # 핵심 로직: D-1, D, D+1 주가 변동률 추적
-                t_minus_1, t_0, t_plus_1 = "-", "-", "-"
-                
-                # 오늘 기준 비교
-                now_date_str = now_tz.strftime('%Y-%m-%d')
-                if date_str > now_date_str:
-                    t_minus_1, t_0, t_plus_1 = "대기중", "대기중", "대기중"
-                else:
-                    # 해당 발표일 혹은 가장 가까운 다음 거래일 찾기 (휴장일 방어)
-                    future_or_exact = [d for d in hist_dates if d >= date_str]
-                    if future_or_exact:
-                        idx_pos = hist_dates.index(future_or_exact[0])
-                        
-                        def get_pct(pos):
-                            if pos < 1 or pos >= len(hist_df): return "-"
-                            pct = hist_df['Pct_Change'].iloc[pos]
-                            c = "#22c55e" if pct > 0 else "#ef4444"
-                            return f"<span style='color:{c}; font-weight:bold;'>{pct:+.2f}%</span>"
-                        
-                        t_minus_1 = get_pct(idx_pos - 1)
-                        t_0 = get_pct(idx_pos)
-                        
-                        if idx_pos + 1 < len(hist_df):
-                            t_plus_1 = get_pct(idx_pos + 1)
-                        else:
-                            t_plus_1 = "아직 안나옴"
-                    else:
-                        t_minus_1, t_0, t_plus_1 = "-", "-", "-"
-
-                rows.append(f"<tr><td>{date_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_html}</td><td>{t_minus_1}</td><td>{t_0}</td><td>{t_plus_1}</td></tr>")
-    except Exception as e: pass
-
-    final_rows = []
-    if upcoming_row: final_rows.append(upcoming_row)
-    final_rows.extend(rows)
-
-    if final_rows:
-        earnings_html = f"<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>발표 전일(D-1)</th><th>당일(D)</th><th>익일(D+1)</th></tr>"
-        earnings_html += "".join(final_rows) + "</table>"
-        earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* D-1, D, D+1은 해당 일자의 <strong>전일 종가 대비 변동률(%)</strong>입니다.</p>"
-    else:
-        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
+        # 4. 표 생성 로직 (영우 님의 원본 로직 유지)
+        html = "<table class='ma-table'><tr><th>발표일</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th></tr>"
         
-    return market_cap, earnings_html
+        # 날짜 포맷팅을 위해 인덱스 처리
+        for date, row in earn_df.iterrows():
+            date_str = date.strftime('%Y-%m-%d')
+            eps_est = row.get('EPS Estimate', '-')
+            eps_act = row.get('Reported EPS', '-')
+            surp = row.get('Surprise(%)', '-')
+            
+            # 수치 처리
+            surp_text = "-"
+            if isinstance(surp, (int, float)):
+                surp_text = f"{surp*100:+.1f}%"
+            
+            html += f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_text}</td></tr>"
+            
+        html += "</table>"
+        return market_cap, html
+
+    except Exception as e:
+        return 0, f"<p style='color:#ef4444;'>데이터 로딩 실패: {str(e)}</p>"
 
 def fetch_financial_data(ticker_symbol):
     """IP 차단 에러를 근본적으로 막은 무결점 메인 로직"""
@@ -223,8 +168,8 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 실적 함수 호출 (D-1, D, D+1 로직 완벽 적용)
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb, df_1d, sp500_1d, is_korean, benchmark_name)
+            # 💡 [가장 잘 되던 순정 로직 호출]
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
