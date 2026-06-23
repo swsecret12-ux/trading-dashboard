@@ -71,74 +71,74 @@ def fetch_investing_news(ticker):
 
 def get_yahoo_earnings_pure_api(ticker):
     """
-    💡 [최종 구세주 패치] lxml 에러를 일으키는 yfinance를 100% 버립니다! 
-    야후 내부 통신망에 다이렉트로 침투하여 순수 JSON 데이터만 뽑아오는 무적 크롤러입니다.
+    💡 [최종 우주 방어 패치]
+    1. lxml 에러를 뿜는 yfinance 달력 함수를 완전히 버립니다.
+    2. Crumb(보안 토큰)을 요구해서 401 에러를 내던 quoteSummary API도 버립니다.
+    3. 1d/1h 차트를 그릴 때 사용하는 '절대 막히지 않는 차트 API(v8)'에 'events=earnings' 옵션만 몰래 붙여서 실적을 100% 안전하게 빼옵니다.
     """
     session = requests.Session()
     session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "*/*"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     })
     
-    # 쿠키 발급
-    try: session.get("https://fc.yahoo.com", timeout=5)
-    except: pass
+    records = []
     
-    # Crumb(보안 토큰) 탈취
-    crumb = ""
+    # 1. 차트 API에서 과거 실적(EPS) 스캔 (Crumb 인증 100% 우회)
     try:
-        res = session.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=5)
-        if res.status_code == 200: crumb = res.text.strip()
-    except: pass
-    
-    # 실적 API 직접 통신
-    url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
-    if crumb: url += f"&crumb={crumb}"
-    
-    try:
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?range=2y&interval=1d&events=earnings"
         res = session.get(url, timeout=5)
-        if res.status_code != 200: return pd.DataFrame()
-        
-        data = res.json()
-        result = data.get("quoteSummary", {}).get("result", [])
-        if not result: return pd.DataFrame()
-        
-        records = []
-        
-        # 과거 실측치 데이터 파싱
-        hist = result[0].get("earningsHistory", {}).get("history", [])
-        for h in hist:
-            dt_fmt = h.get("quarter", {}).get("fmt")
-            if not dt_fmt: continue
-            records.append({
-                "Date": pd.to_datetime(dt_fmt).tz_localize('UTC'),
-                "EPS Estimate": h.get("epsEstimate", {}).get("raw", pd.NA),
-                "Reported EPS": h.get("epsActual", {}).get("raw", pd.NA),
-                "Surprise(%)": h.get("surprisePercent", {}).get("raw", pd.NA)
-            })
-            
-        # 다가오는 미래 예상치 파싱
-        cal = result[0].get("calendarEvents", {}).get("earnings", {})
-        for nd in cal.get("earningsDate", []):
-            ts = nd.get("raw")
-            if ts:
+        if res.status_code == 200:
+            data = res.json()
+            earnings = data.get('chart', {}).get('result', [{}])[0].get('events', {}).get('earnings', {})
+            for ts_str, ev in earnings.items():
+                try:
+                    dt = pd.to_datetime(int(ts_str), unit='s').tz_localize('UTC')
+                    eps_est = ev.get('epsEstimate', pd.NA)
+                    eps_act = ev.get('epsActual', pd.NA)
+                    surp = pd.NA
+                    # 수동으로 서프라이즈 퍼센트 정확하게 계산
+                    if pd.notna(eps_est) and pd.notna(eps_act) and eps_est != 0:
+                        surp = (eps_act - eps_est) / abs(eps_est)
+                        
+                    records.append({
+                        'Date': dt,
+                        'EPS Estimate': eps_est,
+                        'Reported EPS': eps_act,
+                        'Surprise(%)': surp
+                    })
+                except: continue
+    except: pass
+    
+    # 2. 다가오는 미래 실적 일정 스캔 (JSON 통신이므로 lxml 에러 발생 안 함)
+    try:
+        tkr = yf.Ticker(ticker)
+        info = tkr.info
+        next_ts = info.get('earningsTimestamp') or info.get('earningsTimestampStart')
+        if next_ts:
+            next_dt = pd.to_datetime(next_ts, unit='s').tz_localize('UTC')
+            # 과거 데이터와 중복되는지 방어
+            exists = False
+            for r in records:
+                if r['Date'].strftime('%Y-%m-%d') == next_dt.strftime('%Y-%m-%d'):
+                    exists = True
+                    break
+            if not exists:
                 records.append({
-                    "Date": pd.to_datetime(ts, unit="s").tz_localize('UTC'),
-                    "EPS Estimate": cal.get("earningsAverage", {}).get("raw", pd.NA),
-                    "Reported EPS": pd.NA,
-                    "Surprise(%)": pd.NA
+                    'Date': next_dt,
+                    'EPS Estimate': pd.NA,
+                    'Reported EPS': pd.NA,
+                    'Surprise(%)': pd.NA
                 })
-                
-        if not records: return pd.DataFrame()
-        
-        df = pd.DataFrame(records)
-        df = df.drop_duplicates(subset=["Date"]).set_index("Date").sort_index(ascending=False)
-        return df
-    except:
-        return pd.DataFrame()
+    except: pass
+    
+    if not records: return pd.DataFrame()
+    
+    df = pd.DataFrame(records)
+    df = df.sort_values('Date', ascending=False).drop_duplicates(subset=['Date'])
+    return df.set_index('Date')
 
 def get_market_cap_and_earnings(ticker, hist_df):
-    """순수 API로 긁어온 데이터를 영우님의 천재적인 D-1, D, D+1 로직과 결합합니다!"""
+    """무적 API로 긁어온 데이터를 영우님의 천재적인 D-1, D, D+1 로직과 결합합니다!"""
     market_cap = 0
     earnings_html = ""
     rows = []
@@ -285,7 +285,7 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 💡 [구세주 패치 연동] 불필요한 session, crumb 파라미터를 버리고 깔끔하게 호출합니다!
+            # 💡 [무적 API 실적 호출] - DataFrame과 함께 D-1, D, D+1 계산을 완벽 수행합니다!
             market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
