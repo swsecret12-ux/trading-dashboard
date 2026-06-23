@@ -68,61 +68,97 @@ def fetch_investing_news(ticker):
         return "\n".join(news_items) if news_items else "최근 구글 검색 뉴스가 없습니다."
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
-def get_market_cap_and_earnings(ticker, session=None):
-    """
-    영우 님께서 말씀하신 '완벽하게 잘 되던 시절'의 순정 로직입니다.
-    여기에 야후의 Too Many Requests (Rate Limit) 차단을 뚫기 위한
-    세션 우회 + 3단 재시도 장치만 살짝 씌웠습니다.
-    """
+def get_earnings_without_lxml(ticker, session, crumb=""):
+    """💡 [구세주 패치] lxml 에러를 뿜는 yfinance를 버리고, 야후에서 JSON 데이터를 직접 추출합니다!"""
+    url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
+    if crumb: url += f"&crumb={crumb}"
+    try:
+        res = session.get(url, timeout=5)
+        if res.status_code != 200: return None
+        data = res.json()
+        result_list = data.get('quoteSummary', {}).get('result', [])
+        if not result_list: return None
+        result = result_list[0]
+        
+        records = []
+        # 1. 과거 실적 파싱
+        for h in result.get('earningsHistory', {}).get('history', []):
+            date_str = h.get('quarter', {}).get('fmt')
+            if not date_str: continue
+            records.append({
+                'Date': pd.to_datetime(date_str),
+                'EPS Estimate': h.get('epsEstimate', {}).get('raw', pd.NA),
+                'Reported EPS': h.get('epsActual', {}).get('raw', pd.NA),
+                'Surprise(%)': h.get('surprisePercent', {}).get('raw', pd.NA)
+            })
+            
+        # 2. 미래 예상 실적 파싱
+        events = result.get('calendarEvents', {}).get('earnings', {})
+        for nd in events.get('earningsDate', []):
+            ts = nd.get('raw')
+            if ts:
+                records.append({
+                    'Date': pd.to_datetime(ts, unit='s'),
+                    'EPS Estimate': events.get('earningsAverage', {}).get('raw', pd.NA),
+                    'Reported EPS': pd.NA,
+                    'Surprise(%)': pd.NA
+                })
+        
+        if not records: return None
+        df = pd.DataFrame(records)
+        df = df.drop_duplicates(subset=['Date']).set_index('Date').sort_index(ascending=False)
+        return df
+    except Exception:
+        return None
+
+def get_market_cap_and_earnings(ticker, session=None, crumb=""):
     market_cap = 0
     earn_df = None
     last_error = ""
 
     for attempt in range(3):
         try:
-            # 1. Ticker 객체 생성 (실패 시 매번 새로운 스텔스 세션으로 IP 변장)
             current_session = session if attempt == 0 and session else get_robust_session()[0]
             tkr = yf.Ticker(ticker, session=current_session)
             
-            # 2. 시가총액 정보
             try:
                 info = tkr.info
                 market_cap = info.get('marketCap', 0)
             except:
                 pass
             
-            # 3. 실적 데이터 수집 (안정적인 방식)
-            earn_df = tkr.get_earnings_dates(limit=8)
+            # 💡 기존의 에러 덩어리였던 tkr.get_earnings_dates() 대신 커스텀 함수로 교체!
+            earn_df = get_earnings_without_lxml(ticker, current_session, crumb)
             
-            # 오류 없이 데이터를 잘 받아왔다면 반복문 탈출!
             if earn_df is not None:
                 break
 
         except Exception as e:
             last_error = str(e)
-            time.sleep(2) # Rate Limited 발생 시 2초 대기 후 새로운 세션으로 재돌파!
+            time.sleep(2) 
             continue
 
     if earn_df is None or earn_df.empty:
         error_msg = f"<br><small>(사유: {last_error})</small>" if last_error else ""
         return market_cap, f"<p style='color:#ef4444;'>실적 데이터가 존재하지 않거나 야후 통신망이 일시 지연되었습니다.{error_msg}</p>"
 
-    # 4. 표 생성 로직 (영우 님의 원본 로직 100% 유지)
     html = "<table class='ma-table'><tr><th>발표일</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th></tr>"
     
-    # 날짜 포맷팅을 위해 인덱스 처리
     for date, row in earn_df.iterrows():
         date_str = date.strftime('%Y-%m-%d')
         eps_est = row.get('EPS Estimate', '-')
         eps_act = row.get('Reported EPS', '-')
         surp = row.get('Surprise(%)', '-')
         
-        # 수치 처리
+        # 수치 포맷팅 방어 로직
+        eps_est_str = f"{eps_est:.2f}" if pd.notna(eps_est) and isinstance(eps_est, (int, float)) else "-"
+        eps_act_str = f"{eps_act:.2f}" if pd.notna(eps_act) and isinstance(eps_act, (int, float)) else "-"
+        
         surp_text = "-"
-        if isinstance(surp, (int, float)):
+        if pd.notna(surp) and isinstance(surp, (int, float)):
             surp_text = f"{surp*100:+.1f}%"
         
-        html += f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_text}</td></tr>"
+        html += f"<tr><td>{date_str}</td><td>{eps_est_str}</td><td>{eps_act_str}</td><td>{surp_text}</td></tr>"
         
     html += "</table>"
     return market_cap, html
@@ -184,8 +220,8 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 💡 [가장 잘 되던 순정 로직 호출 + 세션 우회 파라미터 추가]
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session)
+            # 💡 [핵심 패치] crumb 파라미터 추가
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
