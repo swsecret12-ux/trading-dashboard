@@ -203,13 +203,57 @@ def get_market_cap_and_earnings(ticker, hist_df):
             if pd.isna(eps_act) and pd.isna(eps_est): continue 
 
             est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
-            html += f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_text}</td></tr>"
-            
-        html += "</table>"
-        return market_cap, html
+            act_str = f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
 
-    except Exception as e:
-        return 0, f"<p style='color:#ef4444;'>데이터 로딩 실패: {str(e)}</p>"
+            surp_html = "-"
+            if pd.notna(surp):
+                surp_val = surp * 100
+                color = "#22c55e" if surp_val > 0 else "#ef4444"
+                surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
+
+            # 핵심 로직: D-1, D, D+1 주가 변동률 추적
+            t_minus_1, t_0, t_plus_1 = "-", "-", "-"
+            
+            # 오늘 기준 비교
+            now_date_str = now_tz.strftime('%Y-%m-%d')
+            if date_str > now_date_str:
+                t_minus_1, t_0, t_plus_1 = "대기중", "대기중", "대기중"
+            else:
+                # 해당 발표일 혹은 가장 가까운 다음 거래일 찾기
+                future_or_exact = [d for d in hist_dates if d >= date_str]
+                if future_or_exact:
+                    idx_pos = hist_dates.index(future_or_exact[0])
+                    
+                    def get_pct(pos):
+                        if pos < 1 or pos >= len(hist_df): return "-"
+                        pct = hist_df['Pct_Change'].iloc[pos]
+                        c = "#22c55e" if pct > 0 else "#ef4444"
+                        return f"<span style='color:{c}; font-weight:bold;'>{pct:+.2f}%</span>"
+                    
+                    t_minus_1 = get_pct(idx_pos - 1)
+                    t_0 = get_pct(idx_pos)
+                    
+                    if idx_pos + 1 < len(hist_df):
+                        t_plus_1 = get_pct(idx_pos + 1)
+                    else:
+                        t_plus_1 = "아직 안나옴"
+                else:
+                    t_minus_1, t_0, t_plus_1 = "-", "-", "-"
+
+            rows.append(f"<tr><td>{date_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_html}</td><td>{t_minus_1}</td><td>{t_0}</td><td>{t_plus_1}</td></tr>")
+
+    final_rows = []
+    if upcoming_row: final_rows.append(upcoming_row)
+    final_rows.extend(rows)
+
+    if final_rows:
+        earnings_html = f"<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>발표 전일(D-1)</th><th>당일(D)</th><th>익일(D+1)</th></tr>"
+        earnings_html += "".join(final_rows) + "</table>"
+        earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* D-1, D, D+1은 해당 일자의 <strong>전일 종가 대비 변동률(%)</strong>입니다.</p>"
+    else:
+        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
+        
+    return market_cap, earnings_html
 
 def get_valuation_html(ticker_symbol, is_korean):
     """EPS와 PER을 기반으로 기업의 가치와 적정 주가를 산출하는 함수"""
@@ -312,10 +356,10 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 💡 [가장 잘 되던 순정 로직 호출]
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol)
+            # 실적 함수 호출 (D-1, D, D+1 로직 적용)
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d)
             
-            # 💡 [신규] EPS/PER 기반 밸류에이션(가치 평가) 로직 호출
+            # EPS/PER 기반 밸류에이션(가치 평가) 로직 호출
             valuation_html = get_valuation_html(ticker_symbol, is_korean)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
@@ -397,6 +441,8 @@ def fetch_financial_data(ticker_symbol):
 
 def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     from api_utils import ask_gemini_dynamic
+    import time
+    
     today = datetime.now().strftime('%Y-%m-%d')
     extreme_info = fin_data.get('extreme_events', '')
     
@@ -427,4 +473,13 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     - **핵심 리스크:**
     - **최종 Action:** """
     
-    return ask_gemini_dynamic(prompt, [])
+    # 💡 [핵심 패치] 무료 API 한도 초과(429) 시 자동으로 25초 대기 후 끈질기게 재시도하는 로직 추가!
+    for attempt in range(3):
+        result = ask_gemini_dynamic(prompt, [])
+        if "429" in result or "quota" in result.lower() or "소진" in result:
+            if attempt < 2:
+                time.sleep(25)  # 25초 푹 쉬고 다시 구글 문을 두드립니다.
+                continue
+        return result
+        
+    return "API 호출 한도 초과로 분석을 완료하지 못했습니다. 잠시 후 다시 시도해주세요."
