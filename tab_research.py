@@ -47,6 +47,7 @@ def render_research_tab():
                                 <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
                                 <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
                                 <div class='info-card'><h4>💰 분기 실적 (Earnings)</h4>{fin_data.get('earnings_html', '')}</div>
+                                <div class='info-card'><h4>⚖️ 기업 가치 및 적정주가 (EPS × PER)</h4>{fin_data.get('valuation_html', '')}</div>
                                 <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
                                 """
                                 insert_db("sector_analysis", {
