@@ -203,57 +203,57 @@ def get_market_cap_and_earnings(ticker, hist_df):
             if pd.isna(eps_act) and pd.isna(eps_est): continue 
 
             est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
-            act_str = f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
-
-            surp_html = "-"
-            if pd.notna(surp):
-                surp_val = surp * 100
-                color = "#22c55e" if surp_val > 0 else "#ef4444"
-                surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
-
-            # 핵심 로직: D-1, D, D+1 주가 변동률 추적
-            t_minus_1, t_0, t_plus_1 = "-", "-", "-"
+            html += f"<tr><td>{date_str}</td><td>{eps_est}</td><td>{eps_act}</td><td>{surp_text}</td></tr>"
             
-            # 오늘 기준 비교
-            now_date_str = now_tz.strftime('%Y-%m-%d')
-            if date_str > now_date_str:
-                t_minus_1, t_0, t_plus_1 = "대기중", "대기중", "대기중"
-            else:
-                # 해당 발표일 혹은 가장 가까운 다음 거래일 찾기
-                future_or_exact = [d for d in hist_dates if d >= date_str]
-                if future_or_exact:
-                    idx_pos = hist_dates.index(future_or_exact[0])
-                    
-                    def get_pct(pos):
-                        if pos < 1 or pos >= len(hist_df): return "-"
-                        pct = hist_df['Pct_Change'].iloc[pos]
-                        c = "#22c55e" if pct > 0 else "#ef4444"
-                        return f"<span style='color:{c}; font-weight:bold;'>{pct:+.2f}%</span>"
-                    
-                    t_minus_1 = get_pct(idx_pos - 1)
-                    t_0 = get_pct(idx_pos)
-                    
-                    if idx_pos + 1 < len(hist_df):
-                        t_plus_1 = get_pct(idx_pos + 1)
-                    else:
-                        t_plus_1 = "아직 안나옴"
-                else:
-                    t_minus_1, t_0, t_plus_1 = "-", "-", "-"
+        html += "</table>"
+        return market_cap, html
 
-            rows.append(f"<tr><td>{date_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_html}</td><td>{t_minus_1}</td><td>{t_0}</td><td>{t_plus_1}</td></tr>")
+    except Exception as e:
+        return 0, f"<p style='color:#ef4444;'>데이터 로딩 실패: {str(e)}</p>"
 
-    final_rows = []
-    if upcoming_row: final_rows.append(upcoming_row)
-    final_rows.extend(rows)
-
-    if final_rows:
-        earnings_html = f"<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th><th>발표 전일(D-1)</th><th>당일(D)</th><th>익일(D+1)</th></tr>"
-        earnings_html += "".join(final_rows) + "</table>"
-        earnings_html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* D-1, D, D+1은 해당 일자의 <strong>전일 종가 대비 변동률(%)</strong>입니다.</p>"
-    else:
-        earnings_html = "<p style='color:#ef4444;'>해당 종목의 실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
+def get_valuation_html(ticker_symbol, is_korean):
+    """EPS와 PER을 기반으로 기업의 가치와 적정 주가를 산출하는 함수"""
+    try:
+        tkr = yf.Ticker(ticker_symbol)
+        info = tkr.info
         
-    return market_cap, earnings_html
+        curr_price = info.get('currentPrice', info.get('previousClose', 0))
+        trailing_pe = info.get('trailingPE', 0)
+        trailing_eps = info.get('trailingEps', 0)
+        forward_eps = info.get('forwardEps', 0)
+        target_price = info.get('targetMeanPrice', 0)
+        
+        if not trailing_pe or not trailing_eps:
+            return "<p style='color:#64748b;'>PER/EPS 밸류에이션 데이터가 제공되지 않는 종목입니다.</p>"
+            
+        # 기대 적정주가 계산 (내년 예상 EPS * 현재 프리미엄 PER)
+        calc_forward_price = trailing_pe * forward_eps if isinstance(trailing_pe, (int, float)) and isinstance(forward_eps, (int, float)) else 0
+        
+        sym = "₩" if is_korean else "$"
+        fmt = ",.0f" if is_korean else ".2f"
+        
+        html = "<table class='ma-table'>"
+        html += "<tr><th>현재 주가</th><th>현재 PER</th><th>현재 EPS (TTM)</th><th>내년 예상 EPS</th><th>기대 적정주가</th><th>월가 목표가</th></tr>"
+        html += "<tr>"
+        html += f"<td>{sym}{curr_price:{fmt}}</td>" if isinstance(curr_price, (int, float)) else "<td>-</td>"
+        html += f"<td>{trailing_pe:.2f}배</td>" if isinstance(trailing_pe, (int, float)) else "<td>-</td>"
+        html += f"<td>{sym}{trailing_eps:{fmt}}</td>" if isinstance(trailing_eps, (int, float)) else "<td>-</td>"
+        html += f"<td>{sym}{forward_eps:{fmt}}</td>" if isinstance(forward_eps, (int, float)) else "<td>-</td>"
+        
+        if calc_forward_price:
+            color = "#22c55e" if calc_forward_price > curr_price else "#ef4444"
+            html += f"<td><span style='color:{color}; font-weight:bold;'>{sym}{calc_forward_price:{fmt}}</span></td>"
+        else:
+            html += "<td>-</td>"
+            
+        html += f"<td>{sym}{target_price:{fmt}}</td>" if isinstance(target_price, (int, float)) else "<td>-</td>"
+        html += "</tr>"
+        html += "</table>"
+        html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* <strong>기대 적정주가</strong> = 내년 예상 EPS × 현재 PER<br>*(현재 시장이 부여하는 기대치(PER)가 내년에도 동일하게 유지된다고 가정했을 때의 산술적 목표가입니다.)</p>"
+        
+        return html
+    except Exception as e:
+        return f"<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. ({str(e)})</p>"
 
 def fetch_financial_data(ticker_symbol):
     """IP 차단 에러를 근본적으로 막은 무결점 메인 로직"""
@@ -312,8 +312,11 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "변동성 데이터 부족"
             
-            # 💡 [나스닥 API + 글로벌 프록시 하이브리드 추출]
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d)
+            # 💡 [가장 잘 되던 순정 로직 호출]
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol)
+            
+            # 💡 [신규] EPS/PER 기반 밸류에이션(가치 평가) 로직 호출
+            valuation_html = get_valuation_html(ticker_symbol, is_korean)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
@@ -382,6 +385,7 @@ def fetch_financial_data(ticker_symbol):
                 "ma_html": ma_html,
                 "momentum_html": momentum_html,
                 "earnings_html": earnings_html,
+                "valuation_html": valuation_html,
                 "raw_news": raw_news,
                 "extreme_events": extreme_events_str
             }
