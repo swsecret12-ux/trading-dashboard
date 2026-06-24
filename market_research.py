@@ -71,15 +71,10 @@ def fetch_investing_news(ticker):
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_earnings_alternative(ticker):
-    """
-    💡 [탈(脫) 야후 무적 패치] 
-    1. 에러를 뿜는 야후 파이낸스를 완전히 버리고 나스닥(NASDAQ) 공식 API를 1차로 뚫고 들어갑니다.
-    2. 나스닥도 막히면, AllOrigins 글로벌 프록시 네트워크를 통해 다른 나라 IP로 우회하여 강제 추출합니다.
-    """
+    """나스닥 & AllOrigins 프록시 우회 실적 데이터 추출기"""
     clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
     records = []
     
-    # [1단계] 나스닥(NASDAQ) 공식 API 다이렉트 호출
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
@@ -88,7 +83,6 @@ def get_earnings_alternative(ticker):
     }
     
     try:
-        # 1-1. 과거 실적 및 서프라이즈
         url_history = f"https://api.nasdaq.com/api/company/{clean_ticker}/earnings-surprise"
         res = requests.get(url_history, headers=headers, timeout=5)
         if res.status_code == 200:
@@ -101,12 +95,9 @@ def get_earnings_alternative(ticker):
                     eps_est = float(r.get('consensusForecast')) if r.get('consensusForecast') else pd.NA
                     eps_act = float(r.get('eps')) if r.get('eps') else pd.NA
                     surp = float(r.get('percentageSurprise')) / 100.0 if r.get('percentageSurprise') else pd.NA
-                    records.append({
-                        'Date': dt, 'EPS Estimate': eps_est, 'Reported EPS': eps_act, 'Surprise(%)': surp
-                    })
+                    records.append({'Date': dt, 'EPS Estimate': eps_est, 'Reported EPS': eps_act, 'Surprise(%)': surp})
                 except: continue
                 
-        # 1-2. 다가오는 미래 실적 발표일
         url_next = f"https://api.nasdaq.com/api/analyst/{clean_ticker}/earnings-date"
         res_next = requests.get(url_next, headers=headers, timeout=5)
         if res_next.status_code == 200:
@@ -115,27 +106,19 @@ def get_earnings_alternative(ticker):
                 dt_next = pd.to_datetime(announcement).tz_localize('UTC')
                 exists = any(r['Date'].strftime('%Y-%m-%d') == dt_next.strftime('%Y-%m-%d') for r in records)
                 if not exists:
-                    records.append({
-                        'Date': dt_next, 'EPS Estimate': pd.NA, 'Reported EPS': pd.NA, 'Surprise(%)': pd.NA
-                    })
+                    records.append({'Date': dt_next, 'EPS Estimate': pd.NA, 'Reported EPS': pd.NA, 'Surprise(%)': pd.NA})
     except: pass
 
-    # [2단계] 나스닥 API도 서버를 튕겨낸다면? -> AllOrigins (글로벌 프록시 우회) API 호출!
-    # 스트림릿 서버 IP가 아닌, 프록시 서버의 IP를 통해 야후 데이터를 몰래 빼옵니다.
     if not records:
         try:
             target_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
             proxy_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
-            
             res_proxy = requests.get(proxy_url, timeout=10)
             if res_proxy.status_code == 200:
-                proxy_contents = res_proxy.json().get('contents', '{}')
-                proxy_data = json.loads(proxy_contents)
+                proxy_data = json.loads(res_proxy.json().get('contents', '{}'))
                 result = proxy_data.get('quoteSummary', {}).get('result', [])
-                
                 if result:
-                    hist = result[0].get("earningsHistory", {}).get("history", [])
-                    for h in hist:
+                    for h in result[0].get("earningsHistory", {}).get("history", []):
                         dt_fmt = h.get("quarter", {}).get("fmt")
                         if not dt_fmt: continue
                         records.append({
@@ -144,7 +127,6 @@ def get_earnings_alternative(ticker):
                             "Reported EPS": h.get("epsActual", {}).get("raw", pd.NA),
                             "Surprise(%)": h.get("surprisePercent", {}).get("raw", pd.NA)
                         })
-                    
                     cal = result[0].get("calendarEvents", {}).get("earnings", {})
                     for nd in cal.get("earningsDate", []):
                         ts = nd.get("raw")
@@ -157,15 +139,12 @@ def get_earnings_alternative(ticker):
                             })
         except: pass
 
-    if not records:
-        return pd.DataFrame()
-    
+    if not records: return pd.DataFrame()
     df = pd.DataFrame(records)
-    df = df.sort_values('Date', ascending=False).drop_duplicates(subset=['Date'])
-    return df.set_index('Date')
+    return df.sort_values('Date', ascending=False).drop_duplicates(subset=['Date']).set_index('Date')
 
 def get_market_cap_and_earnings(ticker, hist_df):
-    """무적 API로 긁어온 데이터를 영우님의 천재적인 D-1, D, D+1 로직과 결합합니다!"""
+    """실적(Earnings) 3일(D-1, D, D+1) 주가 변동률 결합 로직"""
     market_cap = 0
     earnings_html = ""
     rows = []
@@ -176,12 +155,7 @@ def get_market_cap_and_earnings(ticker, hist_df):
         market_cap = tkr.info.get('marketCap', 0)
     except: pass
 
-    # Timezone 문제를 막기 위해 차트 날짜를 문자열로 완벽 변환
-    hist_dates = []
-    if not hist_df.empty:
-        hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist()
-
-    # 💡 야후 모듈을 버리고, 나스닥 & 프록시 우회 크롤러를 호출합니다!
+    hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist() if not hist_df.empty else []
     earn_df = get_earnings_alternative(ticker)
 
     if not earn_df.empty:
@@ -193,7 +167,6 @@ def get_market_cap_and_earnings(ticker, hist_df):
             eps_act = row.get('Reported EPS', pd.NA)
             surp = row.get('Surprise(%)', pd.NA)
 
-            # 다가오는 미래 날짜는 가장 윗줄에 노란색으로 고정!
             if idx_date > now_tz and pd.isna(eps_act):
                 if not upcoming_row:
                     est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
@@ -204,22 +177,19 @@ def get_market_cap_and_earnings(ticker, hist_df):
 
             est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
             act_str = f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
-
+            
             surp_html = "-"
             if pd.notna(surp):
                 surp_val = surp * 100
                 color = "#22c55e" if surp_val > 0 else "#ef4444"
                 surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
 
-            # 핵심 로직: D-1, D, D+1 주가 변동률 추적
             t_minus_1, t_0, t_plus_1 = "-", "-", "-"
             
-            # 오늘 기준 비교
             now_date_str = now_tz.strftime('%Y-%m-%d')
             if date_str > now_date_str:
                 t_minus_1, t_0, t_plus_1 = "대기중", "대기중", "대기중"
             else:
-                # 해당 발표일 혹은 가장 가까운 다음 거래일 찾기
                 future_or_exact = [d for d in hist_dates if d >= date_str]
                 if future_or_exact:
                     idx_pos = hist_dates.index(future_or_exact[0])
@@ -232,11 +202,7 @@ def get_market_cap_and_earnings(ticker, hist_df):
                     
                     t_minus_1 = get_pct(idx_pos - 1)
                     t_0 = get_pct(idx_pos)
-                    
-                    if idx_pos + 1 < len(hist_df):
-                        t_plus_1 = get_pct(idx_pos + 1)
-                    else:
-                        t_plus_1 = "아직 안나옴"
+                    t_plus_1 = get_pct(idx_pos + 1) if idx_pos + 1 < len(hist_df) else "아직 안나옴"
                 else:
                     t_minus_1, t_0, t_plus_1 = "-", "-", "-"
 
@@ -270,15 +236,13 @@ def get_valuation_html(ticker_symbol, is_korean):
         if not trailing_pe or not trailing_eps:
             return "<p style='color:#64748b;'>PER/EPS 밸류에이션 데이터가 제공되지 않는 종목입니다.</p>"
             
-        # 기대 적정주가 계산 (내년 예상 EPS * 현재 프리미엄 PER)
         calc_forward_price = trailing_pe * forward_eps if isinstance(trailing_pe, (int, float)) and isinstance(forward_eps, (int, float)) else 0
         
         sym = "₩" if is_korean else "$"
         fmt = ",.0f" if is_korean else ".2f"
         
         html = "<table class='ma-table'>"
-        html += "<tr><th>현재 주가</th><th>현재 PER</th><th>현재 EPS (TTM)</th><th>내년 예상 EPS</th><th>기대 적정주가</th><th>월가 목표가</th></tr>"
-        html += "<tr>"
+        html += "<tr><th>현재 주가</th><th>현재 PER</th><th>현재 EPS (TTM)</th><th>내년 예상 EPS</th><th>기대 적정주가</th><th>월가 목표가</th></tr><tr>"
         html += f"<td>{sym}{curr_price:{fmt}}</td>" if isinstance(curr_price, (int, float)) else "<td>-</td>"
         html += f"<td>{trailing_pe:.2f}배</td>" if isinstance(trailing_pe, (int, float)) else "<td>-</td>"
         html += f"<td>{sym}{trailing_eps:{fmt}}</td>" if isinstance(trailing_eps, (int, float)) else "<td>-</td>"
@@ -287,14 +251,11 @@ def get_valuation_html(ticker_symbol, is_korean):
         if calc_forward_price:
             color = "#22c55e" if calc_forward_price > curr_price else "#ef4444"
             html += f"<td><span style='color:{color}; font-weight:bold;'>{sym}{calc_forward_price:{fmt}}</span></td>"
-        else:
-            html += "<td>-</td>"
+        else: html += "<td>-</td>"
             
         html += f"<td>{sym}{target_price:{fmt}}</td>" if isinstance(target_price, (int, float)) else "<td>-</td>"
-        html += "</tr>"
-        html += "</table>"
-        html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* <strong>기대 적정주가</strong> = 내년 예상 EPS × 현재 PER<br>*(현재 시장이 부여하는 기대치(PER)가 내년에도 동일하게 유지된다고 가정했을 때의 산술적 목표가입니다.)</p>"
-        
+        html += "</tr></table>"
+        html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* <strong>기대 적정주가</strong> = 내년 예상 EPS × 현재 PER (단순 산술 추정치)</p>"
         return html
     except Exception as e:
         return f"<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. ({str(e)})</p>"
@@ -302,13 +263,9 @@ def get_valuation_html(ticker_symbol, is_korean):
 def fetch_financial_data(ticker_symbol):
     """IP 차단 에러를 근본적으로 막은 무결점 메인 로직"""
     
-    # 한국 주식(.KS) 자동 변환 로직
-    if ticker_symbol.isdigit():
-        ticker_symbol = f"{ticker_symbol}.KS"
-        
-    # 한국 종목 여부 판단 및 벤치마크 스위칭
+    if ticker_symbol.isdigit(): ticker_symbol = f"{ticker_symbol}.KS"
     is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
-    benchmark_ticker = "^KS11" if is_korean else "^IXIC"  # 💡 미국장 기준을 나스닥 종합지수로 변경
+    benchmark_ticker = "^KS11" if is_korean else "^IXIC" # 미국 벤치마크 나스닥으로 유지
     benchmark_name = "코스피(KOSPI)" if is_korean else "나스닥(NASDAQ)"
 
     for attempt in range(3):
@@ -320,7 +277,6 @@ def fetch_financial_data(ticker_symbol):
             sp500_1d = get_yahoo_chart(benchmark_ticker, "1y", "1d", session, crumb)
             
             if df_1d.empty or df_1h.empty:
-                import yfinance as yf
                 df_1d_raw = yf.download(ticker_symbol, period="1y", interval="1d", progress=False)
                 df_1h_raw = yf.download(ticker_symbol, period="1y", interval="1h", progress=False)
                 sp500_raw = yf.download(benchmark_ticker, period="1y", interval="1d", progress=False)
@@ -342,33 +298,32 @@ def fetch_financial_data(ticker_symbol):
                     return {"error": "차트 데이터를 가져올 수 없습니다. 종목명을 확인해주세요."}
             
             current_price = df_1d['Close'].iloc[-1]
-            
             df_1d['Pct_Change'] = df_1d['Close'].pct_change() * 100
             sp500_1d['Pct_Change'] = sp500_1d['Close'].pct_change() * 100
             
+            # 💡 [핵심] 8% 이상 급변동 풀-스캔 로직 유지
             valid_df = df_1d.dropna(subset=['Pct_Change'])
-            extreme_df = valid_df[valid_df['Pct_Change'].abs() >= 8.0].copy() # 💡 10% -> 8% 이상 모든 변동일 추출
+            extreme_df = valid_df[valid_df['Pct_Change'].abs() >= 8.0].copy() 
             
             if not extreme_df.empty:
                 extreme_df['abs_pct'] = extreme_df['Pct_Change'].abs()
-                extreme_df = extreme_df.sort_values('abs_pct', ascending=False).head(10) # 토큰 방어용 최대 10개 제한
-                extreme_df = extreme_df.sort_index(ascending=False) # 날짜순 정렬
+                extreme_df = extreme_df.sort_values('abs_pct', ascending=False).head(10)
+                extreme_df = extreme_df.sort_index(ascending=False)
                 
                 event_list = []
                 for date, row in extreme_df.iterrows():
                     date_str = date.strftime('%Y-%m-%d')
                     s_pct = row['Pct_Change']
-                    try:
-                        n_pct = sp500_1d.loc[date, 'Pct_Change']
-                    except:
-                        n_pct = 0.0
+                    try: n_pct = sp500_1d.loc[date, 'Pct_Change']
+                    except: n_pct = 0.0
                     event_list.append(f"- [{date_str}] 종목 등락률: {s_pct:+.1f}%, {benchmark_name} 등락률: {n_pct:+.1f}%")
                 extreme_events_str = "\n".join(event_list)
-            else:
-                extreme_events_str = "최근 1년 내 8% 이상 급변동 없음"
+            else: extreme_events_str = "최근 1년 내 8% 이상 급변동 없음"
             
-            # 실적 함수 호출 (D-1, D, D+1 로직 적용)
             market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d)
+            
+            # 💡 [버그 픽스] valuation_html 누락 복구
+            valuation_html = get_valuation_html(ticker_symbol, is_korean)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
@@ -378,7 +333,6 @@ def fetch_financial_data(ticker_symbol):
             
             df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
             df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
-            
             df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
             df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
             
@@ -388,7 +342,6 @@ def fetch_financial_data(ticker_symbol):
             
             gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])].copy()
             dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])].copy()
-            
             gc['Type'] = "🟢 골든크로스"
             dc['Type'] = "🔴 데드크로스"
             crosses = pd.concat([gc, dc]).sort_index()
@@ -400,16 +353,13 @@ def fetch_financial_data(ticker_symbol):
             else:
                 last_cross_type = crosses.iloc[-1]['Type']
                 last_cross_date = crosses.index[-1].strftime('%Y-%m-%d %H:%M')
-                
                 ma_rows = []
                 for idx, row in crosses.tail(3)[::-1].iterrows():
                     color = "#22c55e" if "골든" in row['Type'] else "#ef4444"
                     date_str = idx.strftime('%Y-%m-%d %H:%M')
                     price_str = f"₩{row['Close']:,.0f}" if is_korean else f"${row['Close']:.2f}"
                     ma_rows.append(f"<tr><td><span style='color:{color}; font-weight:bold;'>{row['Type']}</span></td><td>{date_str}</td><td>{price_str}</td></tr>")
-                    
-                ma_html = "<table class='ma-table'><tr><th>상태 (최근 3회)</th><th>발생일</th><th>당시 주가</th></tr>"
-                ma_html += "".join(ma_rows) + "</table>"
+                ma_html = "<table class='ma-table'><tr><th>상태 (최근 3회)</th><th>발생일</th><th>당시 주가</th></tr>" + "".join(ma_rows) + "</table>"
 
             def get_ret(series, days):
                 if len(series) > days: return ((series.iloc[-1] - series.iloc[-(days+1)]) / series.iloc[-(days+1)]) * 100
@@ -425,8 +375,7 @@ def fetch_financial_data(ticker_symbol):
                 mom_rows.append(f"<tr><td><b>{p_name} 변동</b></td><td><span style='color:{s_col}; font-weight:bold;'>{s_ret:+.2f}%</span></td><td><span style='color:{n_col}; font-weight:bold;'>{n_ret:+.2f}%</span></td></tr>")
                 
             curr_str = f"₩{current_price:,.0f}" if is_korean else f"${current_price:.2f}"
-            momentum_html = f"<table class='ma-table'><tr><th>기간</th><th>{ticker_symbol} 현재가: {curr_str}</th><th>{benchmark_name} 비교</th></tr>"
-            momentum_html += "".join(mom_rows) + "</table>"
+            momentum_html = f"<table class='ma-table'><tr><th>기간</th><th>{ticker_symbol} 현재가: {curr_str}</th><th>{benchmark_name} 비교</th></tr>" + "".join(mom_rows) + "</table>"
             
             raw_news = fetch_investing_news(ticker_symbol)
 
@@ -482,12 +431,11 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     - **핵심 리스크:**
     - **최종 Action:** """
     
-    # 💡 [핵심 패치] 무료 API 한도 초과(429) 시 자동으로 25초 대기 후 끈질기게 재시도하는 로직 추가!
     for attempt in range(3):
         result = ask_gemini_dynamic(prompt, [])
         if "429" in result or "quota" in result.lower() or "소진" in result:
             if attempt < 2:
-                time.sleep(25)  # 25초 푹 쉬고 다시 구글 문을 두드립니다.
+                time.sleep(25) 
                 continue
         return result
         
