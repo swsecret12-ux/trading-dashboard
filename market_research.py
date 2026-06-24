@@ -308,8 +308,8 @@ def fetch_financial_data(ticker_symbol):
         
     # 한국 종목 여부 판단 및 벤치마크 스위칭
     is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
-    benchmark_ticker = "^KS11" if is_korean else "^GSPC"
-    benchmark_name = "코스피(KOSPI)" if is_korean else "S&P 500"
+    benchmark_ticker = "^KS11" if is_korean else "^IXIC"  # 💡 미국장 기준을 나스닥 종합지수로 변경
+    benchmark_name = "코스피(KOSPI)" if is_korean else "나스닥(NASDAQ)"
 
     for attempt in range(3):
         try:
@@ -344,23 +344,31 @@ def fetch_financial_data(ticker_symbol):
             current_price = df_1d['Close'].iloc[-1]
             
             df_1d['Pct_Change'] = df_1d['Close'].pct_change() * 100
-            valid_pct = df_1d['Pct_Change'].dropna()
-            if not valid_pct.empty:
-                max_surge_idx = valid_pct.idxmax()
-                max_drop_idx = valid_pct.idxmin()
-                max_surge_date = max_surge_idx.strftime('%Y-%m-%d')
-                max_surge_val = valid_pct.max()
-                max_drop_date = max_drop_idx.strftime('%Y-%m-%d')
-                max_drop_val = valid_pct.min()
-                extreme_events_str = f"🚀 최대 급등일: {max_surge_date} (+{max_surge_val:.1f}%) | 🩸 최대 급락일: {max_drop_date} ({max_drop_val:.1f}%)"
+            sp500_1d['Pct_Change'] = sp500_1d['Close'].pct_change() * 100
+            
+            valid_df = df_1d.dropna(subset=['Pct_Change'])
+            extreme_df = valid_df[valid_df['Pct_Change'].abs() >= 8.0].copy() # 💡 10% -> 8% 이상 모든 변동일 추출
+            
+            if not extreme_df.empty:
+                extreme_df['abs_pct'] = extreme_df['Pct_Change'].abs()
+                extreme_df = extreme_df.sort_values('abs_pct', ascending=False).head(10) # 토큰 방어용 최대 10개 제한
+                extreme_df = extreme_df.sort_index(ascending=False) # 날짜순 정렬
+                
+                event_list = []
+                for date, row in extreme_df.iterrows():
+                    date_str = date.strftime('%Y-%m-%d')
+                    s_pct = row['Pct_Change']
+                    try:
+                        n_pct = sp500_1d.loc[date, 'Pct_Change']
+                    except:
+                        n_pct = 0.0
+                    event_list.append(f"- [{date_str}] 종목 등락률: {s_pct:+.1f}%, {benchmark_name} 등락률: {n_pct:+.1f}%")
+                extreme_events_str = "\n".join(event_list)
             else:
-                extreme_events_str = "변동성 데이터 부족"
+                extreme_events_str = "최근 1년 내 8% 이상 급변동 없음"
             
             # 실적 함수 호출 (D-1, D, D+1 로직 적용)
             market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d)
-            
-            # EPS/PER 기반 밸류에이션(가치 평가) 로직 호출
-            valuation_html = get_valuation_html(ticker_symbol, is_korean)
 
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
@@ -451,22 +459,23 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     
     [분석 대상]
     - 종목: {ticker} (섹터: {sector}) | 기준일: {today}
-    - 최근 1년 핵심 급변동 기록: {extreme_info}
+    - 최근 1년 8% 이상 급변동 기록 (당일 벤치마크 지수 변동률 포함): 
+    {extreme_info}
     - 수집된 최근 구글 뉴스: {fin_data.get('raw_news', '')}
     - 나의 핵심 관점: {user_issue}
     
     [🚨 핵심 지시사항: 과거 팩트체크 초강제]
-    1. 방금 제공된 뉴스는 최근 치에 불과합니다. 따라서 위 [핵심 급변동 기록]에 명시된 날짜의 급등/급락 원인은 **당신의 사전 지식을 100% 동원하여 정확히 찾아내야** 합니다!
+    1. 위 [최근 1년 8% 이상 급변동 기록]에 명시된 모든 날짜들의 급등/급락 원인을 당신의 사전 지식을 100% 동원하여 정확히 찾아내어 표를 채워야 합니다! (예: 특정 파트너십 발표, 어닝 서프라이즈/쇼크 등)
     2. 절대 "알 수 없다"고 쓰지 마세요. 무조건 구체적인 촉매제를 표에 채워 넣으세요.
     3. 종합 의견 작성 시, 무조건 긍정적으로 포장하지 마세요. 리스크 요인을 반드시 비판적으로 서술하세요.
     
     [보고서 필수 목차 및 양식]
     ## 🏢 {ticker} 심층 분석 보고서 ({today} 기준)
     ### 1. 📊 시장 위치 및 핵심 밸류체인 요약
-    ### 2. 🚨 최근 1년 10% 이상 급변동 사유 팩트체크
-    | 발생 시점 | 변동 방향 | 구체적 촉매제 (당신의 지식 총동원) | 펀더멘털 파급력 |
-    |---|---|---|---|
-    | (예: {extreme_info.split('|')[0] if extreme_info else ''}) | 상승/하락 | (예: 실적 서프라이즈) | ... |
+    ### 2. 🚨 최근 1년 8% 이상 급변동 사유 팩트체크
+    | 발생 날짜 | 종목 등락률 | 나스닥/코스피 등락률 | 구체적 촉매제 (당신의 지식 총동원) | 펀더멘털 파급력 |
+    |---|---|---|---|---|
+    | (예: 2024-05-28) | +10.5% | -0.1% | (예: 실적 서프라이즈 및 아마존 협업) | ... |
     ### 3. 💰 실적 및 모멘텀 종합 의견 (비판적 시각 필수 포함)
     ### 4. 💡 기관 트레이딩 결론 (Actionable Insight)
     - **현재 포지션:** (롱/숏/관망 택 1)
