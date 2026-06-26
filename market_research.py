@@ -328,7 +328,7 @@ def fetch_financial_data(ticker_symbol):
                 extreme_events_str = "8% 이상 급변동일 없음"
             
             # 실적 및 가치평가 표 호출
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d, bm_1d, benchmark_name)
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb, df_1d, bm_1d, is_korean, benchmark_name)
             valuation_html = get_valuation_html(ticker_symbol, is_korean)
 
             # EMA 200 크로스 분석 (최대 3회)
