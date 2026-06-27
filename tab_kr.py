@@ -314,46 +314,47 @@ def render_kr_map_tab():
                         y2='Close:Q', 
                         color=color_condition
                     ) + 
-                    selectors + 
-                    rules
-                ).properties(height=750)
-                
-                # 거래량 차트 본체
-                volume_chart = (
-                    base.mark_bar(size=4.0).encode(
-                        x=x_axis_hidden, 
-                        y=alt.Y('Volume:Q', axis=alt.Axis(orient='right', format='.2s', title='거래량')), 
-                        color=color_condition
-                    ) + 
-                    selectors + 
-                    rules
-                ).properties(height=150)
-                
-                # RSI 차트 본체
-                rsi_chart = (
-                    base.mark_line(color='#673ab7', strokeWidth=2).encode(
-                        x=x_axis_show, 
-                        y=alt.Y('RSI:Q', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', title='RSI', tickCount=3))
-                    ) + 
-                    alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y') + 
-                    selectors.encode(x=x_axis_show) + 
-                    rules.encode(x=x_axis_show)
-                ).properties(height=150)
-                
-                # 차트 병합 및 테두리/폰트 크기 설정
-                combined = alt.vconcat(candlestick_chart, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(
-                    stroke='lightgray', strokeWidth=1
-                ).configure_axis(
-                    labelFontSize=13, titleFontSize=13
-                )
-                
-                st.altair_chart(combined, use_container_width=True)
+                formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
+                st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
+            else: 
+                st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: 
-            st.error(f"차트 불러오기 오류: {e}")
-
+            st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+            
+        st.markdown("#### 📊 코스피 (KOSPI) 실시간 흐름 (트레이딩뷰 공식 위젯)")
+        
+        tv_widget_kr = """
+        <div class="tradingview-widget-container" style="height:750px;width:100%; margin-bottom: 20px;">
+          <div id="tradingview_kospi" style="height:calc(100% - 32px);width:100%"></div>
+          <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+          <script type="text/javascript">
+          new TradingView.widget({
+          "autosize": true,
+          "symbol": "KRX:KOSPI",
+          "interval": "D",
+          "timezone": "Etc/UTC",
+          "theme": "light",
+          "style": "1",
+          "locale": "kr",
+          "enable_publishing": false,
+          "backgroundColor": "rgba(255, 255, 255, 1)",
+          "gridColor": "rgba(240, 243, 250, 0)",
+          "hide_top_toolbar": false,
+          "hide_legend": false,
+          "save_image": false,
+          "container_id": "tradingview_kospi",
+          "studies": [
+            "RSI@tv-basicstudies",
+            {"id": "MASimple@tv-basicstudies", "inputs": {"length": 200}}
+          ]
+          });
+          </script>
+        </div>
+        """
+        components.html(tv_widget_kr, height=750)
+            
         st.markdown("---")
 
-        # 3. 4단계 스캔
         yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
         ui_symbols = st.session_state.kospi100_state_df['Symbol'].tolist()
         chunks_yf = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
