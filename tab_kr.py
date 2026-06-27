@@ -189,24 +189,38 @@ def render_kr_map_tab():
                 st.error(f"오류: {e}")
 
     if not st.session_state.kospi100_state_df.empty:
+        # 💡 yfinance 주말 캐시 지연(금요일 누락)을 완벽히 방지하는 야후 v8 API 다이렉트 크롤러
+        def get_kospi_direct(period):
+            try:
+                url = f"https://query2.finance.yahoo.com/v8/finance/chart/^KS11?range={period}&interval=1d"
+                res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+                data = res.json()['chart']['result'][0]
+                df = pd.DataFrame({
+                    'Open': data['indicators']['quote'][0]['open'],
+                    'High': data['indicators']['quote'][0]['high'],
+                    'Low': data['indicators']['quote'][0]['low'],
+                    'Close': data['indicators']['quote'][0]['close'],
+                    'Volume': data['indicators']['quote'][0]['volume']
+                }, index=pd.to_datetime(data['timestamp'], unit='s', utc=True).tz_convert('Asia/Seoul').dt.tz_localize(None))
+                return df.dropna()
+            except:
+                return pd.DataFrame()
+
         # 1. 수익률 표시
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
-            kospi_df = pd.DataFrame()
-            for _ in range(2):
-                try:
-                    temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
-                    if not temp_df.empty:
-                        kospi_df = temp_df
-                        break
-                except: time.sleep(1)
+            kospi_df = get_kospi_direct("4y")
+            if kospi_df.empty: # API 통신 실패 시 기존 yfinance를 백업으로 사용
+                kospi_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
 
             if not kospi_df.empty:
                 # 💡 yfinance 최신 MultiIndex 버그 방어 코드 적용
                 if isinstance(kospi_df.columns, pd.MultiIndex): 
                     close_series = kospi_df['Close'].iloc[:, 0].dropna()
-                else: 
+                elif 'Close' in kospi_df: 
                     close_series = kospi_df['Close'].dropna()
+                else:
+                    close_series = kospi_df.iloc[:, 3].dropna()
                 
                 curr = close_series.iloc[-1]
                 def ret(days):
@@ -226,7 +240,10 @@ def render_kr_map_tab():
         # 2. 종합 차트 렌더링 (인터랙티브 툴팁, RSI, 거래량 포함)
         st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 종합 차트)")
         try:
-            df_raw = yf.download("^KS11", period="1y", interval="1d", progress=False)
+            df_raw = get_kospi_direct("1y")
+            if df_raw.empty:
+                df_raw = yf.download("^KS11", period="1y", interval="1d", progress=False)
+                
             if not df_raw.empty:
                 if isinstance(df_raw.columns, pd.MultiIndex):
                     df_chart = pd.DataFrame({
