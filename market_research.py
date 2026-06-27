@@ -48,7 +48,8 @@ def get_yahoo_chart(ticker, r, i, session, crumb=""):
         if not timestamps: return pd.DataFrame()
         quote = result.get('indicators', {}).get('quote', [{}])[0]
         df = pd.DataFrame({'Open': quote.get('open', []), 'Close': quote.get('close', [])}, index=pd.to_datetime(timestamps, unit='s', utc=True))
-        return df.dropna()
+        # 💡 핵심 픽스: 불러오자마자 종가가 비어있는(NaN) 쓰레기 행을 즉시 제거!
+        return df.dropna(subset=['Close'])
     except: return pd.DataFrame()
 
 def fetch_investing_news(ticker):
@@ -147,8 +148,7 @@ def get_earnings_alternative(ticker):
     df = pd.DataFrame(records).sort_values('Date', ascending=False).drop_duplicates(subset=['Date'])
     return df.set_index('Date')
 
-def get_market_cap_and_earnings(ticker, hist_df, sp500_df, benchmark_name):
-    """💡 4개의 인자만 정확하게 넘겨주도록 수정 완료"""
+def get_market_cap_and_earnings(ticker, hist_df):
     market_cap = 0
     earnings_html = ""
     rows = []
@@ -229,7 +229,6 @@ def get_market_cap_and_earnings(ticker, hist_df, sp500_df, benchmark_name):
     return market_cap, earnings_html
 
 def get_valuation_html(ticker_symbol, is_korean):
-    """EPS와 PER을 기반으로 기업의 가치와 적정 주가를 산출하는 표"""
     try:
         tkr = yf.Ticker(ticker_symbol)
         info = tkr.info
@@ -268,11 +267,9 @@ def get_valuation_html(ticker_symbol, is_korean):
         return f"<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. ({str(e)})</p>"
 
 def fetch_financial_data(ticker_symbol):
-    """금융 데이터 통합 추출 메인 로직"""
-    
     if ticker_symbol.isdigit(): ticker_symbol = f"{ticker_symbol}.KS"
     is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
-    benchmark_ticker = "^KS11" if is_korean else "^IXIC" # 나스닥 종합지수 기준
+    benchmark_ticker = "^KS11" if is_korean else "^IXIC" 
     benchmark_name = "코스피(KOSPI)" if is_korean else "나스닥(NASDAQ)"
 
     for attempt in range(3):
@@ -301,11 +298,16 @@ def fetch_financial_data(ticker_symbol):
                 else:
                     return {"error": "차트 데이터를 가져올 수 없습니다. 종목명을 확인해주세요."}
             
+            # 💡 핵심 버그 픽스: 결측치(NaN) 제거로 가격 및 모멘텀 NaN 에러 영구 차단
+            df_1d = df_1d.dropna(subset=['Close'])
+            df_1h = df_1h.dropna(subset=['Close'])
+            bm_1d = bm_1d.dropna(subset=['Close'])
+
             current_price = df_1d['Close'].iloc[-1]
             df_1d['Pct_Change'] = df_1d['Close'].pct_change() * 100
             bm_1d['Pct_Change'] = bm_1d['Close'].pct_change() * 100
             
-            # 💡 [핵심 패치] 1년치 8% 이상 급변동일 추출 - 토큰 절약을 위해 상위 10개로 압축!
+            # 💡 8% 이상 급변동일 추출 (상위 10개) - 나스닥 비교 열 포함
             extreme_df = df_1d[df_1d['Pct_Change'].abs() >= 8.0].copy()
             if not extreme_df.empty:
                 extreme_df['abs_change'] = extreme_df['Pct_Change'].abs()
@@ -321,13 +323,9 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "8% 이상 급변동일 없음"
             
-            # 💡 정확히 4개의 인자만 전달하여 에러 해결!
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d, bm_1d, benchmark_name)
-            
-            # 가치평가 표 호출
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d)
             valuation_html = get_valuation_html(ticker_symbol, is_korean)
 
-            # EMA 200 크로스 분석 (최대 3회)
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
             df_1h_ma = pd.DataFrame({'Close': df_1h['Close']})
@@ -340,11 +338,13 @@ def fetch_financial_data(ticker_symbol):
             df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
             
             merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
-            merged['Prev_4H'], merged['Prev_1D'] = merged['EMA200_4H'].shift(1), merged['EMA200_1D'].shift(1)
+            merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
+            merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
             
             gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])].copy()
             dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])].copy()
-            gc['Type'], dc['Type'] = "🟢 골든크로스", "🔴 데드크로스"
+            gc['Type'] = "🟢 골든크로스"
+            dc['Type'] = "🔴 데드크로스"
             crosses = pd.concat([gc, dc]).sort_index()
             
             if crosses.empty:
@@ -390,7 +390,7 @@ def fetch_financial_data(ticker_symbol):
             continue
 
 def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
-    """💡 구글 Gemini API 429 한도 초과 시 40초 자동 대기 & 토큰 다이어트 최적화 로직 적용"""
+    """💡 구글 Gemini API 429 에러 발생 시 자동 대기 및 AI 보고서 품질 복원 패치"""
     from api_utils import ask_gemini_dynamic
     import time
     
@@ -402,7 +402,8 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     
     [분석 대상]
     - 종목: {ticker} (섹터: {sector}) | 기준일: {today}
-    - 최근 1년 8% 이상 핵심 급변동 기록 (최대 10개): {extreme_info}
+    - 최근 1년 8% 이상 핵심 급변동 기록 (최대 10개):
+    {extreme_info}
     - 수집된 최근 구글 뉴스: {fin_data.get('raw_news', '')}
     - 나의 핵심 관점: {user_issue}
     
@@ -410,7 +411,6 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     1. 방금 제공된 뉴스는 최근 치에 불과합니다. 따라서 위 [핵심 급변동 기록]에 명시된 날짜별 원인은 당신의 방대한 사전 지식을 동원하여 정확히 찾아내세요.
     2. 1번, 3번, 4번 목차는 월스트리트 전문 보고서처럼 **풍부하고 깊이 있는 인사이트와 상세한 분석**을 제공하세요. (절대 내용을 너무 짧게 줄이지 마세요!)
     3. 종합 의견 작성 시, 리스크 요인을 반드시 포함하고 다각도로 분석하세요.
-    4. **[중요: 표 작성 규칙]** 단, 2번 목차의 '급변동 사유 팩트체크' 표 작성 시, "구체적 촉매제"와 "펀더멘털 파급력" 항목만은 글이 너무 길어지지 않게 핵심 내용 위주로 요약해서 작성하세요.
     
     [보고서 필수 목차 및 양식]
     ## 🏢 {ticker} 심층 분석 보고서 ({today} 기준)
@@ -418,14 +418,13 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     ### 2. 🚨 최근 1년 8% 이상 급변동 사유 팩트체크 (최대 10개)
     | 발생 날짜 | 종목 등락률 | 벤치마크 등락률 | 구체적 촉매제 (당신의 지식 총동원, 핵심 요약) | 펀더멘털 파급력 |
     |---|---|---|---|---|
-    | (예: 2024-05-28) | 상승/하락 | (예: +1.2%) | (예: 실적 서프라이즈 발표) | (간결한 요약) |
+    (⚠️주의: 위 [핵심 급변동 기록]에 제공된 날짜들을 하나도 빠짐없이 전부 표의 행으로 만들어 작성하세요! 1개만 쓰고 생략하면 절대 안 됩니다!)
     ### 3. 💰 실적 및 모멘텀 종합 의견 (상세하고 풍부하게 분석)
     ### 4. 💡 기관 트레이딩 결론
     - **현재 포지션:** (롱/숏/관망 택 1)
     - **핵심 리스크:** (상세 서술)
     - **최종 Action:** (상세 서술) """
     
-    # 무료 API의 429 에러(한도 초과)를 극복하기 위한 40초 쿨타임 로직
     for attempt in range(3):
         result = ask_gemini_dynamic(prompt, [])
         if "429" in result or "quota" in result.lower() or "소진" in result:
