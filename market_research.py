@@ -304,10 +304,15 @@ def fetch_financial_data(ticker_symbol):
             bm_1d = bm_1d.dropna(subset=['Close'])
 
             current_price = df_1d['Close'].iloc[-1]
+            
+            # [추가됨] 전일 종가(Prev_Close) 컬럼 생성
+            df_1d['Prev_Close'] = df_1d['Close'].shift(1)
+            bm_1d['Prev_Close'] = bm_1d['Close'].shift(1)
+            
             df_1d['Pct_Change'] = df_1d['Close'].pct_change() * 100
             bm_1d['Pct_Change'] = bm_1d['Close'].pct_change() * 100
             
-            # 💡 8% 이상 급변동일 추출 (상위 10개) - 나스닥 비교 열 포함
+            # 💡 8% 이상 급변동일 추출 (상위 10개) - 나스닥 비교 열 및 실제 가격 변화 포함
             extreme_df = df_1d[df_1d['Pct_Change'].abs() >= 8.0].copy()
             if not extreme_df.empty:
                 extreme_df['abs_change'] = extreme_df['Pct_Change'].abs()
@@ -316,9 +321,18 @@ def fetch_financial_data(ticker_symbol):
                 for date_idx, row in extreme_df.iterrows():
                     date_str = date_idx.strftime('%Y-%m-%d')
                     pct = row['Pct_Change']
-                    try: bm_pct = bm_1d.loc[date_idx, 'Pct_Change']
-                    except: bm_pct = 0.0
-                    events.append(f"- {date_str}: 종목 {pct:+.1f}%, 벤치마크 {bm_pct:+.1f}%")
+                    curr_p = row['Close']
+                    prev_p = row['Prev_Close']
+                    
+                    try: 
+                        bm_pct = bm_1d.loc[date_idx, 'Pct_Change']
+                        bm_curr = bm_1d.loc[date_idx, 'Close']
+                        bm_prev = bm_1d.loc[date_idx, 'Prev_Close']
+                    except: 
+                        bm_pct, bm_curr, bm_prev = 0.0, 0.0, 0.0
+                    
+                    icon = "🚀 급등" if pct > 0 else "🩸 급락"
+                    events.append(f"- {date_str} ({icon}): 종목 {pct:+.1f}% ({prev_p:.2f} ➡️ {curr_p:.2f}), 벤치마크 {bm_pct:+.1f}% ({bm_prev:.2f} ➡️ {bm_curr:.2f})")
                 extreme_events_str = "\n".join(events)
             else:
                 extreme_events_str = "8% 이상 급변동일 없음"
@@ -402,7 +416,7 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     
     [분석 대상]
     - 종목: {ticker} (섹터: {sector}) | 기준일: {today}
-    - 최근 1년 8% 이상 핵심 급변동 기록 (최대 10개):
+    - 최근 1년 8% 이상 핵심 급변동 기록 (최대 10개, 가격 변화 포함):
     {extreme_info}
     - 수집된 최근 구글 뉴스: {fin_data.get('raw_news', '')}
     - 나의 핵심 관점: {user_issue}
