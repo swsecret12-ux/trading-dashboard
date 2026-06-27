@@ -75,7 +75,6 @@ def get_earnings_alternative(ticker):
     💡 [탈(脫) 야후 무적 패치] 
     1. 나스닥(NASDAQ) 공식 API를 1차로 뚫고 들어갑니다.
     2. 나스닥이 막히면, AllOrigins 글로벌 프록시 네트워크를 통해 야후 내부망을 강제 추출합니다.
-    (lxml 에러 원천 차단)
     """
     clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
     records = []
@@ -165,7 +164,6 @@ def get_market_cap_and_earnings(ticker, hist_df, sp500_df, benchmark_name):
     except: pass
 
     hist_dates = hist_df.index.strftime('%Y-%m-%d').tolist() if not hist_df.empty else []
-    sp500_dates = sp500_df.index.strftime('%Y-%m-%d').tolist() if not sp500_df.empty else []
 
     earn_df = get_earnings_alternative(ticker)
 
@@ -327,8 +325,10 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "8% 이상 급변동일 없음"
             
-            # 실적 및 가치평가 표 호출
-            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, session, crumb, df_1d, bm_1d, is_korean, benchmark_name)
+            # 💡 [버그 수정 완료] 4개의 인자만 정확하게 넘겨주도록 수정되었습니다.
+            market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d, bm_1d, benchmark_name)
+            
+            # 가치평가 표 호출
             valuation_html = get_valuation_html(ticker_symbol, is_korean)
 
             # EMA 200 크로스 분석 (최대 3회)
