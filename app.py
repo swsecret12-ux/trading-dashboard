@@ -21,6 +21,7 @@ from api_utils import (
 from tab_research import render_research_tab
 from tab_us import render_us_map_tab
 from tab_kr import render_kr_map_tab
+from tab_crypto import render_crypto_map_tab
 
 # ==========================================
 # --- 1. 화면 구성 및 기본 세팅 (UI) ---
@@ -426,8 +427,8 @@ with tab6:
     st.header("🏢 섹터 & 주도주 맵 (AI 리서치 저장소)")
     st.info("야후 파이낸스(yfinance)와 트레이딩뷰 실시간 스캐너를 통해 시장을 정밀 타격합니다.")
     
-    sub_tab_research, sub_tab_top100, sub_tab_kr_top100 = st.tabs([
-        "🏢 내 종목 리서치", "🇺🇸 미국 시총 Top 100 맵", "🇰🇷 한국 코스피 Top 100 맵"
+    sub_tab_research, sub_tab_top100, sub_tab_kr_top100, sub_tab_crypto = st.tabs([
+        "🏢 내 종목 리서치", "🇺🇸 미국 시총 Top 100 맵", "🇰🇷 한국 코스피 Top 100 맵", "🪙 암호화폐 Top 100 맵"
     ])
     
     with sub_tab_research:
@@ -441,3 +442,7 @@ with tab6:
     with sub_tab_kr_top100:
         # 방금 만든 tab_kr.py 의 기능을 불러와 그립니다.
         render_kr_map_tab()
+        
+    with sub_tab_crypto:
+        # 방금 만든 tab_crypto.py 의 기능을 불러와 그립니다.
+        render_crypto_map_tab()
