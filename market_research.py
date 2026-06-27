@@ -71,16 +71,12 @@ def fetch_investing_news(ticker):
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_earnings_alternative(ticker):
-    """
-    💡 [탈(脫) 야후 무적 패치] 
-    1. 나스닥(NASDAQ) 공식 API를 1차로 뚫고 들어갑니다.
-    2. 나스닥이 막히면, AllOrigins 글로벌 프록시 네트워크를 통해 야후 내부망을 강제 추출합니다.
-    """
+    """나스닥 공식 API & AllOrigins 우회 병합 실적 크롤러"""
     clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
     records = []
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept": "application/json, text/plain, */*",
         "Origin": "https://www.nasdaq.com",
         "Referer": "https://www.nasdaq.com/"
@@ -152,7 +148,7 @@ def get_earnings_alternative(ticker):
     return df.set_index('Date')
 
 def get_market_cap_and_earnings(ticker, hist_df, sp500_df, benchmark_name):
-    """무적 API 실적 데이터와 차트 데이터를 결합하여 D-1, D, D+1 수익률을 계산합니다."""
+    """💡 4개의 인자만 정확하게 넘겨주도록 수정 완료"""
     market_cap = 0
     earnings_html = ""
     rows = []
@@ -309,23 +305,23 @@ def fetch_financial_data(ticker_symbol):
             df_1d['Pct_Change'] = df_1d['Close'].pct_change() * 100
             bm_1d['Pct_Change'] = bm_1d['Close'].pct_change() * 100
             
-            # 💡 [핵심 패치] 1년치 8% 이상 모든 급변동일 추출 (상위 10개 제한)
+            # 💡 [핵심 패치] 1년치 8% 이상 급변동일 추출 - 토큰 절약을 위해 상위 5개로 압축!
             extreme_df = df_1d[df_1d['Pct_Change'].abs() >= 8.0].copy()
             if not extreme_df.empty:
                 extreme_df['abs_change'] = extreme_df['Pct_Change'].abs()
-                extreme_df = extreme_df.sort_values('abs_change', ascending=False).head(10).sort_index()
+                extreme_df = extreme_df.sort_values('abs_change', ascending=False).head(5).sort_index()
                 events = []
                 for date_idx, row in extreme_df.iterrows():
                     date_str = date_idx.strftime('%Y-%m-%d')
                     pct = row['Pct_Change']
                     try: bm_pct = bm_1d.loc[date_idx, 'Pct_Change']
                     except: bm_pct = 0.0
-                    events.append(f"- {date_str}: 종목 {pct:+.1f}%, 나스닥(벤치마크) {bm_pct:+.1f}%")
+                    events.append(f"- {date_str}: 종목 {pct:+.1f}%, 벤치마크 {bm_pct:+.1f}%")
                 extreme_events_str = "\n".join(events)
             else:
                 extreme_events_str = "8% 이상 급변동일 없음"
             
-            # 💡 [버그 수정 완료] 4개의 인자만 정확하게 넘겨주도록 수정되었습니다.
+            # 💡 정확히 4개의 인자만 전달하여 에러 해결!
             market_cap, earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d, bm_1d, benchmark_name)
             
             # 가치평가 표 호출
@@ -394,7 +390,7 @@ def fetch_financial_data(ticker_symbol):
             continue
 
 def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
-    """💡 구글 Gemini API 429 한도 초과 시 40초 자동 대기하는 견고한 로직 적용!"""
+    """💡 구글 Gemini API 429 한도 초과 시 40초 자동 대기 & 토큰 다이어트 최적화 로직 적용"""
     from api_utils import ask_gemini_dynamic
     import time
     
@@ -410,30 +406,31 @@ def analyze_sector_with_ai(ticker, sector, fin_data, user_issue, news_content):
     - 수집된 최근 구글 뉴스: {fin_data.get('raw_news', '')}
     - 나의 핵심 관점: {user_issue}
     
-    [🚨 핵심 지시사항: 3중 팩트체크 초강제]
-    1. 방금 제공된 뉴스는 최근 치에 불과합니다. 따라서 위 [핵심 급변동 기록]에 명시된 날짜별 8% 이상 급등/급락 원인은 **당신의 사전 지식을 100% 동원하여 3번 이상 검토 후 정확히 찾아내야** 합니다!
-    2. 절대 "알 수 없다"거나 "뉴스에 없다"고 쓰지 마세요. 무조건 아마존 파트너십 같은 구체적인 촉매제를 표에 채워 넣으세요.
-    3. 종합 의견 작성 시, 무조건 긍정적으로 포장하지 마세요. 고평가 부담 등 리스크 요인을 반드시 비판적으로 서술하고 뉴스 인용 시 출처를 명확히 적으세요.
+    [🚨 핵심 지시사항: 토큰 다이어트 강제]
+    1. 방금 제공된 뉴스는 최근 치에 불과합니다. 따라서 위 [핵심 급변동 기록]에 명시된 날짜별 원인은 당신의 사전 지식을 동원하여 정확히 찾아내세요.
+    2. 절대 "알 수 없다"거나 "뉴스에 없다"고 쓰지 마세요.
+    3. 종합 의견 작성 시, 리스크 요인을 반드시 포함하세요.
+    4. **[중요]** 각 항목(특히 표의 구체적 촉매제와 파급력)을 길게 쓰지 말고, **핵심만 1~2줄 이내로 매우 간결하게 요약**하세요. (토큰 절약 목적)
     
-    [보고서 필수 목차 및 양식 - 각 항목을 전문적으로 길게(3~5줄 이상) 서술할 것]
+    [보고서 필수 목차 및 양식]
     ## 🏢 {ticker} 심층 분석 보고서 ({today} 기준)
     ### 1. 📊 시장 위치 및 핵심 밸류체인 요약
     ### 2. 🚨 최근 1년 8% 이상 급변동 사유 팩트체크
-    | 발생 날짜 | 종목 등락률 | 나스닥 지수 등락률 | 구체적 촉매제 (당신의 지식 총동원) | 펀더멘털 파급력 |
+    | 발생 날짜 | 종목 등락률 | 벤치마크 등락률 | 구체적 촉매제 (당신의 지식 총동원, 1~2줄 요약) | 펀더멘털 파급력 (1~2줄 요약) |
     |---|---|---|---|---|
-    | (예: 2024-05-28) | 상승/하락 | (예: +1.2%) | (예: 실적 서프라이즈 및 아마존 파트너십 체결) | (길고 상세한 분석) |
-    ### 3. 💰 실적 및 모멘텀 종합 의견 (비판적 시각 필수 포함)
-    ### 4. 💡 기관 트레이딩 결론 (Actionable Insight)
+    | (예: 2024-05-28) | 상승/하락 | (예: +1.2%) | (예: 실적 서프라이즈 발표) | (간결한 요약) |
+    ### 3. 💰 실적 및 모멘텀 종합 의견
+    ### 4. 💡 기관 트레이딩 결론
     - **현재 포지션:** (롱/숏/관망 택 1)
     - **핵심 리스크:**
     - **최종 Action:** """
     
-    # 무료 API의 1분당 5회 제한(429 에러)을 돌파하기 위한 40초 쿨타임 로직
+    # 무료 API의 429 에러(한도 초과)를 극복하기 위한 40초 쿨타임 로직
     for attempt in range(3):
         result = ask_gemini_dynamic(prompt, [])
         if "429" in result or "quota" in result.lower() or "소진" in result:
             if attempt < 2:
-                time.sleep(40) # 40초간 조용히 숨을 고르고 다음 기회를 노립니다.
+                time.sleep(40) # 40초간 조용히 숨을 고르고 재시도
                 continue
         return result
         
