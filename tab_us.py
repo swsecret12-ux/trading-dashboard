@@ -221,13 +221,13 @@ def render_us_map_tab():
                 custom_data=['Name', '현재주가', '1일 변동'] # 툴팁용 추가 데이터
             )
             
-            # 박스 내부 텍스트와 마우스 오버 툴팁 디자인 설정
+            # 박스 내부 텍스트와 마우스 오버 툴팁 디자인 설정, 💡 히트맵 세로 높이를 1.5배 (1050) 로 확장 적용!
             fig.update_traces(
                 textinfo="label+text",
                 texttemplate="<span style='font-size: 16px; font-weight: bold;'>%{label}</span><br>%{customdata[2]}", 
                 hovertemplate="<b>%{label} (%{customdata[0]})</b><br>테마: %{parent}<br>현재가: %{customdata[1]}<br>1일 변동: %{customdata[2]}<extra></extra>"
             )
-            fig.update_layout(margin=dict(t=30, l=10, r=10, b=10), height=700)
+            fig.update_layout(margin=dict(t=30, l=10, r=10, b=10), height=1050)
             
             st.plotly_chart(fig, use_container_width=True)
         else:
