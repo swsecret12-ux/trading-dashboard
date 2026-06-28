@@ -9,3 +9,4 @@ ccxt
 yfinance
 requests
 beautifulsoup4
+plotly
