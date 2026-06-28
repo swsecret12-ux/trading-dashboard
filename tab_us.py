@@ -97,8 +97,12 @@ def render_us_map_tab():
     if "sp100_state_df" not in st.session_state:
         st.session_state.sp100_state_df = pd.DataFrame()
 
-    st.markdown("### 🇺🇸 미국 시총 상위 Top 200 기업 (실시간 데이터 기준)")
-    st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 진성 미국 시가총액 200위 명단을 즉시 스캔하여 줄을 세웁니다.")
+    st.markdown("### 🇺🇸 미국 시총 상위 Top 200 주도주 맵 (커스텀 테마 반영)")
+    st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 진성 미국 시가총액 200위 명단을 스캔하여 영우님만의 테마로 묶어냅니다.")
+
+    # 💡 100개짜리 옛날 데이터가 캐시에 남아있으면 경고를 띄워 스캔을 유도합니다!
+    if not st.session_state.sp100_state_df.empty and len(st.session_state.sp100_state_df) <= 100:
+        st.warning("⚠️ **시스템 업그레이드 알림:** 미국 시장 스캔 범위가 200위로 확장되었습니다! 메모리에 예전 100위 데이터가 남아있으므로, 반드시 아래의 빨간색 **[스캔 시작]** 버튼을 다시 눌러 데이터를 갱신해주세요.")
 
     if st.button("🔄 실시간 순수 미국 시총 Top 200 스캔 시작", type="primary", key="us_btn"):
         with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 200위를 선별 중입니다... (약 2초 소요)"):
@@ -198,7 +202,8 @@ def render_us_map_tab():
             except Exception as e:
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
-    if not st.session_state.sp100_state_df.empty:
+    # 200개 데이터가 정상적으로 스캔되어 있다면 차트와 표를 그립니다.
+    if not st.session_state.sp100_state_df.empty and len(st.session_state.sp100_state_df) > 100:
         # 💡 기존 트레이딩뷰 위젯을 버리고 Plotly 로 나만의 커스텀 히트맵 창조!
         st.markdown("#### 🗺️ 커스텀 미국 주도주 히트맵 (영우님 전용 섹터 기반)")
         st.caption("💡 아래 표에 스캔된 200개 종목을 영우님의 맞춤형 테마로 분류하여 직접 그려낸 **'나만의 자금 흐름 히트맵'**입니다. (상자 크기=시가총액, 색상=1일 변동률)")
@@ -208,7 +213,7 @@ def render_us_map_tab():
             # 히트맵 생성 (Treemap)
             fig = px.treemap(
                 hm_df,
-                path=[px.Constant("미국 주식 시장 (Top 200)"), '산업군(Industry)', 'Symbol'],
+                path=[px.Constant("🇺🇸 미국 주식 시장 (Top 200)"), '산업군(Industry)', 'Symbol'],
                 values='시가총액_num',
                 color='1일_변동_num',
                 color_continuous_scale=['#f23645', '#434651', '#089981'], # 하락 빨간색, 0 회색, 상승 초록색
@@ -219,14 +224,14 @@ def render_us_map_tab():
             # 박스 내부 텍스트와 마우스 오버 툴팁 디자인 설정
             fig.update_traces(
                 textinfo="label+text",
-                texttemplate="<b>%{label}</b><br>%{customdata[2]}", 
+                texttemplate="<span style='font-size: 16px; font-weight: bold;'>%{label}</span><br>%{customdata[2]}", 
                 hovertemplate="<b>%{label} (%{customdata[0]})</b><br>테마: %{parent}<br>현재가: %{customdata[1]}<br>1일 변동: %{customdata[2]}<extra></extra>"
             )
             fig.update_layout(margin=dict(t=30, l=10, r=10, b=10), height=700)
             
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.error("커스텀 히트맵을 렌더링하기 위한 'plotly' 모듈이 설치되어 있지 않습니다. 터미널에서 'pip install plotly'를 실행해주세요.")
+            st.error("🚨 커스텀 히트맵을 렌더링하기 위한 'plotly' 파이썬 패키지가 설치되어 있지 않습니다. 터미널에 `pip install plotly`를 입력하시고, 배포 환경이라면 `requirements.txt`에 `plotly`를 꼭 추가해주세요.")
             
         st.markdown("---")
         
