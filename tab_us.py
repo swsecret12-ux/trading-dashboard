@@ -132,8 +132,13 @@ def render_us_map_tab():
                     seen_tickers.add(base_ticker)
                     
                     sym_clean = sym.replace('.', '-').replace('/', '-')
-                    ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) if ind_raw else "기타"
                     name_trans = NAME_TRANSLATIONS.get(sym_clean, name_raw) 
+                    
+                    # 💡 영우 님이 정리해주신 커스텀 테마 매핑 최우선 적용!
+                    if sym_clean in CUSTOM_US_THEME_MAPPING:
+                        ind_trans = CUSTOM_US_THEME_MAPPING[sym_clean]
+                    else:
+                        ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) if ind_raw else "기타"
                     
                     if rsi_val: rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
                     else: rsi_str = "-"
