@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
 
+# 커스텀 히트맵을 위한 plotly (에러 방어용)
+try:
+    import plotly.express as px
+except ImportError:
+    px = None
+
 # 💡 영우님이 직접 설계하신 나스닥 핵심 테마 매핑 딕셔너리
 CUSTOM_US_THEME_MAPPING = {
     "NVDA": "AI 반도체·네트워크", "AVGO": "AI 반도체·네트워크", "AMD": "AI 반도체·네트워크", "CSCO": "AI 반도체·네트워크", "ARM": "AI 반도체·네트워크", "MRVL": "AI 반도체·네트워크", "ALAB": "AI 반도체·네트워크", "LITE": "AI 반도체·네트워크",
@@ -91,11 +97,11 @@ def render_us_map_tab():
     if "sp100_state_df" not in st.session_state:
         st.session_state.sp100_state_df = pd.DataFrame()
 
-    st.markdown("### 🇺🇸 미국 시총 상위 Top 100 기업 (실시간 데이터 기준)")
-    st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 진성 미국 시가총액 100위 명단을 즉시 스캔하여 줄을 세웁니다.")
+    st.markdown("### 🇺🇸 미국 시총 상위 Top 200 기업 (실시간 데이터 기준)")
+    st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 진성 미국 시가총액 200위 명단을 즉시 스캔하여 줄을 세웁니다.")
 
-    if st.button("🔄 실시간 순수 미국 시총 Top 100 스캔 시작", type="primary", key="us_btn"):
-        with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다... (약 2초 소요)"):
+    if st.button("🔄 실시간 순수 미국 시총 Top 200 스캔 시작", type="primary", key="us_btn"):
+        with st.spinner("미국 시장 전 종목을 스캔하여 실시간 시총 200위를 선별 중입니다... (약 2초 소요)"):
             try:
                 url = "https://scanner.tradingview.com/america/scan"
                 payload = {
@@ -109,7 +115,7 @@ def render_us_map_tab():
                     "symbols": {"query": {"types": []}, "tickers": []},
                     "columns": ["name", "description", "sector", "industry", "market_cap_basic", "close", "change", "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "RSI"],
                     "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                    "range": [0, 250] 
+                    "range": [0, 400] # 충분한 범위로 넉넉하게 요청
                 }
                 headers = {"User-Agent": "Mozilla/5.0"}
                 res = requests.post(url, json=payload, headers=headers)
@@ -120,7 +126,9 @@ def render_us_map_tab():
                 target_exact = ['JPM', 'ORCL', 'BAC', 'MS', 'GS', 'WFC', 'C']
                 
                 for item in data.get('data', []):
-                    if len(df_list) >= 100: break
+                    # 💡 200개 종목 추출 로직 적용!
+                    if len(df_list) >= 200: break
+                    
                     sym = item['d'][0] 
                     name_raw = item['d'][1]
                     ind_raw = item['d'][3]
@@ -155,7 +163,6 @@ def render_us_map_tab():
                     if sym_clean in CUSTOM_US_THEME_MAPPING:
                         ind_trans = CUSTOM_US_THEME_MAPPING[sym_clean]
                     else:
-                        # 💡 리스트에 없는 종목은 AI가 가장 근접한 테마로 자동 분류하고 🤖 마크를 붙입니다.
                         closest_sector = AUTO_SECTOR_MAPPING.get(ind_raw, "기타 (AI 미분류)")
                         ind_trans = f"{closest_sector} 🤖"
                     
@@ -178,6 +185,7 @@ def render_us_map_tab():
                         '120일 변동': f"{chg_6m:+.2f}%" if chg_6m else "-",
                         '200일 변동': f"{chg_1y:+.2f}%" if chg_1y else "-",
                         '시가총액_num': mcap,
+                        '1일_변동_num': chg_1d if chg_1d is not None else 0.0, # 히트맵용 순수 숫자 데이터 보존
                         '크로스 상태 (4H/1D EMA200)': "대기 중",
                         '크로스 날짜': "-",
                         '크로스 당시 주가': "-"
@@ -185,38 +193,41 @@ def render_us_map_tab():
                 
                 new_df = pd.DataFrame(df_list)
                 new_df['분야 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min').apply(lambda x: f"테마 {int(x)}위")
-                st.session_state.sp100_state_df = new_df.drop(columns=['시가총액_num'])
-                st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료! (영우님의 커스텀 테마 100% 적용)")
+                st.session_state.sp100_state_df = new_df
+                st.success("✅ 실시간 미국 시총 Top 200 리스트 업데이트 완료! (영우님의 커스텀 테마 100% 적용)")
             except Exception as e:
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
     if not st.session_state.sp100_state_df.empty:
-        st.markdown("#### 🗺️ 나스닥 100 주도주 히트맵 (실시간 자금 흐름)")
-        st.caption("🚨 **안내:** 상단의 트레이딩뷰 위젯은 트레이딩뷰 자체 서버 분류를 강제로 따르기 때문에 위젯 그림 내부의 그룹을 바꾸는 것은 불가능합니다. 하지만 **하단의 스캔 표(Table)에는 영우님이 주신 맞춤형 테마가 100% 반영되어 정렬됩니다!**")
-        heatmap_widget = """
-        <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
-          <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
-          <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
-          {
-          "exchanges": ["NASDAQ"],
-          "dataSource": "NDX",
-          "grouping": "sector",
-          "blockSize": "market_cap_basic",
-          "blockColor": "change",
-          "locale": "kr",
-          "symbolUrl": "",
-          "colorTheme": "light",
-          "hasTopBar": false,
-          "isDataSetEnabled": false,
-          "isZoomEnabled": true,
-          "hasSymbolTooltip": true,
-          "width": "100%",
-          "height": 700
-        }
-          </script>
-        </div>
-        """
-        components.html(heatmap_widget, height=700)
+        # 💡 기존 트레이딩뷰 위젯을 버리고 Plotly 로 나만의 커스텀 히트맵 창조!
+        st.markdown("#### 🗺️ 커스텀 미국 주도주 히트맵 (영우님 전용 섹터 기반)")
+        st.caption("💡 아래 표에 스캔된 200개 종목을 영우님의 맞춤형 테마로 분류하여 직접 그려낸 **'나만의 자금 흐름 히트맵'**입니다. (상자 크기=시가총액, 색상=1일 변동률)")
+        
+        if px is not None:
+            hm_df = st.session_state.sp100_state_df.copy()
+            # 히트맵 생성 (Treemap)
+            fig = px.treemap(
+                hm_df,
+                path=[px.Constant("미국 주식 시장 (Top 200)"), '산업군(Industry)', 'Symbol'],
+                values='시가총액_num',
+                color='1일_변동_num',
+                color_continuous_scale=['#f23645', '#434651', '#089981'], # 하락 빨간색, 0 회색, 상승 초록색
+                color_continuous_midpoint=0,
+                custom_data=['Name', '현재주가', '1일 변동'] # 툴팁용 추가 데이터
+            )
+            
+            # 박스 내부 텍스트와 마우스 오버 툴팁 디자인 설정
+            fig.update_traces(
+                textinfo="label+text",
+                texttemplate="<b>%{label}</b><br>%{customdata[2]}", 
+                hovertemplate="<b>%{label} (%{customdata[0]})</b><br>테마: %{parent}<br>현재가: %{customdata[1]}<br>1일 변동: %{customdata[2]}<extra></extra>"
+            )
+            fig.update_layout(margin=dict(t=30, l=10, r=10, b=10), height=700)
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.error("커스텀 히트맵을 렌더링하기 위한 'plotly' 모듈이 설치되어 있지 않습니다. 터미널에서 'pip install plotly'를 실행해주세요.")
+            
         st.markdown("---")
         
         st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
@@ -286,10 +297,11 @@ def render_us_map_tab():
         st.markdown("---")
 
         yf_symbols = st.session_state.sp100_state_df['Symbol'].tolist()
-        chunks = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
-        labels_us = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
+        # 💡 50개씩 4묶음으로 나누어 버튼 생성!
+        chunks = [yf_symbols[i:i+50] for i in range(0, 200, 50)]
+        labels_us = ["1위~50위", "51위~100위", "101위~150위", "151위~200위"]
         
-        st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 '4시간봉 EMA 200 vs 1일봉 EMA 200' 크로스 현황을 정밀 스캔합니다.")
+        st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 50개 종목씩 나누어 '4시간봉 EMA 200 vs 1일봉 EMA 200' 크로스 현황을 정밀 스캔합니다.")
         cols_us = st.columns(4)
         for i in range(4):
             if i < len(chunks):
@@ -353,6 +365,7 @@ def render_us_map_tab():
                         except Exception as e:
                             st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
+        # 💡 히트맵용 순수 숫자 데이터 컬럼(시가총액_num, 1일_변동_num)은 화면 테이블에서 보이지 않도록 필터링!
         display_cols_us = [
             '순위', 'Symbol', '시총', 'Name', '분야 순위', '현재주가', 'RSI', 
             '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', 
