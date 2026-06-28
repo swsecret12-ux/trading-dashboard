@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 import yfinance as yf
 import altair as alt
+import xml.etree.ElementTree as ET
 
 # 💡 트레이딩뷰의 어색한 직역을 매끄럽고 직관적인 한국 주식 섹터명으로 대대적 교정
 INDUSTRY_GROUPING_KR = {
@@ -189,38 +190,38 @@ def render_kr_map_tab():
                 st.error(f"오류: {e}")
 
     if not st.session_state.kospi100_state_df.empty:
-        # 💡 yfinance 주말 캐시 지연(금요일 누락)을 완벽히 방지하는 야후 v8 API 다이렉트 크롤러
-        def get_kospi_direct(period):
-            try:
-                url = f"https://query2.finance.yahoo.com/v8/finance/chart/^KS11?range={period}&interval=1d"
-                res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-                data = res.json()['chart']['result'][0]
-                df = pd.DataFrame({
-                    'Open': data['indicators']['quote'][0]['open'],
-                    'High': data['indicators']['quote'][0]['high'],
-                    'Low': data['indicators']['quote'][0]['low'],
-                    'Close': data['indicators']['quote'][0]['close'],
-                    'Volume': data['indicators']['quote'][0]['volume']
-                }, index=pd.to_datetime(data['timestamp'], unit='s', utc=True).tz_convert('Asia/Seoul').dt.tz_localize(None))
-                return df.dropna()
-            except:
-                return pd.DataFrame()
-
         # 1. 수익률 표시
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
-            kospi_df = get_kospi_direct("4y")
-            if kospi_df.empty: # API 통신 실패 시 기존 yfinance를 백업으로 사용
-                kospi_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
+            kospi_df = pd.DataFrame()
+            # 💡 야후 지연 버그 방어를 위한 네이버 API 호출
+            try:
+                url = "https://fchart.stock.naver.com/sise.nhn?symbol=KOSPI&timeframe=day&count=1500&requestType=0"
+                res = requests.get(url, timeout=5)
+                root = ET.fromstring(res.text)
+                items = root.findall('.//item')
+                data = []
+                for item in items:
+                    row = item.attrib['data'].split('|')
+                    data.append({'Date': pd.to_datetime(row[0]), 'Close': float(row[4])})
+                if data:
+                    kospi_df = pd.DataFrame(data).set_index('Date')
+            except: pass
+
+            if kospi_df.empty: # 네이버 실패 시 야후 백업 동작
+                for _ in range(3):
+                    try:
+                        temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
+                        if not temp_df.empty:
+                            kospi_df = temp_df
+                            break
+                    except: time.sleep(1)
 
             if not kospi_df.empty:
-                # 💡 yfinance 최신 MultiIndex 버그 방어 코드 적용
                 if isinstance(kospi_df.columns, pd.MultiIndex): 
                     close_series = kospi_df['Close'].iloc[:, 0].dropna()
-                elif 'Close' in kospi_df: 
+                else: 
                     close_series = kospi_df['Close'].dropna()
-                else:
-                    close_series = kospi_df.iloc[:, 3].dropna()
                 
                 curr = close_series.iloc[-1]
                 def ret(days):
@@ -233,31 +234,61 @@ def render_kr_map_tab():
                 formatted_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
                 st.dataframe(formatted_df.style.map(lambda x: color_pct(str(x))), use_container_width=True, hide_index=True)
             else: 
-                st.warning("야후 파이낸스 통신망 일시 지연. 새로고침을 눌러주세요.")
+                st.warning("통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: 
             st.warning(f"수익률 데이터 로딩 실패: {e}")
 
         # 2. 종합 차트 렌더링 (인터랙티브 툴팁, RSI, 거래량 포함)
-        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 종합 차트)")
+        st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 자체 캔들 차트)")
         try:
-            df_raw = get_kospi_direct("1y")
-            if df_raw.empty:
-                df_raw = yf.download("^KS11", period="1y", interval="1d", progress=False)
-                
-            if not df_raw.empty:
-                if isinstance(df_raw.columns, pd.MultiIndex):
-                    df_chart = pd.DataFrame({
-                        'Open': df_raw['Open'].iloc[:, 0], 
-                        'High': df_raw['High'].iloc[:, 0],
-                        'Low': df_raw['Low'].iloc[:, 0], 
-                        'Close': df_raw['Close'].iloc[:, 0],
-                        'Volume': df_raw['Volume'].iloc[:, 0]
+            df_chart = pd.DataFrame()
+            # 💡 야후 주말 지연을 방어하는 네이버 차트 API 호출! (금요일 데이터 보장)
+            try:
+                url = "https://fchart.stock.naver.com/sise.nhn?symbol=KOSPI&timeframe=day&count=250&requestType=0"
+                res = requests.get(url, timeout=5)
+                root = ET.fromstring(res.text)
+                items = root.findall('.//item')
+                data = []
+                for item in items:
+                    row = item.attrib['data'].split('|')
+                    data.append({
+                        'Date': pd.to_datetime(row[0]),
+                        'Open': float(row[1]),
+                        'High': float(row[2]),
+                        'Low': float(row[3]),
+                        'Close': float(row[4]),
+                        'Volume': float(row[5])
                     })
-                else: 
-                    df_chart = df_raw[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-                    
-                df_chart = df_chart.dropna().reset_index()
-                df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+                if data:
+                    df_chart = pd.DataFrame(data)
+            except: pass
+
+            if df_chart.empty: # 네이버 실패 시 야후 백업 동작
+                kospi_daily = pd.DataFrame()
+                for _ in range(3):
+                    try:
+                        kospi_daily = yf.download("^KS11", period="1y", interval="1d", progress=False)
+                        if not kospi_daily.empty: break
+                    except: time.sleep(1)
+
+                if not kospi_daily.empty:
+                    # 데이터 준비 (MultiIndex 방어)
+                    if isinstance(kospi_daily.columns, pd.MultiIndex):
+                        df_chart = pd.DataFrame({
+                            'Open': kospi_daily['Open'].iloc[:, 0] if isinstance(kospi_daily['Open'], pd.DataFrame) else kospi_daily['Open'],
+                            'High': kospi_daily['High'].iloc[:, 0] if isinstance(kospi_daily['High'], pd.DataFrame) else kospi_daily['High'],
+                            'Low':  kospi_daily['Low'].iloc[:, 0]  if isinstance(kospi_daily['Low'], pd.DataFrame)  else kospi_daily['Low'],
+                            'Close':kospi_daily['Close'].iloc[:, 0] if isinstance(kospi_daily['Close'], pd.DataFrame) else kospi_daily['Close'],
+                            'Volume':kospi_daily['Volume'].iloc[:, 0] if isinstance(kospi_daily['Volume'], pd.DataFrame) else kospi_daily['Volume']
+                        })
+                    else:
+                        df_chart = kospi_daily[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+
+                    df_chart = df_chart.dropna().reset_index()
+                    df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+
+            if not df_chart.empty:
+                df_chart = df_chart.dropna()
 
                 # RSI 계산 로직
                 delta = df_chart['Close'].diff()
@@ -430,7 +461,7 @@ def render_kr_map_tab():
                         except Exception as e: 
                             st.error(f"오류: {e}")
 
-        # 4. 데이터프레임 렌더링 (💡 변동성 추가 및 극한의 너비 다이어트)
+        # 4. 데이터프레임 렌더링 (💡 변동성 추가 및 극한의 너비 다이어트 적용 완료 상태 유지)
         display_cols_kr = ['순위', 'Symbol', '시총', 'Name', '산업군(Industry)', '분야 순위', '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
         
         st.dataframe(
