@@ -13,24 +13,24 @@ try:
 except ImportError:
     px = None
 
-# 💡 영우님이 직접 설계하신 나스닥 핵심 테마 매핑 딕셔너리
+# 💡 영우님이 직접 설계하신 나스닥 핵심 테마 매핑 딕셔너리 + 미분류 종목 대거 추가
 CUSTOM_US_THEME_MAPPING = {
-    "NVDA": "AI 반도체·네트워크", "AVGO": "AI 반도체·네트워크", "AMD": "AI 반도체·네트워크", "CSCO": "AI 반도체·네트워크", "ARM": "AI 반도체·네트워크", "MRVL": "AI 반도체·네트워크", "ALAB": "AI 반도체·네트워크", "LITE": "AI 반도체·네트워크",
+    "NVDA": "AI 반도체·네트워크", "AVGO": "AI 반도체·네트워크", "AMD": "AI 반도체·네트워크", "CSCO": "AI 반도체·네트워크", "ARM": "AI 반도체·네트워크", "MRVL": "AI 반도체·네트워크", "ALAB": "AI 반도체·네트워크", "LITE": "AI 반도체·네트워크", "DELL": "AI 반도체·네트워크", "ANET": "AI 반도체·네트워크",
     "ASML": "반도체 장비·EDA", "AMAT": "반도체 장비·EDA", "LRCX": "반도체 장비·EDA", "KLAC": "반도체 장비·EDA", "CDNS": "반도체 장비·EDA", "SNPS": "반도체 장비·EDA", "TER": "반도체 장비·EDA",
     "MU": "메모리·스토리지", "SNDK": "메모리·스토리지", "STX": "메모리·스토리지", "WDC": "메모리·스토리지",
-    "INTC": "시스템·아날로그·통신 반도체", "TXN": "시스템·아날로그·통신 반도체", "QCOM": "시스템·아날로그·통신 반도체", "ADI": "시스템·아날로그·통신 반도체", "NXPI": "시스템·아날로그·통신 반도체", "MPWR": "시스템·아날로그·통신 반도체", "MCHP": "시스템·아날로그·통신 반도체",
+    "INTC": "시스템·아날로그·통신 반도체", "TXN": "시스템·아날로그·통신 반도체", "QCOM": "시스템·아날로그·통신 반도체", "ADI": "시스템·아날로그·통신 반도체", "NXPI": "시스템·아날로그·통신 반도체", "MPWR": "시스템·아날로그·통신 반도체", "MCHP": "시스템·아날로그·통신 반도체", "APH": "시스템·아날로그·통신 반도체", "GLW": "시스템·아날로그·통신 반도체",
     "AAPL": "빅테크·플랫폼", "MSFT": "빅테크·플랫폼", "AMZN": "빅테크·플랫폼", "GOOGL": "빅테크·플랫폼", "GOOG": "빅테크·플랫폼", "META": "빅테크·플랫폼",
-    "PLTR": "소프트웨어·SaaS·보안", "PANW": "소프트웨어·SaaS·보안", "CRWD": "소프트웨어·SaaS·보안", "APP": "소프트웨어·SaaS·보안", "FTNT": "소프트웨어·SaaS·보안", "DDOG": "소프트웨어·SaaS·보안", "ADBE": "소프트웨어·SaaS·보안", "INTU": "소프트웨어·SaaS·보안", "ADSK": "소프트웨어·SaaS·보안", "WDAY": "소프트웨어·SaaS·보안",
-    "CEG": "데이터센터·전력 인프라", "AEP": "데이터센터·전력 인프라", "NBIS": "데이터센터·전력 인프라", "CRWV": "데이터센터·전력 인프라", "XEL": "데이터센터·전력 인프라", "EXC": "데이터센터·전력 인프라",
-    "NFLX": "통신·미디어·엔터", "TMUS": "통신·미디어·엔터", "CMCSA": "통신·미디어·엔터", "WBD": "통신·미디어·엔터", "EA": "통신·미디어·엔터", "TTWO": "통신·미디어·엔터",
-    "SHOP": "인터넷 플랫폼·이커머스·여행", "BKNG": "인터넷 플랫폼·이커머스·여행", "PDD": "인터넷 플랫폼·이커머스·여행", "MAR": "인터넷 플랫폼·이커머스·여행", "ABNB": "인터넷 플랫폼·이커머스·여행", "MELI": "인터넷 플랫폼·이커머스·여행", "DASH": "인터넷 플랫폼·이커머스·여행",
-    "AMGN": "헬스케어·바이오", "GILD": "헬스케어·바이오", "ISRG": "헬스케어·바이오", "VRTX": "헬스케어·바이오", "REGN": "헬스케어·바이오", "IDXX": "헬스케어·바이오", "ALNY": "헬스케어·바이오", "GEHC": "헬스케어·바이오", "DXCM": "헬스케어·바이오",
-    "WMT": "필수소비·리테일", "COST": "필수소비·리테일", "PEP": "필수소비·리테일", "SBUX": "필수소비·리테일", "MNST": "필수소비·리테일", "MDLZ": "필수소비·리테일", "ORLY": "필수소비·리테일", "ROST": "필수소비·리테일", "KDP": "필수소비·리테일", "CCEP": "필수소비·리테일", "KHC": "필수소비·리테일",
-    "LIN": "산업·운송·B2B서비스", "HON": "산업·운송·B2B서비스", "CSX": "산업·운송·B2B서비스", "ADP": "산업·운송·B2B서비스", "CTAS": "산업·운송·B2B서비스", "PCAR": "산업·운송·B2B서비스", "FAST": "산업·운송·B2B서비스", "FER": "산업·운송·B2B서비스", "ODFL": "산업·운송·B2B서비스", "AXON": "산업·운송·B2B서비스", "TRI": "산업·운송·B2B서비스", "PAYX": "산업·운송·B2B서비스", "ROP": "산업·운송·B2B서비스", "CPRT": "산업·운송·B2B서비스",
-    "TSLA": "에너지·모빌리티·핀테크·우주", "BKR": "에너지·모빌리티·핀테크·우주", "RKLB": "에너지·모빌리티·핀테크·우주", "FANG": "에너지·모빌리티·핀테크·우주", "PYPL": "에너지·모빌리티·핀테크·우주", "MSTR": "에너지·모빌리티·핀테크·우주"
+    "PLTR": "소프트웨어·SaaS·보안", "PANW": "소프트웨어·SaaS·보안", "CRWD": "소프트웨어·SaaS·보안", "APP": "소프트웨어·SaaS·보안", "FTNT": "소프트웨어·SaaS·보안", "DDOG": "소프트웨어·SaaS·보안", "ADBE": "소프트웨어·SaaS·보안", "INTU": "소프트웨어·SaaS·보안", "ADSK": "소프트웨어·SaaS·보안", "WDAY": "소프트웨어·SaaS·보안", "IBM": "소프트웨어·SaaS·보안", "ORCL": "소프트웨어·SaaS·보안", "CRM": "소프트웨어·SaaS·보안", "NOW": "소프트웨어·SaaS·보안", "SNOW": "소프트웨어·SaaS·보안", "NET": "소프트웨어·SaaS·보안", "SPOT": "소프트웨어·SaaS·보안",
+    "CEG": "데이터센터·전력 인프라", "AEP": "데이터센터·전력 인프라", "NBIS": "데이터센터·전력 인프라", "CRWV": "데이터센터·전력 인프라", "XEL": "데이터센터·전력 인프라", "EXC": "데이터센터·전력 인프라", "GEV": "데이터센터·전력 인프라", "ETN": "데이터센터·전력 인프라", "VRT": "데이터센터·전력 인프라", "PWR": "데이터센터·전력 인프라",
+    "NFLX": "통신·미디어·엔터", "TMUS": "통신·미디어·엔터", "CMCSA": "통신·미디어·엔터", "WBD": "통신·미디어·엔터", "EA": "통신·미디어·엔터", "TTWO": "통신·미디어·엔터", "VZ": "통신·미디어·엔터", "T": "통신·미디어·엔터", "T-PC": "통신·미디어·엔터", "AMX": "통신·미디어·엔터", "SONY": "통신·미디어·엔터",
+    "SHOP": "인터넷 플랫폼·이커머스·여행", "BKNG": "인터넷 플랫폼·이커머스·여행", "PDD": "인터넷 플랫폼·이커머스·여행", "MAR": "인터넷 플랫폼·이커머스·여행", "ABNB": "인터넷 플랫폼·이커머스·여행", "MELI": "인터넷 플랫폼·이커머스·여행", "DASH": "인터넷 플랫폼·이커머스·여행", "UBER": "인터넷 플랫폼·이커머스·여행", "RCL": "인터넷 플랫폼·이커머스·여행", "BABA": "인터넷 플랫폼·이커머스·여행",
+    "AMGN": "헬스케어·바이오", "GILD": "헬스케어·바이오", "ISRG": "헬스케어·바이오", "VRTX": "헬스케어·바이오", "REGN": "헬스케어·바이오", "IDXX": "헬스케어·바이오", "ALNY": "헬스케어·바이오", "GEHC": "헬스케어·바이오", "DXCM": "헬스케어·바이오", "CVS": "헬스케어·바이오", "MCK": "헬스케어·바이오", "HCA": "헬스케어·바이오", "ABT": "헬스케어·바이오", "SYK": "헬스케어·바이오", "DHR": "헬스케어·바이오", "TMO": "헬스케어·바이오", "JNJ": "헬스케어·바이오", "PFE": "헬스케어·바이오", "MRK": "헬스케어·바이오", "ABBV": "헬스케어·바이오", "LLY": "헬스케어·바이오", "UNH": "헬스케어·바이오", "NVO": "헬스케어·바이오", "AZN": "헬스케어·바이오", "NVS": "헬스케어·바이오",
+    "WMT": "필수소비·리테일", "COST": "필수소비·리테일", "PEP": "필수소비·리테일", "SBUX": "필수소비·리테일", "MNST": "필수소비·리테일", "MDLZ": "필수소비·리테일", "ORLY": "필수소비·리테일", "ROST": "필수소비·리테일", "KDP": "필수소비·리테일", "CCEP": "필수소비·리테일", "KHC": "필수소비·리테일", "HD": "필수소비·리테일", "PM": "필수소비·리테일", "BUD": "필수소비·리테일", "BTI": "필수소비·리테일", "LOW": "필수소비·리테일", "MO": "필수소비·리테일", "CMG": "필수소비·리테일",
+    "LIN": "산업·운송·B2B서비스", "HON": "산업·운송·B2B서비스", "CSX": "산업·운송·B2B서비스", "ADP": "산업·운송·B2B서비스", "CTAS": "산업·운송·B2B서비스", "PCAR": "산업·운송·B2B서비스", "FAST": "산업·운송·B2B서비스", "FER": "산업·운송·B2B서비스", "ODFL": "산업·운송·B2B서비스", "AXON": "산업·운송·B2B서비스", "TRI": "산업·운송·B2B서비스", "PAYX": "산업·운송·B2B서비스", "ROP": "산업·운송·B2B서비스", "CPRT": "산업·운송·B2B서비스", "BHP": "산업·운송·B2B서비스", "UNP": "산업·운송·B2B서비스", "NEM": "산업·운송·B2B서비스", "CMI": "산업·운송·B2B서비스", "WM": "산업·운송·B2B서비스", "MMM": "산업·운송·B2B서비스", "SHW": "산업·운송·B2B서비스", "CAT": "산업·운송·B2B서비스", "DE": "산업·운송·B2B서비스",
+    "TSLA": "에너지·모빌리티·핀테크·우주", "BKR": "에너지·모빌리티·핀테크·우주", "RKLB": "에너지·모빌리티·핀테크·우주", "FANG": "에너지·모빌리티·핀테크·우주", "PYPL": "에너지·모빌리티·핀테크·우주", "MSTR": "에너지·모빌리티·핀테크·우주", "PGR": "에너지·모빌리티·핀테크·우주", "COP": "에너지·모빌리티·핀테크·우주", "ENB": "에너지·모빌리티·핀테크·우주", "SPGI": "에너지·모빌리티·핀테크·우주", "WMB": "에너지·모빌리티·핀테크·우주", "MRSH": "에너지·모빌리티·핀테크·우주", "MMC": "에너지·모빌리티·핀테크·우주", "RY": "에너지·모빌리티·핀테크·우주", "TM": "에너지·모빌리티·핀테크·우주", "V": "에너지·모빌리티·핀테크·우주", "MA": "에너지·모빌리티·핀테크·우주", "AXP": "에너지·모빌리티·핀테크·우주", "JPM": "에너지·모빌리티·핀테크·우주", "BAC": "에너지·모빌리티·핀테크·우주", "WFC": "에너지·모빌리티·핀테크·우주", "MS": "에너지·모빌리티·핀테크·우주", "GS": "에너지·모빌리티·핀테크·우주", "C": "에너지·모빌리티·핀테크·우주", "XOM": "에너지·모빌리티·핀테크·우주", "CVX": "에너지·모빌리티·핀테크·우주", "SHEL": "에너지·모빌리티·핀테크·우주", "TTE": "에너지·모빌리티·핀테크·우주", "BP": "에너지·모빌리티·핀테크·우주", "PBR": "에너지·모빌리티·핀테크·우주", "MUFG": "에너지·모빌리티·핀테크·우주", "UBS": "에너지·모빌리티·핀테크·우주", "HSBC": "에너지·모빌리티·핀테크·우주", "SAN": "에너지·모빌리티·핀테크·우주", "TD": "에너지·모빌리티·핀테크·우주", "BRK": "에너지·모빌리티·핀테크·우주", "BRK-B": "에너지·모빌리티·핀테크·우주", "BRK-A": "에너지·모빌리티·핀테크·우주"
 }
 
-# 💡 리스트에 없는 종목을 만났을 때 AI가 대신 배정해줄 징검다리 딕셔너리
+# 💡 리스트에 없는 종목을 만났을 때 AI가 대신 배정해줄 징검다리 딕셔너리 (초강력 보완)
 AUTO_SECTOR_MAPPING = {
     "Semiconductors": "시스템·아날로그·통신 반도체", "Computer Processing Hardware": "AI 반도체·네트워크", "Computer Communications": "AI 반도체·네트워크",
     "Electronic Equipment/Instruments": "산업·운송·B2B서비스", "Packaged Software": "소프트웨어·SaaS·보안", "Internet Software/Services": "소프트웨어·SaaS·보안", 
@@ -38,13 +38,20 @@ AUTO_SECTOR_MAPPING = {
     "Specialty Stores": "필수소비·리테일", "Discount Stores": "필수소비·리테일", "Pharmaceuticals: Major": "헬스케어·바이오",
     "Biotechnology": "헬스케어·바이오", "Medical Specialties": "헬스케어·바이오", "Managed Health Care": "헬스케어·바이오",
     "Major Banks": "에너지·모빌리티·핀테크·우주", "Regional Banks": "에너지·모빌리티·핀테크·우주", "Investment Banks/Brokers": "에너지·모빌리티·핀테크·우주", 
-    "Finance/Rental/Leasing": "에너지·모빌리티·핀테크·우주", "Property/Casualty Insurance": "에너지·모빌리티·핀테크·우주", "Life/Health Insurance": "헬스케어·바이오", 
+    "Finance/Rental/Leasing": "에너지·모빌리티·핀테크·우주", "Property/Casualty Insurance": "에너지·모빌리티·핀테크·우주", "Life/Health Insurance": "에너지·모빌리티·핀테크·우주", 
     "Real Estate Investment Trusts": "산업·운송·B2B서비스", "Broadcasting": "통신·미디어·엔터", "Movies/Entertainment": "통신·미디어·엔터", 
     "Auto Manufacturing": "에너지·모빌리티·핀테크·우주", "Motor Vehicles": "에너지·모빌리티·핀테크·우주", "Aerospace & Defense": "에너지·모빌리티·핀테크·우주", 
     "Air Freight/Couriers": "산업·운송·B2B서비스", "Integrated Oil": "에너지·모빌리티·핀테크·우주", "Electric Utilities": "데이터센터·전력 인프라", 
     "Beverages: Non-Alcoholic": "필수소비·리테일", "Restaurants": "필수소비·리테일", "Household/Personal Care": "필수소비·리테일", 
     "Industrial Machinery": "산업·운송·B2B서비스", "Specialty Telecommunications": "AI 반도체·네트워크", "Computer Peripherals": "AI 반도체·네트워크", 
-    "Investment Managers": "에너지·모빌리티·핀테크·우주", "Other Metals/Minerals": "산업·운송·B2B서비스", "Trucks/Construction/Farm Machinery": "산업·운송·B2B서비스"
+    "Investment Managers": "에너지·모빌리티·핀테크·우주", "Other Metals/Minerals": "산업·운송·B2B서비스", "Trucks/Construction/Farm Machinery": "산업·운송·B2B서비스",
+    "Homebuilding": "산업·운송·B2B서비스", "Food: Major Diversified": "필수소비·리테일", "Food: Specialty/Candy": "필수소비·리테일",
+    "Beverages: Alcoholic": "필수소비·리테일", "Tobacco": "필수소비·리테일", "Apparel/Footwear": "필수소비·리테일",
+    "Airlines": "산업·운송·B2B서비스", "Railroads": "산업·운송·B2B서비스", "Marine Shipping": "산업·운송·B2B서비스",
+    "Industrial Specialties": "산업·운송·B2B서비스", "Chemicals: Major Diversified": "산업·운송·B2B서비스", "Steel": "산업·운송·B2B서비스",
+    "Oil & Gas Production": "에너지·모빌리티·핀테크·우주", "Oil Refining/Marketing": "에너지·모빌리티·핀테크·우주", "Financial Conglomerates": "에너지·모빌리티·핀테크·우주",
+    "Real Estate Development": "산업·운송·B2B서비스", "Wireless Telecommunications": "통신·미디어·엔터", "Major Telecommunications": "통신·미디어·엔터",
+    "Electronic Components": "시스템·아날로그·통신 반도체"
 }
 
 NAME_TRANSLATIONS = {
@@ -100,7 +107,6 @@ def render_us_map_tab():
     st.markdown("### 🇺🇸 미국 시총 상위 Top 200 주도주 맵 (커스텀 테마 반영)")
     st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 진성 미국 시가총액 200위 명단을 스캔하여 영우님만의 테마로 묶어냅니다.")
 
-    # 💡 100개짜리 옛날 데이터가 캐시에 남아있으면 경고를 띄워 스캔을 유도합니다!
     if not st.session_state.sp100_state_df.empty and len(st.session_state.sp100_state_df) <= 100:
         st.warning("⚠️ **시스템 업그레이드 알림:** 미국 시장 스캔 범위가 200위로 확장되었습니다! 메모리에 예전 100위 데이터가 남아있으므로, 반드시 아래의 빨간색 **[스캔 시작]** 버튼을 다시 눌러 데이터를 갱신해주세요.")
 
@@ -119,7 +125,7 @@ def render_us_map_tab():
                     "symbols": {"query": {"types": []}, "tickers": []},
                     "columns": ["name", "description", "sector", "industry", "market_cap_basic", "close", "change", "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "RSI"],
                     "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                    "range": [0, 400] # 충분한 범위로 넉넉하게 요청
+                    "range": [0, 400] 
                 }
                 headers = {"User-Agent": "Mozilla/5.0"}
                 res = requests.post(url, json=payload, headers=headers)
@@ -130,7 +136,6 @@ def render_us_map_tab():
                 target_exact = ['JPM', 'ORCL', 'BAC', 'MS', 'GS', 'WFC', 'C']
                 
                 for item in data.get('data', []):
-                    # 💡 200개 종목 추출 로직 적용!
                     if len(df_list) >= 200: break
                     
                     sym = item['d'][0] 
@@ -163,12 +168,12 @@ def render_us_map_tab():
                     sym_clean = sym.replace('.', '-').replace('/', '-')
                     name_trans = NAME_TRANSLATIONS.get(sym_clean, name_raw) 
                     
-                    # 💡 영우 님이 정리해주신 커스텀 테마 매핑 우선 적용!
+                    # 💡 영우 님이 정리해주신 커스텀 테마 매핑 우선 적용! (미분류 최소화)
                     if sym_clean in CUSTOM_US_THEME_MAPPING:
                         ind_trans = CUSTOM_US_THEME_MAPPING[sym_clean]
                     else:
                         closest_sector = AUTO_SECTOR_MAPPING.get(ind_raw, "기타 (AI 미분류)")
-                        ind_trans = f"{closest_sector} 🤖"
+                        ind_trans = f"{closest_sector} 🤖" if closest_sector != "기타 (AI 미분류)" else "기타 (AI 미분류) 🤖"
                     
                     if rsi_val: rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
                     else: rsi_str = "-"
@@ -189,7 +194,7 @@ def render_us_map_tab():
                         '120일 변동': f"{chg_6m:+.2f}%" if chg_6m else "-",
                         '200일 변동': f"{chg_1y:+.2f}%" if chg_1y else "-",
                         '시가총액_num': mcap,
-                        '1일_변동_num': chg_1d if chg_1d is not None else 0.0, # 히트맵용 순수 숫자 데이터 보존
+                        '1일_변동_num': chg_1d if chg_1d is not None else 0.0,
                         '크로스 상태 (4H/1D EMA200)': "대기 중",
                         '크로스 날짜': "-",
                         '크로스 당시 주가': "-"
@@ -202,32 +207,33 @@ def render_us_map_tab():
             except Exception as e:
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
-    # 200개 데이터가 정상적으로 스캔되어 있다면 차트와 표를 그립니다.
     if not st.session_state.sp100_state_df.empty and len(st.session_state.sp100_state_df) > 100:
-        # 💡 기존 트레이딩뷰 위젯을 버리고 Plotly 로 나만의 커스텀 히트맵 창조!
         st.markdown("#### 🗺️ 커스텀 미국 주도주 히트맵 (영우님 전용 섹터 기반)")
         st.caption("💡 아래 표에 스캔된 200개 종목을 영우님의 맞춤형 테마로 분류하여 직접 그려낸 **'나만의 자금 흐름 히트맵'**입니다. (상자 크기=시가총액, 색상=1일 변동률)")
         
         if px is not None:
             hm_df = st.session_state.sp100_state_df.copy()
-            # 히트맵 생성 (Treemap)
             fig = px.treemap(
                 hm_df,
                 path=[px.Constant("🇺🇸 미국 주식 시장 (Top 200)"), '산업군(Industry)', 'Symbol'],
                 values='시가총액_num',
                 color='1일_변동_num',
-                color_continuous_scale=['#f23645', '#434651', '#089981'], # 하락 빨간색, 0 회색, 상승 초록색
+                color_continuous_scale=['#f23645', '#434651', '#089981'], 
                 color_continuous_midpoint=0,
-                custom_data=['Name', '현재주가', '1일 변동'] # 툴팁용 추가 데이터
+                custom_data=['Name', '현재주가', '1일 변동'] 
             )
             
-            # 박스 내부 텍스트와 마우스 오버 툴팁 디자인 설정, 💡 히트맵 세로 높이를 1.5배 (1050) 로 확장 적용!
+            # 💡 히트맵 글씨 디자인 초대폭 개선 및 세로 길이 1200으로 시원하게 확장!
             fig.update_traces(
                 textinfo="label+text",
-                texttemplate="<span style='font-size: 16px; font-weight: bold;'>%{label}</span><br>%{customdata[2]}", 
+                texttemplate="<b><span style='font-size: 32px;'>%{label}</span></b><br><br><b><span style='font-size: 20px;'>%{customdata[2]}</span></b>", 
                 hovertemplate="<b>%{label} (%{customdata[0]})</b><br>테마: %{parent}<br>현재가: %{customdata[1]}<br>1일 변동: %{customdata[2]}<extra></extra>"
             )
-            fig.update_layout(margin=dict(t=30, l=10, r=10, b=10), height=1050)
+            fig.update_layout(
+                margin=dict(t=30, l=10, r=10, b=10), 
+                height=1200, 
+                font=dict(family="Arial Black, sans-serif")
+            )
             
             st.plotly_chart(fig, use_container_width=True)
         else:
@@ -302,7 +308,6 @@ def render_us_map_tab():
         st.markdown("---")
 
         yf_symbols = st.session_state.sp100_state_df['Symbol'].tolist()
-        # 💡 50개씩 4묶음으로 나누어 버튼 생성!
         chunks = [yf_symbols[i:i+50] for i in range(0, 200, 50)]
         labels_us = ["1위~50위", "51위~100위", "101위~150위", "151위~200위"]
         
@@ -370,7 +375,6 @@ def render_us_map_tab():
                         except Exception as e:
                             st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
-        # 💡 히트맵용 순수 숫자 데이터 컬럼(시가총액_num, 1일_변동_num)은 화면 테이블에서 보이지 않도록 필터링!
         display_cols_us = [
             '순위', 'Symbol', '시총', 'Name', '분야 순위', '현재주가', 'RSI', 
             '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', 
