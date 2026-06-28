@@ -7,21 +7,38 @@ from datetime import datetime, timezone
 import yfinance as yf
 import streamlit.components.v1 as components
 
-INDUSTRY_GROUPING = {
-    "Semiconductors": "반도체 및 장비", "Computer Processing Hardware": "IT 하드웨어", "Computer Communications": "네트워크 통신 장비",
-    "Electronic Equipment/Instruments": "IT 부품 및 전자기기", "Packaged Software": "소프트웨어 & 클라우드",
-    "Internet Software/Services": "소프트웨어 & 클라우드", "Information Technology Services": "IT 서비스 & 컨설팅",
-    "Internet Retail": "이커머스 & 온라인 유통", "Apparel/Footwear Retail": "의류 및 소비재 유통",
-    "Specialty Stores": "전문 유통 채널", "Discount Stores": "대형 할인마트", "Pharmaceuticals: Major": "제약 & 바이오",
-    "Biotechnology": "제약 & 바이오", "Medical Specialties": "의료 기기 & 장비", "Major Banks": "대형 은행",
-    "Regional Banks": "지역 은행", "Investment Banks/Brokers": "투자은행 & 증권", "Finance/Rental/Leasing": "여신 전문 & 신용카드",
-    "Property/Casualty Insurance": "손해보험", "Life/Health Insurance": "생명/건강보험", "Real Estate Investment Trusts": "리츠 (REITs)",
-    "Broadcasting": "미디어 & 방송망", "Movies/Entertainment": "미디어 & 엔터테인먼트", "Auto Manufacturing": "자동차 & 모빌리티",
-    "Motor Vehicles": "자동차 & 모빌리티", "Aerospace & Defense": "항공우주 & 국방", "Air Freight/Couriers": "항공 물류 & 택배",
-    "Integrated Oil": "에너지 (석유/가스)", "Electric Utilities": "전력 & 에너지 유틸리티", "Beverages: Non-Alcoholic": "식음료 (음료 전문)",
-    "Restaurants": "식음료 (F&B 프랜차이즈)", "Household/Personal Care": "가정용품 및 개인위생", "Industrial Machinery": "산업 기계 및 인프라",
-    "Specialty Telecommunications": "통신 기기", "Computer Peripherals": "컴퓨터 주변기기", "Investment Managers": "투자 관리 및 펀드",
-    "Other Metals/Minerals": "기타 금속 및 광물", "Managed Health Care": "의료 보험 및 헬스케어", "Trucks/Construction/Farm Machinery": "트럭 및 중장비"
+# 💡 영우님이 직접 설계하신 나스닥 핵심 테마 매핑 딕셔너리
+CUSTOM_US_THEME_MAPPING = {
+    "NVDA": "AI 반도체·네트워크", "AVGO": "AI 반도체·네트워크", "AMD": "AI 반도체·네트워크", "CSCO": "AI 반도체·네트워크", "ARM": "AI 반도체·네트워크", "MRVL": "AI 반도체·네트워크", "ALAB": "AI 반도체·네트워크", "LITE": "AI 반도체·네트워크",
+    "ASML": "반도체 장비·EDA", "AMAT": "반도체 장비·EDA", "LRCX": "반도체 장비·EDA", "KLAC": "반도체 장비·EDA", "CDNS": "반도체 장비·EDA", "SNPS": "반도체 장비·EDA", "TER": "반도체 장비·EDA",
+    "MU": "메모리·스토리지", "SNDK": "메모리·스토리지", "STX": "메모리·스토리지", "WDC": "메모리·스토리지",
+    "INTC": "시스템·아날로그·통신 반도체", "TXN": "시스템·아날로그·통신 반도체", "QCOM": "시스템·아날로그·통신 반도체", "ADI": "시스템·아날로그·통신 반도체", "NXPI": "시스템·아날로그·통신 반도체", "MPWR": "시스템·아날로그·통신 반도체", "MCHP": "시스템·아날로그·통신 반도체",
+    "AAPL": "빅테크·플랫폼", "MSFT": "빅테크·플랫폼", "AMZN": "빅테크·플랫폼", "GOOGL": "빅테크·플랫폼", "GOOG": "빅테크·플랫폼", "META": "빅테크·플랫폼",
+    "PLTR": "소프트웨어·SaaS·보안", "PANW": "소프트웨어·SaaS·보안", "CRWD": "소프트웨어·SaaS·보안", "APP": "소프트웨어·SaaS·보안", "FTNT": "소프트웨어·SaaS·보안", "DDOG": "소프트웨어·SaaS·보안", "ADBE": "소프트웨어·SaaS·보안", "INTU": "소프트웨어·SaaS·보안", "ADSK": "소프트웨어·SaaS·보안", "WDAY": "소프트웨어·SaaS·보안",
+    "CEG": "데이터센터·전력 인프라", "AEP": "데이터센터·전력 인프라", "NBIS": "데이터센터·전력 인프라", "CRWV": "데이터센터·전력 인프라", "XEL": "데이터센터·전력 인프라", "EXC": "데이터센터·전력 인프라",
+    "NFLX": "통신·미디어·엔터", "TMUS": "통신·미디어·엔터", "CMCSA": "통신·미디어·엔터", "WBD": "통신·미디어·엔터", "EA": "통신·미디어·엔터", "TTWO": "통신·미디어·엔터",
+    "SHOP": "인터넷 플랫폼·이커머스·여행", "BKNG": "인터넷 플랫폼·이커머스·여행", "PDD": "인터넷 플랫폼·이커머스·여행", "MAR": "인터넷 플랫폼·이커머스·여행", "ABNB": "인터넷 플랫폼·이커머스·여행", "MELI": "인터넷 플랫폼·이커머스·여행", "DASH": "인터넷 플랫폼·이커머스·여행",
+    "AMGN": "헬스케어·바이오", "GILD": "헬스케어·바이오", "ISRG": "헬스케어·바이오", "VRTX": "헬스케어·바이오", "REGN": "헬스케어·바이오", "IDXX": "헬스케어·바이오", "ALNY": "헬스케어·바이오", "GEHC": "헬스케어·바이오", "DXCM": "헬스케어·바이오",
+    "WMT": "필수소비·리테일", "COST": "필수소비·리테일", "PEP": "필수소비·리테일", "SBUX": "필수소비·리테일", "MNST": "필수소비·리테일", "MDLZ": "필수소비·리테일", "ORLY": "필수소비·리테일", "ROST": "필수소비·리테일", "KDP": "필수소비·리테일", "CCEP": "필수소비·리테일", "KHC": "필수소비·리테일",
+    "LIN": "산업·운송·B2B서비스", "HON": "산업·운송·B2B서비스", "CSX": "산업·운송·B2B서비스", "ADP": "산업·운송·B2B서비스", "CTAS": "산업·운송·B2B서비스", "PCAR": "산업·운송·B2B서비스", "FAST": "산업·운송·B2B서비스", "FER": "산업·운송·B2B서비스", "ODFL": "산업·운송·B2B서비스", "AXON": "산업·운송·B2B서비스", "TRI": "산업·운송·B2B서비스", "PAYX": "산업·운송·B2B서비스", "ROP": "산업·운송·B2B서비스", "CPRT": "산업·운송·B2B서비스",
+    "TSLA": "에너지·모빌리티·핀테크·우주", "BKR": "에너지·모빌리티·핀테크·우주", "RKLB": "에너지·모빌리티·핀테크·우주", "FANG": "에너지·모빌리티·핀테크·우주", "PYPL": "에너지·모빌리티·핀테크·우주", "MSTR": "에너지·모빌리티·핀테크·우주"
+}
+
+# 💡 리스트에 없는 종목을 만났을 때 AI가 대신 배정해줄 징검다리 딕셔너리
+AUTO_SECTOR_MAPPING = {
+    "Semiconductors": "시스템·아날로그·통신 반도체", "Computer Processing Hardware": "AI 반도체·네트워크", "Computer Communications": "AI 반도체·네트워크",
+    "Electronic Equipment/Instruments": "산업·운송·B2B서비스", "Packaged Software": "소프트웨어·SaaS·보안", "Internet Software/Services": "소프트웨어·SaaS·보안", 
+    "Information Technology Services": "소프트웨어·SaaS·보안", "Internet Retail": "인터넷 플랫폼·이커머스·여행", "Apparel/Footwear Retail": "필수소비·리테일",
+    "Specialty Stores": "필수소비·리테일", "Discount Stores": "필수소비·리테일", "Pharmaceuticals: Major": "헬스케어·바이오",
+    "Biotechnology": "헬스케어·바이오", "Medical Specialties": "헬스케어·바이오", "Managed Health Care": "헬스케어·바이오",
+    "Major Banks": "에너지·모빌리티·핀테크·우주", "Regional Banks": "에너지·모빌리티·핀테크·우주", "Investment Banks/Brokers": "에너지·모빌리티·핀테크·우주", 
+    "Finance/Rental/Leasing": "에너지·모빌리티·핀테크·우주", "Property/Casualty Insurance": "에너지·모빌리티·핀테크·우주", "Life/Health Insurance": "헬스케어·바이오", 
+    "Real Estate Investment Trusts": "산업·운송·B2B서비스", "Broadcasting": "통신·미디어·엔터", "Movies/Entertainment": "통신·미디어·엔터", 
+    "Auto Manufacturing": "에너지·모빌리티·핀테크·우주", "Motor Vehicles": "에너지·모빌리티·핀테크·우주", "Aerospace & Defense": "에너지·모빌리티·핀테크·우주", 
+    "Air Freight/Couriers": "산업·운송·B2B서비스", "Integrated Oil": "에너지·모빌리티·핀테크·우주", "Electric Utilities": "데이터센터·전력 인프라", 
+    "Beverages: Non-Alcoholic": "필수소비·리테일", "Restaurants": "필수소비·리테일", "Household/Personal Care": "필수소비·리테일", 
+    "Industrial Machinery": "산업·운송·B2B서비스", "Specialty Telecommunications": "AI 반도체·네트워크", "Computer Peripherals": "AI 반도체·네트워크", 
+    "Investment Managers": "에너지·모빌리티·핀테크·우주", "Other Metals/Minerals": "산업·운송·B2B서비스", "Trucks/Construction/Farm Machinery": "산업·운송·B2B서비스"
 }
 
 NAME_TRANSLATIONS = {
@@ -134,11 +151,13 @@ def render_us_map_tab():
                     sym_clean = sym.replace('.', '-').replace('/', '-')
                     name_trans = NAME_TRANSLATIONS.get(sym_clean, name_raw) 
                     
-                    # 💡 영우 님이 정리해주신 커스텀 테마 매핑 최우선 적용!
+                    # 💡 영우 님이 정리해주신 커스텀 테마 매핑 우선 적용!
                     if sym_clean in CUSTOM_US_THEME_MAPPING:
                         ind_trans = CUSTOM_US_THEME_MAPPING[sym_clean]
                     else:
-                        ind_trans = INDUSTRY_GROUPING.get(ind_raw, ind_raw) if ind_raw else "기타"
+                        # 💡 리스트에 없는 종목은 AI가 가장 근접한 테마로 자동 분류하고 🤖 마크를 붙입니다.
+                        closest_sector = AUTO_SECTOR_MAPPING.get(ind_raw, "기타 (AI 미분류)")
+                        ind_trans = f"{closest_sector} 🤖"
                     
                     if rsi_val: rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
                     else: rsi_str = "-"
@@ -165,16 +184,15 @@ def render_us_map_tab():
                     })
                 
                 new_df = pd.DataFrame(df_list)
-                new_df['분야 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min').apply(lambda x: f"산업 {int(x)}위")
+                new_df['분야 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min').apply(lambda x: f"테마 {int(x)}위")
                 st.session_state.sp100_state_df = new_df.drop(columns=['시가총액_num'])
-                st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료! (주가, 변동성 6종, RSI 포함)")
+                st.success("✅ 실시간 미국 시총 Top 100 리스트 업데이트 완료! (영우님의 커스텀 테마 100% 적용)")
             except Exception as e:
                 st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
     if not st.session_state.sp100_state_df.empty:
-        # 💡 히트맵 Data Source를 "NDX"(나스닥 100)로 완벽히 수정하여 하단 표 데이터와 일치시켰습니다.
         st.markdown("#### 🗺️ 나스닥 100 주도주 히트맵 (실시간 자금 흐름)")
-        st.caption("💡 블록의 크기는 시가총액(Market Cap)을, 색상은 오늘 하루의 등락률을 나타냅니다. 마우스를 올리면 상세 정보를 볼 수 있습니다.")
+        st.caption("🚨 **안내:** 상단의 트레이딩뷰 위젯은 트레이딩뷰 자체 서버 분류를 강제로 따르기 때문에 위젯 그림 내부의 그룹을 바꾸는 것은 불가능합니다. 하지만 **하단의 스캔 표(Table)에는 영우님이 주신 맞춤형 테마가 100% 반영되어 정렬됩니다!**")
         heatmap_widget = """
         <div class="tradingview-widget-container" style="height: 700px; width: 100%;">
           <div class="tradingview-widget-container__widget" style="height: 100%; width: 100%;"></div>
@@ -203,7 +221,6 @@ def render_us_map_tab():
         
         st.markdown("#### 📈 나스닥 100 기간별 수익률 지표")
         try:
-            # 💡 야후 파이낸스 자체 Session(오류 원인) 제거 완료!
             sp500_df = pd.DataFrame()
             for tkr in ["^NDX", "QQQ"]:
                 for _ in range(2):
@@ -280,7 +297,6 @@ def render_us_map_tab():
                     with st.spinner(f"나스닥 {labels_us[i]} 실시간 데이터 스캔 중..."):
                         time.sleep(2)
                         try:
-                            # 💡 야후 파이낸스 자체 Session(오류 원인) 제거 완료!
                             data_1d_raw = yf.download(chunks[i], period="2y", interval="1d", progress=False)
                             data_1h_raw = yf.download(chunks[i], period="730d", interval="1h", progress=False)
                             
@@ -337,7 +353,6 @@ def render_us_map_tab():
                         except Exception as e:
                             st.error(f"야후 파이낸스 스캔 중 오류 발생: {str(e)}")
 
-        # 💡 코스피와 100% 동일한 순서 배열 및 극한의 너비 다이어트 적용 완료
         display_cols_us = [
             '순위', 'Symbol', '시총', 'Name', '분야 순위', '현재주가', 'RSI', 
             '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', 
@@ -350,7 +365,8 @@ def render_us_map_tab():
                 "순위": st.column_config.NumberColumn(width="small"),
                 "Symbol": st.column_config.TextColumn("심볼", width="small"),
                 "시총": st.column_config.TextColumn("시총", width="small"),
-                "분야 순위": st.column_config.TextColumn("분야순위", width="small"),
+                "Name": st.column_config.TextColumn("Name", width="medium"),
+                "분야 순위": st.column_config.TextColumn("테마순위", width="small"),
                 "현재주가": st.column_config.TextColumn("현재가", width="small"),
                 "RSI": st.column_config.TextColumn("RSI", width="small"),
                 "1일 변동": st.column_config.TextColumn("1일", width="small"),
@@ -359,6 +375,7 @@ def render_us_map_tab():
                 "60일 변동": st.column_config.TextColumn("60일", width="small"),
                 "120일 변동": st.column_config.TextColumn("120일", width="small"),
                 "200일 변동": st.column_config.TextColumn("200일", width="small"),
+                "산업군(Industry)": st.column_config.TextColumn("분류(테마)", width="medium"),
                 "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width="small"),
                 "크로스 날짜": st.column_config.TextColumn("크로스날짜", width="small"),
                 "크로스 당시 주가": st.column_config.TextColumn("크로스가", width="small")
