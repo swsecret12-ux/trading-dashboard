@@ -220,6 +220,7 @@ def render_us_map_tab():
                 color='1일_변동_num',
                 color_continuous_scale=['#f23645', '#434651', '#089981'], 
                 color_continuous_midpoint=0,
+                range_color=[-5, 5], # 💡 핵심 추가: 극단적인 이상치(예: +90%) 때문에 다른 종목들이 회색으로 죽어보이는 현상 방지! (-5% ~ +5% 기준으로 색상 고정)
                 custom_data=['Name', '현재주가', '1일 변동'] 
             )
             
