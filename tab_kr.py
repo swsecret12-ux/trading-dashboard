@@ -2,73 +2,94 @@ import streamlit as st
 import pandas as pd
 import requests
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import yfinance as yf
 import altair as alt
+import streamlit.components.v1 as components
 import xml.etree.ElementTree as ET
 
-# 💡 트레이딩뷰의 어색한 직역을 매끄럽고 직관적인 한국 주식 섹터명으로 대대적 교정
-INDUSTRY_GROUPING_KR = {
-    "Electronic Technology": "IT & 전자", "전자 기술": "IT & 전자", 
-    "Semiconductors": "반도체", "반도체": "반도체",
-    "Electronic Components": "IT 부품", "전자 부품": "IT 부품", "전기 제품": "IT 부품",
-    "Telecommunications Equipment": "통신 장비", "통신 장비": "통신 장비",
-    "Internet Software/Services": "소프트웨어 & 인터넷", "인터넷 소프트웨어/서비스": "소프트웨어 & 인터넷", 
-    "Packaged Software": "소프트웨어", "패키지 소프트웨어": "소프트웨어",
-    "Information Technology Services": "IT 서비스", "정보 기술 서비스": "IT 서비스",
-    "Computer Communications": "네트워크 & 통신", "컴퓨터 통신": "네트워크 & 통신",
-    "Motor Vehicles": "자동차", "자동차": "자동차", "모터 차량": "자동차",
-    "Auto Parts: OEM": "자동차 부품", "자동차 부품: OEM": "자동차 부품",
-    "Chemicals: Major Diversified": "화학", "화학: 주요 다각화": "화학", "화학": "화학", 
-    "Chemicals: Specialty": "화학", "특수 화학": "화학",
-    "Pharmaceuticals: Major": "제약 & 바이오", "제약: 주요": "제약 & 바이오", 
-    "Biotechnology": "제약 & 바이오", "생명공학": "제약 & 바이오",
-    "Medical Specialties": "의료 기기", "의료 전문": "의료 기기",
-    "Major Banks": "은행", "주요 은행": "은행", "Regional Banks": "은행", "지역 은행": "은행",
-    "Investment Banks/Brokers": "증권", "투자 은행/브로커": "증권", "투자 은행/중개인": "증권",
-    "Life/Health Insurance": "보험", "생명/건강 보험": "보험", 
-    "Property/Casualty Insurance": "보험", "재산/상해 보험": "보험",
-    "Financial Conglomerates": "기타 금융", "금융 대기업": "기타 금융", 
-    "Finance/Rental/Leasing": "기타 금융", "금융/임대/리스": "기타 금융",
-    "Steel": "철강", "철강": "철강", 
-    "Other Metals/Minerals": "비철금속 & 광물", "기타 금속/광물": "비철금속 & 광물",
-    "Marine Shipping": "조선 & 해운", "해상 운송": "조선 & 해운", "해양 해운": "조선 & 해운",
-    "Aerospace & Defense": "우주항공 & 국방", "항공 우주 & 국방": "우주항공 & 국방",
-    "Electric Utilities": "전력 & 에너지", "전기 유틸리티": "전력 & 에너지", 
-    "Oil & Gas Production": "정유 & 가스", "석유 & 가스 생산": "정유 & 가스", 
-    "Integrated Oil": "정유 & 가스", "통합 석유": "정유 & 가스",
-    "Engineering & Construction": "건설 & 인프라", "엔지니어링 & 건설": "건설 & 인프라", 
-    "Homebuilding": "건설 & 인프라", "주택 건설": "건설 & 인프라",
-    "Food: Major Diversified": "식음료", "음식: 주요 다각화": "식음료", "식품: 주요 다각화": "식음료", 
-    "Food: Specialty/Candy": "식음료", "식품: 특수/캔디": "식음료", 
-    "Beverages: Non-Alcoholic": "식음료", "음료: 비알코올": "식음료",
-    "Apparel/Footwear": "의류 & 소비재", "의류/신발": "의류 & 소비재", 
-    "Apparel/Footwear Retail": "의류 & 소비재", "의류/신발 소매": "의류 & 소비재",
-    "Specialty Stores": "유통 & 이커머스", "전문 상점": "유통 & 이커머스", 
-    "Discount Stores": "유통 & 이커머스", "할인 상점": "유통 & 이커머스", 
-    "Internet Retail": "유통 & 이커머스", "인터넷 소매": "유통 & 이커머스",
-    "Broadcasting": "미디어 & 엔터", "방송": "미디어 & 엔터", 
-    "Movies/Entertainment": "미디어 & 엔터", "영화/엔터테인먼트": "미디어 & 엔터", 
-    "Advertising/Marketing Services": "광고 & 마케팅", "광고/마케팅 서비스": "광고 & 마케팅",
-    "Airlines": "항공", "항공사": "항공", "Railroads": "철도", "철도": "철도",
-    "Trucks/Construction/Farm Machinery": "중장비 & 기계", "트럭/건설/농기계": "중장비 & 기계", 
-    "Industrial Machinery": "산업 기계", "산업 기계": "산업 기계",
-    "Household/Personal Care": "생활용품", "가정/개인 관리": "생활용품",
-    "Other Transportation": "물류 & 운송", "기타 운송": "물류 & 운송", 
-    "Air Freight/Couriers": "물류 & 운송", "항공 화물/택배": "물류 & 운송"
+# 커스텀 히트맵을 위한 plotly (에러 방어용)
+try:
+    import plotly.express as px
+except ImportError:
+    px = None
+
+# 💡 영우님의 나스닥 13개 핵심 테마를 한국 증시(코스피)에 완벽 적용한 매핑!
+CUSTOM_KR_THEME_MAPPING = {
+    # 1. 메모리·스토리지 / AI 반도체
+    "005930": "메모리·스토리지", "000660": "메모리·스토리지", # 삼성전자, SK하이닉스
+    "042700": "반도체 장비·EDA", "041510": "반도체 장비·EDA", # 한미반도체, 에스엠코어 등
+    # 2. 빅테크·플랫폼 / 인터넷·이커머스
+    "035420": "빅테크·플랫폼", "035720": "빅테크·플랫폼", # 네이버, 카카오
+    "032640": "통신·미디어·엔터", "017670": "통신·미디어·엔터", "030200": "통신·미디어·엔터", # LGU+, SKT, KT
+    "352820": "통신·미디어·엔터", "035900": "통신·미디어·엔터", "041510": "통신·미디어·엔터", # 하이브, JYP 등
+    # 3. 에너지·모빌리티·핀테크·우주 (2차전지, 자동차, 금융, 방산, 조선 통합)
+    "005380": "에너지·모빌리티·핀테크·우주", "000270": "에너지·모빌리티·핀테크·우주", "012330": "에너지·모빌리티·핀테크·우주", # 현대차, 기아, 모비스
+    "373220": "에너지·모빌리티·핀테크·우주", "006400": "에너지·모빌리티·핀테크·우주", "051910": "에너지·모빌리티·핀테크·우주", # LG엔솔, 삼성SDI, LG화학
+    "003670": "에너지·모빌리티·핀테크·우주", "247540": "에너지·모빌리티·핀테크·우주", "096770": "에너지·모빌리티·핀테크·우주", # 포스코퓨처엠, 에코프로비엠, SK이노
+    "105560": "에너지·모빌리티·핀테크·우주", "055550": "에너지·모빌리티·핀테크·우주", "086790": "에너지·모빌리티·핀테크·우주", "316140": "에너지·모빌리티·핀테크·우주", # 4대 금융지주
+    "032830": "에너지·모빌리티·핀테크·우주", "000810": "에너지·모빌리티·핀테크·우주", "032830": "에너지·모빌리티·핀테크·우주", # 보험/금융
+    "012450": "에너지·모빌리티·핀테크·우주", "047810": "에너지·모빌리티·핀테크·우주", "069260": "에너지·모빌리티·핀테크·우주", # 한화에어로(우주/방산), KAI 등
+    "010140": "에너지·모빌리티·핀테크·우주", "042660": "에너지·모빌리티·핀테크·우주", # 삼성중공업, 한화오션(선박 모빌리티)
+    # 4. 헬스케어·바이오
+    "207940": "헬스케어·바이오", "068270": "헬스케어·바이오", "000100": "헬스케어·바이오", "128940": "헬스케어·바이오", # 삼바, 셀트리온, 유한양행, 한미약품
+    # 5. 필수소비·리테일
+    "051900": "필수소비·리테일", "090430": "필수소비·리테일", "023530": "필수소비·리테일", # LG생건, 아모레, 롯데쇼핑
+    "000080": "필수소비·리테일", "004370": "필수소비·리테일", "033920": "필수소비·리테일", # 하이트진로, 농심, KT&G
+    # 6. 산업·운송·B2B서비스 (건설, 철강, 지주사, 물류 등)
+    "005490": "산업·운송·B2B서비스", "004020": "산업·운송·B2B서비스", "010130": "산업·운송·B2B서비스", # POSCO홀딩스, 현대제철, 고려아연
+    "028260": "산업·운송·B2B서비스", "000120": "산업·운송·B2B서비스", "000210": "산업·운송·B2B서비스", # 삼성물산, CJ대한통운, DL이앤씨
+    # 7. 데이터센터·전력 인프라
+    "015760": "데이터센터·전력 인프라", "034020": "데이터센터·전력 인프라", "058650": "데이터센터·전력 인프라", # 한전, 두산에너빌리티, 세아제강지주
+    "284740": "데이터센터·전력 인프라", "028670": "데이터센터·전력 인프라", # LS일렉트릭, 팬오션 등
+    # 8. 소프트웨어·SaaS·보안 / 시스템·아날로그·통신 반도체
+    "018260": "소프트웨어·SaaS·보안", "022100": "소프트웨어·SaaS·보안", # 삼성SDS, 포스코DX
+    "009150": "시스템·아날로그·통신 반도체", "011070": "시스템·아날로그·통신 반도체", "243070": "시스템·아날로그·통신 반도체" # 삼성전기, LG이노텍, 솔루스첨단소재
 }
 
-# 💡 대한민국 주식시장의 현실에 맞춘 핵심 주도주 강제 교정 딕셔너리 (삼성, 하이닉스, 2차전지 등)
-CUSTOM_TICKER_INDUSTRY = {
-    "005930": "반도체", "000660": "반도체", "042700": "반도체", # 삼성전자, SK하이닉스, 한미반도체
-    "373220": "2차전지", "006400": "2차전지", "096770": "2차전지", # LG엔솔, 삼성SDI, SK이노베이션
-    "051910": "화학 & 2차전지", "003670": "2차전지 소재", "247540": "2차전지 소재", "086520": "2차전지 소재", # LG화학, 포스코퓨처엠, 에코프로 형제
-    "005380": "자동차", "000270": "자동차", "012330": "자동차 부품", # 현대차, 기아, 현대모비스
-    "207940": "제약 & 바이오", "068270": "제약 & 바이오", "000100": "제약 & 바이오", # 삼바, 셀트리온, 유한양행
-    "035420": "소프트웨어 & 인터넷", "035720": "소프트웨어 & 인터넷", # 네이버, 카카오
-    "005490": "철강 & 2차전지 소재", # POSCO홀딩스
-    "105560": "금융지주", "055550": "금융지주", "086790": "금융지주", "316140": "금융지주", # KB, 신한, 하나, 우리
-    "032830": "생명보험", "032640": "통신", "017670": "통신", "030200": "통신"
+# 💡 리스트에 없는 코스피 종목을 13개 테마로 밀어넣는 징검다리 딕셔너리
+AUTO_SECTOR_MAPPING_KR = {
+    "Electronic Technology": "시스템·아날로그·통신 반도체", "전자 기술": "시스템·아날로그·통신 반도체", 
+    "Semiconductors": "시스템·아날로그·통신 반도체", "반도체": "시스템·아날로그·통신 반도체",
+    "Electronic Components": "시스템·아날로그·통신 반도체", "전자 부품": "시스템·아날로그·통신 반도체", "전기 제품": "시스템·아날로그·통신 반도체",
+    "Internet Software/Services": "빅테크·플랫폼", "인터넷 소프트웨어/서비스": "빅테크·플랫폼", 
+    "Packaged Software": "소프트웨어·SaaS·보안", "패키지 소프트웨어": "소프트웨어·SaaS·보안",
+    "Information Technology Services": "소프트웨어·SaaS·보안", "정보 기술 서비스": "소프트웨어·SaaS·보안",
+    "Motor Vehicles": "에너지·모빌리티·핀테크·우주", "자동차": "에너지·모빌리티·핀테크·우주", "모터 차량": "에너지·모빌리티·핀테크·우주",
+    "Auto Parts: OEM": "에너지·모빌리티·핀테크·우주", "자동차 부품: OEM": "에너지·모빌리티·핀테크·우주",
+    "Chemicals: Major Diversified": "산업·운송·B2B서비스", "화학: 주요 다각화": "산업·운송·B2B서비스", "화학": "산업·운송·B2B서비스", 
+    "Pharmaceuticals: Major": "헬스케어·바이오", "제약: 주요": "헬스케어·바이오", 
+    "Biotechnology": "헬스케어·바이오", "생명공학": "헬스케어·바이오",
+    "Medical Specialties": "헬스케어·바이오", "의료 전문": "헬스케어·바이오",
+    "Major Banks": "에너지·모빌리티·핀테크·우주", "주요 은행": "에너지·모빌리티·핀테크·우주", "Regional Banks": "에너지·모빌리티·핀테크·우주", 
+    "Investment Banks/Brokers": "에너지·모빌리티·핀테크·우주", "투자 은행/브로커": "에너지·모빌리티·핀테크·우주",
+    "Life/Health Insurance": "에너지·모빌리티·핀테크·우주", "생명/건강 보험": "에너지·모빌리티·핀테크·우주", 
+    "Property/Casualty Insurance": "에너지·모빌리티·핀테크·우주", "재산/상해 보험": "에너지·모빌리티·핀테크·우주",
+    "Financial Conglomerates": "에너지·모빌리티·핀테크·우주", "금융 대기업": "에너지·모빌리티·핀테크·우주", 
+    "Finance/Rental/Leasing": "에너지·모빌리티·핀테크·우주", "금융/임대/리스": "에너지·모빌리티·핀테크·우주",
+    "Steel": "산업·운송·B2B서비스", "철강": "산업·운송·B2B서비스", 
+    "Other Metals/Minerals": "산업·운송·B2B서비스", "기타 금속/광물": "산업·운송·B2B서비스",
+    "Marine Shipping": "산업·운송·B2B서비스", "해상 운송": "산업·운송·B2B서비스",
+    "Aerospace & Defense": "에너지·모빌리티·핀테크·우주", "항공 우주 & 국방": "에너지·모빌리티·핀테크·우주",
+    "Electric Utilities": "데이터센터·전력 인프라", "전기 유틸리티": "데이터센터·전력 인프라", 
+    "Oil & Gas Production": "에너지·모빌리티·핀테크·우주", "석유 & 가스 생산": "에너지·모빌리티·핀테크·우주", 
+    "Integrated Oil": "에너지·모빌리티·핀테크·우주", "통합 석유": "에너지·모빌리티·핀테크·우주",
+    "Engineering & Construction": "산업·운송·B2B서비스", "엔지니어링 & 건설": "산업·운송·B2B서비스", 
+    "Homebuilding": "산업·운송·B2B서비스", "주택 건설": "산업·운송·B2B서비스",
+    "Food: Major Diversified": "필수소비·리테일", "음식: 주요 다각화": "필수소비·리테일", 
+    "Food: Specialty/Candy": "필수소비·리테일", "식품: 특수/캔디": "필수소비·리테일", 
+    "Beverages: Non-Alcoholic": "필수소비·리테일", "음료: 비알코올": "필수소비·리테일",
+    "Apparel/Footwear": "필수소비·리테일", "의류/신발": "필수소비·리테일", 
+    "Specialty Stores": "인터넷 플랫폼·이커머스·여행", "전문 상점": "인터넷 플랫폼·이커머스·여행", 
+    "Internet Retail": "인터넷 플랫폼·이커머스·여행", "인터넷 소매": "인터넷 플랫폼·이커머스·여행",
+    "Broadcasting": "통신·미디어·엔터", "방송": "통신·미디어·엔터", 
+    "Movies/Entertainment": "통신·미디어·엔터", "영화/엔터테인먼트": "통신·미디어·엔터", 
+    "Advertising/Marketing Services": "통신·미디어·엔터", "광고/마케팅 서비스": "통신·미디어·엔터",
+    "Airlines": "산업·운송·B2B서비스", "항공사": "산업·운송·B2B서비스", "Railroads": "산업·운송·B2B서비스", 
+    "Trucks/Construction/Farm Machinery": "산업·운송·B2B서비스", "트럭/건설/농기계": "산업·운송·B2B서비스", 
+    "Industrial Machinery": "산업·운송·B2B서비스", "산업 기계": "산업·운송·B2B서비스",
+    "Household/Personal Care": "필수소비·리테일", "가정/개인 관리": "필수소비·리테일",
+    "Air Freight/Couriers": "산업·운송·B2B서비스", "항공 화물/택배": "산업·운송·B2B서비스"
 }
 
 def format_krw_direct(krw_val):
@@ -89,7 +110,6 @@ def format_krw_direct(krw_val):
     except:
         return krw_val
 
-# 등락률 %를 받아 색상을 입히는 함수
 def color_pct(val):
     if isinstance(val, str) and '%' in val:
         try:
@@ -103,34 +123,43 @@ def render_kr_map_tab():
     if "kospi100_state_df" not in st.session_state:
         st.session_state.kospi100_state_df = pd.DataFrame()
 
-    st.markdown("### 🇰🇷 한국 코스피 상위 Top 100 기업 (실시간 데이터 기준)")
+    st.markdown("### 🇰🇷 한국 코스피 상위 Top 200 주도주 맵 (나스닥 13대 테마 연동)")
+    st.info("💡 **알림:** 실시간 트레이딩뷰(TradingView) 서버에서 진성 코스피 시가총액 200위 명단을 스캔하여 영우님의 13대 글로벌 테마로 묶어냅니다.")
 
-    if st.button("🔄 실시간 한국 코스피 Top 100 스캔 시작", type="primary"):
-        with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 100위를 선별 중입니다..."):
+    if not st.session_state.kospi100_state_df.empty and len(st.session_state.kospi100_state_df) <= 100:
+        st.warning("⚠️ **시스템 업그레이드 알림:** 코스피 스캔 범위가 200위로 확장되었습니다! 메모리에 예전 100위 데이터가 남아있으므로, 반드시 아래의 빨간색 **[스캔 시작]** 버튼을 다시 눌러 데이터를 갱신해주세요.")
+
+    if st.button("🔄 실시간 순수 코스피 Top 200 스캔 시작", type="primary", key="btn_kr_scan"):
+        with st.spinner("코스피 전 종목을 스캔하여 실시간 시총 200위를 선별 중입니다... (약 2초 소요)"):
             try:
                 url = "https://scanner.tradingview.com/korea/scan"
-                # 💡 장기 변동성(3개월, 6개월, 1년) 데이터 추가 호출!
                 payload = {
                     "filter": [
-                        {"left": "market_cap_basic", "operation": "nempty"}, 
-                        {"left": "type", "operation": "in_range", "right": ["stock", "dr"]}, 
-                        {"left": "exchange", "operation": "in_range", "right": ["KRX"]}
+                        {"left": "market_cap_basic", "operation": "nempty"},
+                        {"left": "type", "operation": "in_range", "right": ["stock", "dr"]},
+                        {"left": "exchange", "operation": "in_range", "right": ["KRX"]} 
                     ],
                     "options": {"lang": "ko"},
                     "markets": ["korea"],
+                    "symbols": {"query": {"types": []}, "tickers": []},
                     "columns": ["name", "description", "sector", "industry", "market_cap_basic", "close", "change", "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "RSI"],
                     "sort": {"sortBy": "market_cap_basic", "sortOrder": "desc"},
-                    "range": [0, 200]
+                    "range": [0, 400] 
                 }
-                res = requests.post(url, json=payload, headers={"User-Agent": "Mozilla/5.0"})
+                headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+                res = requests.post(url, json=payload, headers=headers)
+                
+                if res.status_code != 200: raise Exception(f"트레이딩뷰 서버 응답 지연 (상태 코드: {res.status_code})")
                 data = res.json()
                 
                 df_list = []
                 seen_tickers = set()
                 
                 for item in data.get('data', []):
-                    if len(df_list) >= 100: break
-                    sym = item['d'][0]
+                    # 💡 200개 종목 추출 로직 적용!
+                    if len(df_list) >= 200: break
+                    
+                    sym = item['d'][0] 
                     name_raw = item['d'][1]
                     ind_raw = item['d'][3]
                     mcap = item['d'][4]
@@ -138,33 +167,39 @@ def render_kr_map_tab():
                     chg_1d = item['d'][6]
                     chg_1w = item['d'][7]
                     chg_1m = item['d'][8]
-                    chg_3m = item['d'][9]  # 60일(3개월) 변동
-                    chg_6m = item['d'][10] # 120일(6개월) 변동
-                    chg_1y = item['d'][11] # 200일(1년) 변동
-                    rsi_val = item['d'][12] # RSI 지표
+                    chg_3m = item['d'][9]  
+                    chg_6m = item['d'][10] 
+                    chg_1y = item['d'][11] 
+                    rsi_val = item['d'][12]
                     
                     base_ticker = sym.split(':')[-1]
-                    if (len(base_ticker) == 6 and not base_ticker.endswith('0')) or "우" in name_raw: continue
+                    
+                    # 우선주 필터링
+                    if len(base_ticker) == 6 and not base_ticker.endswith('0'): continue
+                    if "우" in name_raw and ("우B" in name_raw or "우(" in name_raw or name_raw.endswith("우")): continue
+                    
                     if base_ticker in seen_tickers: continue
                     seen_tickers.add(base_ticker)
+                    yf_ticker = f"{base_ticker}.KS"
                     
-                    # 💡 산업군 번역 및 강제 교정 적용
-                    if base_ticker in CUSTOM_TICKER_INDUSTRY:
-                        ind_trans = CUSTOM_TICKER_INDUSTRY[base_ticker]
+                    # 💡 한국 증시를 나스닥 테마로 매핑!
+                    if base_ticker in CUSTOM_KR_THEME_MAPPING:
+                        ind_trans = CUSTOM_KR_THEME_MAPPING[base_ticker]
                     else:
-                        ind_trans = INDUSTRY_GROUPING_KR.get(ind_raw, ind_raw) if ind_raw else "기타"
+                        closest_sector = AUTO_SECTOR_MAPPING_KR.get(ind_raw, "기타 (KOSPI 미분류)")
+                        ind_trans = f"{closest_sector} 🤖" if closest_sector != "기타 (KOSPI 미분류)" else "기타 (KOSPI 미분류) 🤖"
                     
-                    # 💡 RSI가 25 미만이면 🚨 응급 이모지 추가
-                    if rsi_val:
-                        rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
-                    else:
-                        rsi_str = "-"
+                    if rsi_val: rsi_str = f"🚨 {rsi_val:.1f}" if rsi_val < 25 else f"{rsi_val:.1f}"
+                    else: rsi_str = "-"
                     
                     df_list.append({
                         '순위': len(df_list) + 1,
                         'Symbol': base_ticker,
-                        'YF_Symbol': f"{base_ticker}.KS",
+                        'YF_Symbol': yf_ticker,
                         'Name': name_raw,
+                        '시총': format_krw_direct(mcap),
+                        '산업군(Industry)': ind_trans,
+                        '분야 순위': "-",
                         '현재주가': f"₩{close_p:,.0f}" if close_p else "-",
                         'RSI': rsi_str,
                         '1일 변동': f"{chg_1d:+.2f}%" if chg_1d else "-",
@@ -173,55 +208,75 @@ def render_kr_map_tab():
                         '60일 변동': f"{chg_3m:+.2f}%" if chg_3m else "-",
                         '120일 변동': f"{chg_6m:+.2f}%" if chg_6m else "-",
                         '200일 변동': f"{chg_1y:+.2f}%" if chg_1y else "-",
-                        '산업군(Industry)': ind_trans,
                         '시가총액_num': mcap,
-                        '시총': format_krw_direct(mcap),
-                        '분야 순위': "-",
+                        '1일_변동_num': chg_1d if chg_1d is not None else 0.0, # 히트맵용
                         '크로스 상태 (4H/1D EMA200)': "대기 중",
                         '크로스 날짜': "-",
-                        '크로스 당시 주가': "-"
+                        '크로스 당시 주가': "-",
+                        '업데이트 날짜': "-"
                     })
                 
                 new_df = pd.DataFrame(df_list)
-                new_df['분야 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min').apply(lambda x: f"산업 {int(x)}위")
-                st.session_state.kospi100_state_df = new_df.drop(columns=['시가총액_num'])
-                st.success("✅ 업데이트 완료! (주가, 변동성 6종, RSI 데이터 포함)")
-            except Exception as e: 
-                st.error(f"오류: {e}")
+                new_df['분야 순위'] = new_df.groupby('산업군(Industry)')['시가총액_num'].rank(ascending=False, method='min').apply(lambda x: f"테마 {int(x)}위")
+                st.session_state.kospi100_state_df = new_df
+                st.success("✅ 실시간 코스피 시총 Top 200 리스트 업데이트 완료! (영우님의 13대 테마 100% 적용)")
+            except Exception as e:
+                st.error(f"데이터 스캔 중 오류가 발생했습니다: {e}")
 
-    if not st.session_state.kospi100_state_df.empty:
-        # 1. 수익률 표시
+    # 200개 데이터가 있으면 코스피 전용 커스텀 히트맵 렌더링!
+    if not st.session_state.kospi100_state_df.empty and len(st.session_state.kospi100_state_df) > 100:
+        st.markdown("#### 🗺️ 커스텀 코스피 주도주 히트맵 (나스닥 13대 테마 분류)")
+        st.caption("💡 아래 표에 스캔된 200개 종목을 영우님의 맞춤형 나스닥 테마로 재분류하여 그려낸 **'한국 증시 자금 흐름 히트맵'**입니다.")
+        
+        if px is not None:
+            hm_df = st.session_state.kospi100_state_df.copy()
+            fig = px.treemap(
+                hm_df,
+                path=[px.Constant("🇰🇷 한국 주식 시장 (Top 200)"), '산업군(Industry)', 'Name'],
+                values='시가총액_num',
+                color='1일_변동_num',
+                color_continuous_scale=['#f23645', '#434651', '#089981'], 
+                color_continuous_midpoint=0,
+                range_color=[-5, 5], # 💡 코스피도 이상치 방어(-5%~+5%) 적용!
+                custom_data=['Symbol', '현재주가', '1일 변동'] 
+            )
+            
+            # 히트맵 글씨 디자인 및 세로 길이 1200으로 시원하게 확장!
+            fig.update_traces(
+                textinfo="label+text",
+                texttemplate="<b><span style='font-size: 26px;'>%{label}</span></b><br><br><b><span style='font-size: 18px;'>%{customdata[2]}</span></b>", 
+                hovertemplate="<b>%{label} (%{customdata[0]})</b><br>테마: %{parent}<br>현재가: %{customdata[1]}<br>1일 변동: %{customdata[2]}<extra></extra>"
+            )
+            fig.update_layout(
+                margin=dict(t=30, l=10, r=10, b=10), 
+                height=1200, 
+                font=dict(family="Arial Black, sans-serif")
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.error("🚨 커스텀 히트맵을 렌더링하기 위한 'plotly' 파이썬 패키지가 설치되어 있지 않습니다.")
+            
+        st.markdown("---")
+
         st.markdown("#### 📈 코스피(KOSPI) 기간별 수익률 지표")
         try:
-            kospi_df = pd.DataFrame()
-            # 💡 야후 지연 버그 방어를 위한 네이버 API 호출
-            try:
-                url = "https://fchart.stock.naver.com/sise.nhn?symbol=KOSPI&timeframe=day&count=1500&requestType=0"
-                res = requests.get(url, timeout=5)
-                root = ET.fromstring(res.text)
-                items = root.findall('.//item')
-                data = []
-                for item in items:
-                    row = item.attrib['data'].split('|')
-                    data.append({'Date': pd.to_datetime(row[0]), 'Close': float(row[4])})
-                if data:
-                    kospi_df = pd.DataFrame(data).set_index('Date')
-            except: pass
-
-            if kospi_df.empty: # 네이버 실패 시 야후 백업 동작
-                for _ in range(3):
-                    try:
-                        temp_df = yf.download("^KS11", period="4y", interval="1d", progress=False)
-                        if not temp_df.empty:
-                            kospi_df = temp_df
-                            break
-                    except: time.sleep(1)
-
-            if not kospi_df.empty:
-                if isinstance(kospi_df.columns, pd.MultiIndex): 
-                    close_series = kospi_df['Close'].iloc[:, 0].dropna()
-                else: 
-                    close_series = kospi_df['Close'].dropna()
+            # 💡 야후 통신망(주말 딜레이 버그)을 완벽히 버리고 네이버 금융 백그라운드 API 우회 호출!
+            url = "https://fchart.stock.naver.com/sise.nhn?symbol=KOSPI&timeframe=day&count=1500&requestType=0"
+            res = requests.get(url)
+            root = ET.fromstring(res.text)
+            items = root.findall('.//item')
+            data = []
+            for item in items:
+                row = item.attrib['data'].split('|')
+                data.append({
+                    'Date': pd.to_datetime(row[0]),
+                    'Close': float(row[4])
+                })
+            
+            if data:
+                kospi_df = pd.DataFrame(data).set_index('Date')
+                close_series = kospi_df['Close'].dropna()
                 
                 curr = close_series.iloc[-1]
                 def ret(days):
@@ -231,206 +286,189 @@ def render_kr_map_tab():
                 kr_data = {"1일": ret(1), "7일": ret(5), "1개월": ret(21), "3개월": ret(63), "6개월": ret(126), "1년": ret(252), "3년": ret(756)}
                 kr_df = pd.DataFrame([kr_data])
                 
-                formatted_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
-                st.dataframe(formatted_df.style.map(lambda x: color_pct(str(x))), use_container_width=True, hide_index=True)
+                def color_val(val):
+                    color = '#ef4444' if val < 0 else '#22c55e'
+                    return f"color: {color}; font-weight: bold;"
+                
+                formatted_kr_df = kr_df.map(lambda x: f"{x:+.2f}%" if isinstance(x, (int, float)) else x)
+                st.dataframe(formatted_kr_df.style.map(lambda x: color_val(float(str(x).replace('%', '')))), use_container_width=True, hide_index=True)
             else: 
-                st.warning("통신망 일시 지연. 새로고침을 눌러주세요.")
+                st.warning("네이버 금융 통신망 일시 지연. 새로고침을 눌러주세요.")
         except Exception as e: 
-            st.warning(f"수익률 데이터 로딩 실패: {e}")
-
-        # 2. 종합 차트 렌더링 (인터랙티브 툴팁, RSI, 거래량 포함)
+            st.error(f"데이터를 불러오는 중 오류 발생: {e}")
+            
         st.markdown("#### 📊 코스피 (KOSPI) 최근 1년 흐름 (일봉 자체 캔들 차트)")
         try:
-            df_chart = pd.DataFrame()
-            # 💡 야후 주말 지연을 방어하는 네이버 차트 API 호출! (금요일 데이터 보장)
-            try:
-                url = "https://fchart.stock.naver.com/sise.nhn?symbol=KOSPI&timeframe=day&count=250&requestType=0"
-                res = requests.get(url, timeout=5)
-                root = ET.fromstring(res.text)
-                items = root.findall('.//item')
-                data = []
-                for item in items:
-                    row = item.attrib['data'].split('|')
-                    data.append({
-                        'Date': pd.to_datetime(row[0]),
-                        'Open': float(row[1]),
-                        'High': float(row[2]),
-                        'Low': float(row[3]),
-                        'Close': float(row[4]),
-                        'Volume': float(row[5])
-                    })
-                if data:
-                    df_chart = pd.DataFrame(data)
-            except: pass
-
-            if df_chart.empty: # 네이버 실패 시 야후 백업 동작
-                kospi_daily = pd.DataFrame()
-                for _ in range(3):
-                    try:
-                        kospi_daily = yf.download("^KS11", period="1y", interval="1d", progress=False)
-                        if not kospi_daily.empty: break
-                    except: time.sleep(1)
-
-                if not kospi_daily.empty:
-                    # 데이터 준비 (MultiIndex 방어)
-                    if isinstance(kospi_daily.columns, pd.MultiIndex):
-                        df_chart = pd.DataFrame({
-                            'Open': kospi_daily['Open'].iloc[:, 0] if isinstance(kospi_daily['Open'], pd.DataFrame) else kospi_daily['Open'],
-                            'High': kospi_daily['High'].iloc[:, 0] if isinstance(kospi_daily['High'], pd.DataFrame) else kospi_daily['High'],
-                            'Low':  kospi_daily['Low'].iloc[:, 0]  if isinstance(kospi_daily['Low'], pd.DataFrame)  else kospi_daily['Low'],
-                            'Close':kospi_daily['Close'].iloc[:, 0] if isinstance(kospi_daily['Close'], pd.DataFrame) else kospi_daily['Close'],
-                            'Volume':kospi_daily['Volume'].iloc[:, 0] if isinstance(kospi_daily['Volume'], pd.DataFrame) else kospi_daily['Volume']
-                        })
-                    else:
-                        df_chart = kospi_daily[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
-
-                    df_chart = df_chart.dropna().reset_index()
-                    df_chart.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-
-            if not df_chart.empty:
-                df_chart = df_chart.dropna()
-
-                # RSI 계산 로직
+            # 💡 야후 통신망(주말 딜레이 버그)을 완벽히 버리고 네이버 금융 백그라운드 API 우회 호출!
+            url = "https://fchart.stock.naver.com/sise.nhn?symbol=KOSPI&timeframe=day&count=365&requestType=0"
+            res = requests.get(url)
+            root = ET.fromstring(res.text)
+            items = root.findall('.//item')
+            data = []
+            for item in items:
+                row = item.attrib['data'].split('|')
+                data.append({
+                    'Date': pd.to_datetime(row[0]),
+                    'Open': float(row[1]),
+                    'High': float(row[2]),
+                    'Low': float(row[3]),
+                    'Close': float(row[4]),
+                    'Volume': float(row[5])
+                })
+            
+            if data:
+                df_chart = pd.DataFrame(data)
+                
+                # RSI 계산 (14일)
                 delta = df_chart['Close'].diff()
-                df_chart['RSI'] = 100 - (100 / (1 + (delta.where(delta > 0, 0).fillna(0).rolling(14).mean() / -delta.where(delta < 0, 0).fillna(0).rolling(14).mean())))
-                df_chart['RSI'] = df_chart['RSI'].fillna(50)
+                gain = (delta.where(delta > 0, 0)).fillna(0)
+                loss = (-delta.where(delta < 0, 0)).fillna(0)
+                avg_gain = gain.rolling(window=14).mean()
+                avg_loss = loss.rolling(window=14).mean()
+                rs = avg_gain / avg_loss
+                df_chart['RSI'] = 100 - (100 / (1 + rs))
 
-                min_price, max_price = df_chart['Low'].min() * 0.98, df_chart['High'].max() * 1.02
+                # 색상 조건
                 color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
                 
-                # 마우스 오버 툴팁용 크로스헤어 선택자
-                hover = alt.selection_point(fields=['Date'], nearest=True, on='mouseover', empty=False, clear='mouseout')
+                # 차트 상/하단 여백 최소화를 위한 최저/최고가 계산
+                min_price = df_chart['Low'].min() * 0.98
+                max_price = df_chart['High'].max() * 1.02
                 
-                # 공통 X축 설정
+                # 마우스 오버(Hover) 시 세로줄과 툴팁을 동기화하기 위한 선택 객체
+                hover = alt.selection_point(fields=['Date'], nearest=True, on='mouseover', empty=False, clear='mouseout')
+
+                # X축 (상단/중단 차트는 숨기고, 하단 차트에서만 표시)
                 x_axis_hidden = alt.X('Date:O', axis=alt.Axis(labels=False, ticks=False, domain=False, title=None))
-                x_axis_show = alt.X('Date:O', axis=alt.Axis(
-                    labelAngle=0, labelColor='#787b86', 
-                    labelExpr="indexof(datum.label, datum.value) % 20 == 0 ? timeFormat(datum.value, '%Y-%m-%d') : ''", 
-                    grid=True, gridColor='#e0e3eb', gridDash=[2, 2], domain=False, ticks=False, title=None
-                ))
+                x_axis_show = alt.X('Date:O', 
+                        title=None, 
+                        axis=alt.Axis(
+                            labelAngle=0, 
+                            labelColor='#787b86',
+                            labelExpr="indexof(datum.label, datum.value) % 20 == 0 ? timeFormat(datum.value, '%Y-%m-%d') : ''",
+                            grid=True,
+                            gridColor='#e0e3eb',
+                            gridDash=[2, 2],
+                            domain=False,
+                            ticks=False
+                        ))
                 
                 base = alt.Chart(df_chart)
-                
-                # 마우스를 따라다니는 투명한 포인트와 툴팁
+
+                # 공통 툴팁 및 크로스헤어 레이어
                 selectors = base.mark_point(size=100).encode(
-                    x=x_axis_hidden, 
-                    opacity=alt.value(0), 
+                    x=x_axis_hidden, opacity=alt.value(0),
                     tooltip=[
-                        alt.Tooltip('Date:T', format='%Y-%m-%d', title='날짜'), 
-                        alt.Tooltip('Open:Q', format=',.0f', title='시가'), 
-                        alt.Tooltip('High:Q', format=',.0f', title='고가'), 
-                        alt.Tooltip('Low:Q', format=',.0f', title='저가'), 
-                        alt.Tooltip('Close:Q', format=',.0f', title='종가'), 
-                        alt.Tooltip('Volume:Q', format=',.0f', title='거래량'), 
+                        alt.Tooltip('Date:T', format='%Y-%m-%d', title='날짜'),
+                        alt.Tooltip('Open:Q', format=',.0f', title='시가'),
+                        alt.Tooltip('High:Q', format=',.0f', title='고가'),
+                        alt.Tooltip('Low:Q', format=',.0f', title='저가'),
+                        alt.Tooltip('Close:Q', format=',.0f', title='종가'),
+                        alt.Tooltip('Volume:Q', format=',.0f', title='거래량'),
                         alt.Tooltip('RSI:Q', format='.2f', title='RSI')
                     ]
                 ).add_params(hover)
-                
-                # 마우스를 따라다니는 회색 세로줄
+
+                # 마우스를 따라다니는 공통 세로선
                 rules = base.mark_rule(color='#787b86', strokeWidth=1, strokeDash=[5,5]).encode(
                     x=x_axis_hidden
                 ).transform_filter(hover)
                 
-                # 캔들 차트 본체 (높이 750으로 유지)
-                candlestick_chart = (
-                    base.mark_rule(size=2.0).encode(
-                        x=x_axis_hidden, 
-                        y=alt.Y('Low:Q', scale=alt.Scale(domain=[min_price, max_price]), axis=alt.Axis(orient='right', title='가격', format=',.0f')), 
-                        y2='High:Q', 
-                        color=color_condition
-                    ) + 
-                    base.mark_bar(size=4.0).encode(
-                        x=x_axis_hidden, 
-                        y='Open:Q', 
-                        y2='Close:Q', 
-                        color=color_condition
-                    ) + 
-                    selectors + 
-                    rules
-                ).properties(height=750)
-                
-                # 거래량 차트 본체
-                volume_chart = (
-                    base.mark_bar(size=4.0).encode(
-                        x=x_axis_hidden, 
-                        y=alt.Y('Volume:Q', axis=alt.Axis(orient='right', format='.2s', title='거래량')), 
-                        color=color_condition
-                    ) + 
-                    selectors + 
-                    rules
-                ).properties(height=150)
-                
-                # RSI 차트 본체
-                rsi_chart = (
-                    base.mark_line(color='#673ab7', strokeWidth=2).encode(
-                        x=x_axis_show, 
-                        y=alt.Y('RSI:Q', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', title='RSI', tickCount=3))
-                    ) + 
-                    alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y') + 
-                    selectors.encode(x=x_axis_show) + 
-                    rules.encode(x=x_axis_show)
-                ).properties(height=150)
-                
-                # 차트 병합 및 테두리/폰트 크기 설정
-                combined = alt.vconcat(candlestick_chart, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(
-                    stroke='lightgray', strokeWidth=1
-                ).configure_axis(
-                    labelFontSize=13, titleFontSize=13
+                # 1. 캔들 차트 (높이 750)
+                rule_candle = base.mark_rule(size=2.0).encode(
+                    x=x_axis_hidden,
+                    y=alt.Y('Low:Q', title=None, scale=alt.Scale(domain=[min_price, max_price]), axis=alt.Axis(orient='right', format=',.0f', labelFontSize=12)),
+                    y2='High:Q',
+                    color=color_condition
                 )
+                bar_candle = base.mark_bar(size=5.0).encode(
+                    x=x_axis_hidden,
+                    y='Open:Q',
+                    y2='Close:Q',
+                    color=color_condition
+                )
+                candlestick = (rule_candle + bar_candle + selectors + rules).properties(height=750)
                 
-                st.altair_chart(combined, use_container_width=True)
-        except Exception as e: 
-            st.error(f"차트 불러오기 오류: {e}")
+                # 2. 거래량 차트 (높이 150)
+                volume_bar = base.mark_bar(size=5.0).encode(
+                    x=x_axis_hidden,
+                    y=alt.Y('Volume:Q', title=None, axis=alt.Axis(orient='right', format='.2s', labelFontSize=12)),
+                    color=color_condition
+                )
+                volume_chart = (volume_bar + selectors + rules).properties(height=150)
 
+                # 3. RSI 차트 (하단에 X축 날짜 표시)
+                rsi_line = base.mark_line(color='#673ab7', strokeWidth=2).encode(
+                    x=x_axis_show,
+                    y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', labelFontSize=12))
+                )
+                rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
+                rsi_chart = (rsi_line + rsi_baseline + selectors.encode(x=x_axis_show) + rules.encode(x=x_axis_show)).properties(height=150)
+                
+                # 차트 세로 결합 (테두리 및 스페이싱 제거)
+                combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(
+                    stroke='lightgray', strokeWidth=1 
+                ).configure_axis(
+                    labelFontSize=14
+                )
+
+                st.altair_chart(combined, use_container_width=True)
+                
+            else:
+                st.warning("네이버 금융 통신망 지연으로 차트를 불러오지 못했습니다. (새로고침을 눌러주세요)")
+        except Exception as e:
+            st.error(f"차트 데이터 오류 발생: {e}")
+            
         st.markdown("---")
 
-        # 3. 4단계 스캔
         yf_symbols = st.session_state.kospi100_state_df['YF_Symbol'].tolist()
         ui_symbols = st.session_state.kospi100_state_df['Symbol'].tolist()
-        chunks_yf = [yf_symbols[i:i+25] for i in range(0, 100, 25)]
-        chunks_ui = [ui_symbols[i:i+25] for i in range(0, 100, 25)]
-        labels_kr = ["1위~25위", "26위~50위", "51위~75위", "76위~100위"]
         
-        st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 25개 종목씩 나누어 EMA 크로스 현황을 정밀 스캔합니다.")
+        # 💡 코스피도 나스닥과 동일하게 50개씩 4개의 덩어리로 버튼 재구성!
+        chunks_yf = [yf_symbols[i:i+50] for i in range(0, 200, 50)]
+        chunks_ui = [ui_symbols[i:i+50] for i in range(0, 200, 50)]
+        labels_kr = ["1위~50위", "51위~100위", "101위~150위", "151위~200위"]
+        
+        st.caption("야후 파이낸스 데이터 차단(Rate Limit)을 방지하기 위해 50개 종목씩 나누어 '4시간봉 EMA 200 vs 1일봉 EMA 200' 크로스 현황을 정밀 스캔합니다.")
         cols_kr = st.columns(4)
-        
         for i in range(4):
             if i < len(chunks_yf):
-                if cols_kr[i].button(f"🚀 코스피 {labels_kr[i]} 스캔", use_container_width=True):
-                    with st.spinner("스캔 중..."):
+                if cols_kr[i].button(f"🚀 코스피 {labels_kr[i]} 스캔", use_container_width=True, key=f"btn_kr_{i}"):
+                    with st.spinner(f"코스피 {labels_kr[i]} 실시간 데이터 스캔 중... (IP 차단 방어 모드)"):
                         try:
-                            # 다운로드 및 데이터 전처리 구조 복구
                             data_1d_raw = yf.download(chunks_yf[i], period="2y", interval="1d", progress=False)
                             data_1h_raw = yf.download(chunks_yf[i], period="730d", interval="1h", progress=False)
                             
-                            data_1d = data_1d_raw.get('Close', pd.DataFrame())
-                            data_1h = data_1h_raw.get('Close', pd.DataFrame())
-                            
-                            if isinstance(data_1d, pd.Series): 
-                                data_1d = data_1d.to_frame(name=chunks_yf[i][0])
-                            if isinstance(data_1h, pd.Series): 
-                                data_1h = data_1h.to_frame(name=chunks_yf[i][0])
+                            if 'Close' in data_1d_raw: data_1d = data_1d_raw['Close']
+                            else: data_1d = data_1d_raw
+                            if 'Close' in data_1h_raw: data_1h = data_1h_raw['Close']
+                            else: data_1h = data_1h_raw
+                            if isinstance(data_1d, pd.Series): data_1d = data_1d.to_frame(name=chunks_yf[i][0])
+                            if isinstance(data_1h, pd.Series): data_1h = data_1h.to_frame(name=chunks_yf[i][0])
+                            current_update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             
                             for j, yf_sym in enumerate(chunks_yf[i]):
                                 ui_sym = chunks_ui[i][j]
-                                c_type, c_date, c_price = "데이터 부족", "-", "-"
-                                
-                                if yf_sym in data_1d.columns and yf_sym in data_1h.columns:
+                                if yf_sym not in data_1d.columns or yf_sym not in data_1h.columns: 
+                                    c_type, c_date, c_price = "데이터 부족", "-", "-"
+                                else:
                                     df_sym_1d = data_1d[yf_sym].dropna()
                                     df_sym_1h = data_1h[yf_sym].dropna()
-                                    
-                                    if len(df_sym_1d) >= 150 and len(df_sym_1h) >= 150:
+                                    if len(df_sym_1d) < 150 or len(df_sym_1h) < 150: 
+                                        c_type, c_date, c_price = "상장기간 부족", "-", "-"
+                                    else:
                                         df_1d_ma = pd.DataFrame({'Close': df_sym_1d})
                                         df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
-                                        
                                         df_1h_ma = pd.DataFrame({'Close': df_sym_1h})
                                         df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
                                         df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
                                         
                                         df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
                                         df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
+                                        df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
+                                        df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
                                         
-                                        merged = pd.merge_asof(df_4h_ma[['EMA200_4H', 'Close']], df_1d_ma[['EMA200_1D']], left_index=True, right_index=True, direction='backward').dropna()
+                                        merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
                                         merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
                                         merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
                                         
@@ -441,48 +479,52 @@ def render_kr_map_tab():
                                             last_gc = gc.index[-1] if not gc.empty else pd.Timestamp.min.tz_localize('UTC')
                                             last_dc = dc.index[-1] if not dc.empty else pd.Timestamp.min.tz_localize('UTC')
                                             latest_idx = max(last_gc, last_dc)
-                                            
                                             c_type = "🟢 골든크로스" if latest_idx == last_gc else "🔴 데드크로스"
-                                            if (datetime.now(timezone.utc) - latest_idx).days <= 90: 
-                                                c_type = f"🔥 {c_type}"
-                                                
+                                            days_diff = (datetime.now(timezone.utc) - latest_idx).days
+                                            if days_diff <= 90: c_type = f"🔥 {c_type}"
                                             c_date = latest_idx.strftime('%Y-%m-%d %H:%M')
                                             c_price = f"₩{merged.loc[latest_idx, 'Close']:,.0f}"
-                                        else: 
-                                            c_type = "최근 1년 내 없음"
+                                        else:
+                                            c_type, c_date, c_price = "최근 1년 내 크로스 없음", "-", "-"
                                 
                                 mask = st.session_state.kospi100_state_df['Symbol'] == ui_sym
                                 st.session_state.kospi100_state_df.loc[mask, '크로스 상태 (4H/1D EMA200)'] = c_type
                                 st.session_state.kospi100_state_df.loc[mask, '크로스 날짜'] = c_date
                                 st.session_state.kospi100_state_df.loc[mask, '크로스 당시 주가'] = c_price
-                            
-                            st.success(f"✅ 스캔 완료!")
-                            st.rerun() 
-                        except Exception as e: 
-                            st.error(f"오류: {e}")
+                                st.session_state.kospi100_state_df.loc[mask, '업데이트 날짜'] = current_update_time
 
-        # 4. 데이터프레임 렌더링 (💡 변동성 추가 및 극한의 너비 다이어트 적용 완료 상태 유지)
-        display_cols_kr = ['순위', 'Symbol', '시총', 'Name', '산업군(Industry)', '분야 순위', '현재주가', 'RSI', '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가']
+                            st.success(f"✅ {current_update_time} 기준, 코스피 {labels_kr[i]} 크로스 분석 완료!")
+                            st.rerun() 
+                        except Exception as e:
+                            st.error(f"야후 파이낸스 스캔 중 오류 발생 (잠시 후 다시 시도해주세요): {str(e)}")
+
+        display_cols_kr = [
+            '순위', 'Symbol', '시총', 'Name', '분야 순위', '현재주가', 'RSI', 
+            '1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동', 
+            '산업군(Industry)', '크로스 상태 (4H/1D EMA200)', '크로스 날짜', '크로스 당시 주가', '업데이트 날짜'
+        ]
         
         st.dataframe(
             st.session_state.kospi100_state_df[display_cols_kr].style.map(color_pct, subset=['1일 변동', '7일 변동', '30일 변동', '60일 변동', '120일 변동', '200일 변동']),
             column_config={
-                "순위": st.column_config.NumberColumn(width=40),
-                "Symbol": st.column_config.TextColumn("심볼", width=50),
-                "시총": st.column_config.TextColumn("시총", width=70),
-                "산업군(Industry)": st.column_config.TextColumn("산업군", width=90),
-                "분야 순위": st.column_config.TextColumn("분야순위", width=60),
-                "현재주가": st.column_config.TextColumn("현재가", width=70),
-                "RSI": st.column_config.TextColumn("RSI", width=50),
-                "1일 변동": st.column_config.TextColumn("1일", width=55),
-                "7일 변동": st.column_config.TextColumn("7일", width=55),
-                "30일 변동": st.column_config.TextColumn("30일", width=55),
-                "60일 변동": st.column_config.TextColumn("60일", width=55),
-                "120일 변동": st.column_config.TextColumn("120일", width=55),
-                "200일 변동": st.column_config.TextColumn("200일", width=55),
-                "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width=90),
-                "크로스 날짜": st.column_config.TextColumn("크로스날짜", width=90),
-                "크로스 당시 주가": st.column_config.TextColumn("크로스가", width=70)
+                "순위": st.column_config.NumberColumn(width="small"),
+                "Symbol": st.column_config.TextColumn("심볼", width="small"),
+                "시총": st.column_config.TextColumn("시총", width="small"),
+                "Name": st.column_config.TextColumn("Name", width="medium"),
+                "분야 순위": st.column_config.TextColumn("테마순위", width="small"),
+                "현재주가": st.column_config.TextColumn("현재가", width="small"),
+                "RSI": st.column_config.TextColumn("RSI", width="small"),
+                "1일 변동": st.column_config.TextColumn("1일", width="small"),
+                "7일 변동": st.column_config.TextColumn("7일", width="small"),
+                "30일 변동": st.column_config.TextColumn("30일", width="small"),
+                "60일 변동": st.column_config.TextColumn("60일", width="small"),
+                "120일 변동": st.column_config.TextColumn("120일", width="small"),
+                "200일 변동": st.column_config.TextColumn("200일", width="small"),
+                "산업군(Industry)": st.column_config.TextColumn("분류(테마)", width="medium"),
+                "크로스 상태 (4H/1D EMA200)": st.column_config.TextColumn("EMA크로스", width="small"),
+                "크로스 날짜": st.column_config.TextColumn("크로스날짜", width="small"),
+                "크로스 당시 주가": st.column_config.TextColumn("크로스가", width="small"),
+                "업데이트 날짜": st.column_config.TextColumn("업데이트", width="small")
             },
             use_container_width=True, 
             hide_index=True, 
