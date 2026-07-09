@@ -21,9 +21,18 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
-def insert_db(table, data): return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data)
-def update_db(table, match_col, match_val, data): return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data)
-def delete_db(table, match_col, match_val): return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS)
+# 💡 DB 통신 에러로 앱 전체가 뻗는 것을 막기 위한 try-except 안전장치 추가
+def insert_db(table, data): 
+    try: return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data, timeout=5)
+    except: return None
+
+def update_db(table, match_col, match_val, data): 
+    try: return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data, timeout=5)
+    except: return None
+
+def delete_db(table, match_col, match_val): 
+    try: return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, timeout=5)
+    except: return None
 
 def upload_image_to_supabase(img_file, prefix="img"):
     try:
@@ -33,38 +42,46 @@ def upload_image_to_supabase(img_file, prefix="img"):
         if not file_bytes: return None
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
         img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": getattr(img_file, 'type', 'image/png')}
-        res = requests.post(upload_url, headers=img_headers, data=file_bytes)
+        res = requests.post(upload_url, headers=img_headers, data=file_bytes, timeout=10)
         if res.status_code == 200: return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
         return None
     except: return None
 
 def load_trade_data():
-    res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS)
-    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    try:
+        res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS, timeout=5)
+        if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    except: pass
     return pd.DataFrame(columns=["id", "date", "ticker", "timeframe", "setup_pattern", "position", "result", "rr_ratio", "profit", "chart_image_paths", "entry_basis", "exit_basis"])
 
 def load_archive_data():
-    res = requests.get(f"{URL}/rest/v1/analysis_archive?select=*&order=created_at.desc", headers=HEADERS)
-    if res.status_code == 200 and res.json():
-        df = pd.DataFrame(res.json())
-        if 'ai_advice_mapping' not in df.columns: df['ai_advice_mapping'] = "{}"
-        if 'ocr_text_mapping' not in df.columns: df['ocr_text_mapping'] = "{}"
-        return df
+    try:
+        res = requests.get(f"{URL}/rest/v1/analysis_archive?select=*&order=created_at.desc", headers=HEADERS, timeout=5)
+        if res.status_code == 200 and res.json():
+            df = pd.DataFrame(res.json())
+            if 'ai_advice_mapping' not in df.columns: df['ai_advice_mapping'] = "{}"
+            if 'ocr_text_mapping' not in df.columns: df['ocr_text_mapping'] = "{}"
+            return df
+    except: pass
     return pd.DataFrame(columns=["id", "date", "ticker", "category", "source_view", "chart_image_paths", "detail_image_paths", "memo", "ai_advice_mapping", "ocr_text_mapping"])
 
 def load_sector_data():
-    res = requests.get(f"{URL}/rest/v1/sector_analysis?select=*&order=created_at.desc", headers=HEADERS)
-    if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    try:
+        res = requests.get(f"{URL}/rest/v1/sector_analysis?select=*&order=created_at.desc", headers=HEADERS, timeout=5)
+        if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
+    except: pass
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
 
 def load_theory_db():
     db_dict = get_base_theory_dict()
-    res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS)
-    if res.status_code == 200 and res.json():
-        for row in res.json():
-            cat, title = row['category'], row['title']
-            if cat not in db_dict: db_dict[cat] = {}
-            db_dict[cat][title] = {"id": row.get('id'), "content": row.get('content', ''), "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []}
+    try:
+        res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS, timeout=5)
+        if res.status_code == 200 and res.json():
+            for row in res.json():
+                cat, title = row['category'], row['title']
+                if cat not in db_dict: db_dict[cat] = {}
+                db_dict[cat][title] = {"id": row.get('id'), "content": row.get('content', ''), "images": row.get('image_paths', '').split('|') if row.get('image_paths') else []}
+    except: pass
     return db_dict
 
 def get_recent_archive_context(ticker_search):
@@ -135,7 +152,6 @@ def ask_gemini_dynamic(prompt, imgs):
                     return res.text
                 except Exception as e:
                     last_error = str(e)
-                    # 💡 구글 AI 안전 필터(finish_reason=1) 에러 방어 코드 
                     if "finish_reason is 1" in last_error or "safety" in last_error.lower() or "valid Part" in last_error:
                         return "구글 AI의 콘텐츠 안전 규정(투자 직접 권유 방지)에 의해 상세 분석 생성이 차단되었습니다. 다른 종목을 시도해주세요."
                     if "429" in last_error or "quota" in last_error.lower(): break 
@@ -148,7 +164,7 @@ def ask_gemini_dynamic(prompt, imgs):
 
 def get_real_ocr_text(image_url):
     try:
-        res = requests.get(image_url)
+        res = requests.get(image_url, timeout=10)
         img = Image.open(io.BytesIO(res.content))
         prompt = "이 이미지에서 차트 숫자 등은 무시하고 오직 차트 위/아래에 작성된 블로그 본문 설명글만 정확하게 추출해. 줄바꿈 유지할 것."
         return ask_gemini_dynamic(prompt, img) 
@@ -156,7 +172,7 @@ def get_real_ocr_text(image_url):
 
 def get_real_ai_advice(image_url, ticker, reference_text=""):
     try:
-        res = requests.get(image_url)
+        res = requests.get(image_url, timeout=10)
         img = Image.open(io.BytesIO(res.content))
         prompt = f"""
         이 차트 이미지를 바탕으로 [{ticker}] 종목 기술적 분석을 수행해.
