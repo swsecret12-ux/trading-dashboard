@@ -36,29 +36,32 @@ def get_robust_session():
     return session, crumb
 
 def get_korean_stock_info(ticker):
-    """네이버 금융을 크롤링하여 한국 주식의 종목명, 시총, PER, EPS 등을 완벽하게 가져옵니다."""
+    """야후 접속 차단을 막기 위해 네이버 금융을 크롤링하여 한국 주식의 종목명, 시총, PER, EPS 등을 완벽하게 가져옵니다."""
     clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
-    company_name = ""
+    company_name = clean_ticker
     market_cap_usd = 0.0
     valuation_html = "<p style='color:#64748b;'>가치 평가 데이터가 제공되지 않습니다.</p>"
     
     try:
-        # 1. 네이버 모바일 API로 종목명 및 시총(억원) 획득
-        url_api = f"https://m.stock.naver.com/api/stock/{clean_ticker}/basic"
-        res_api = requests.get(url_api, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
-        if res_api.status_code == 200:
-            data = res_api.json()
-            company_name = data.get('stockName', '')
-            mcap_100m = data.get('marketValue', 0) # 억원 단위
-            if mcap_100m:
-                # 억원 -> 원 -> 달러 변환 (대시보드 공통 포맷(USD) 맞춤)
-                market_cap_usd = (float(mcap_100m) * 100000000) / 1380
-                
-        # 2. 네이버 금융 웹페이지 크롤링으로 PER, EPS, 현재가 획득
+        # 네이버 금융 웹페이지 직접 크롤링 (Too Many Requests 방어)
         url_web = f"https://finance.naver.com/item/main.naver?code={clean_ticker}"
         res_web = requests.get(url_web, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
         soup = BeautifulSoup(res_web.text, 'html.parser')
         
+        # 1. 회사 이름 추출
+        name_tag = soup.select_one('.wrap_company h2 a')
+        if name_tag: company_name = name_tag.text.strip()
+        
+        # 2. 시가총액 추출 (억원)
+        mcap_tag = soup.select_one('#_market_sum')
+        if mcap_tag:
+            mcap_str = mcap_tag.text.replace(',', '').replace('\t', '').replace('\n', '')
+            if mcap_str.isdigit():
+                mcap_100m = float(mcap_str)
+                # 억원 -> 원 -> 달러 변환 (미국 주식과 단위 통일을 위해 임시 변환)
+                market_cap_usd = (mcap_100m * 100000000) / 1380 
+        
+        # 3. 현재가, PER, EPS 추출
         curr_price_str = soup.select_one('.no_today .blind').text.replace(',', '') if soup.select_one('.no_today .blind') else "0"
         curr_price = float(curr_price_str) if curr_price_str.isdigit() else 0
         
@@ -68,6 +71,7 @@ def get_korean_stock_info(ticker):
         per = float(per_str) if per_str.replace('.','',1).isdigit() else 0
         eps = float(eps_str) if eps_str.replace('.','',1).isdigit() else 0
         
+        # html 표 제작
         html = "<table class='ma-table'>"
         html += "<tr><th>현재 주가</th><th>현재 PER</th><th>현재 EPS</th><th>산출 기준</th></tr>"
         html += "<tr>"
@@ -104,7 +108,7 @@ def fetch_investing_news(ticker, company_name=""):
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_earnings_alternative(ticker):
-    """나스닥 공식 API & AllOrigins 우회 병합 실적 크롤러"""
+    """나스닥 공식 API & AllOrigins 우회 병합 실적 크롤러 (미국 전용)"""
     clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
     records = []
     
@@ -158,9 +162,7 @@ def get_earnings_alternative(ticker):
     df = pd.DataFrame(records).sort_values('Date', ascending=False).drop_duplicates(subset=['Date'])
     return df.set_index('Date')
 
-def get_valuation_html(ticker_symbol, is_korean):
-    if is_korean: return "" # 한국 종목은 네이버 금융에서 이미 처리함
-    
+def get_valuation_html(ticker_symbol):
     try:
         tkr = yf.Ticker(ticker_symbol)
         info = tkr.info
@@ -197,13 +199,16 @@ def get_valuation_html(ticker_symbol, is_korean):
             return "<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. (야후 파이낸스 접속량 제한 방어됨. 잠시 후 시도하세요)</p>"
         return f"<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. ({str(e)})</p>"
 
-def get_market_cap_and_earnings(ticker, hist_df, is_korean):
+def get_market_cap_and_earnings(ticker, is_korean):
+    if is_korean:
+        # 💡 핵심 픽스: 한국 주식은 나스닥 API나 야후 실적을 찌르지 않고 안내 멘트만 출력 (429 차단 원천 봉쇄)
+        return "<p style='color:#64748b;'>한국 종목의 상세 분기별 어닝 서프라이즈 데이터는 지원되지 않습니다. 상단의 네이버 금융 기준 <b>기업 가치(PER/EPS)</b>를 참고해 주세요.</p>"
+        
     earnings_html = ""
     rows = []
     
     earn_df = get_earnings_alternative(ticker)
     if not earn_df.empty:
-        now_tz = pd.Timestamp.now(tz='UTC')
         for idx_date, row in earn_df.iterrows():
             date_str = idx_date.strftime('%Y-%m-%d')
             eps_est = row.get('EPS Estimate', pd.NA)
@@ -232,6 +237,7 @@ def get_market_cap_and_earnings(ticker, hist_df, is_korean):
     return earnings_html
 
 def fetch_financial_data(ticker_symbol):
+    # 한국 주식 판단 로직
     if ticker_symbol.isdigit(): ticker_symbol = f"{ticker_symbol}.KS"
     is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
     benchmark_ticker = "^KS11" if is_korean else "^IXIC" 
@@ -243,20 +249,21 @@ def fetch_financial_data(ticker_symbol):
     valuation_html = ""
     
     if is_korean:
+        # 💡 한국 종목은 네이버에서 직접 크롤링하여 에러 0% 보장
         company_name, market_cap, valuation_html = get_korean_stock_info(ticker_symbol)
     else:
         try:
             tkr = yf.Ticker(ticker_symbol)
             company_name = tkr.info.get('longName', tkr.info.get('shortName', ''))
             market_cap = tkr.info.get('marketCap', 0.0)
-            valuation_html = get_valuation_html(ticker_symbol, is_korean)
+            valuation_html = get_valuation_html(ticker_symbol)
         except: pass
 
     session, crumb = get_robust_session()
 
     for attempt in range(3):
         try:
-            # 💡 핵심 픽스: 골든/데드크로스 완벽 일치를 위해 2년치(1일봉), 730일치(1시간봉) 넉넉하게 다운로드!
+            # 💡 핵심 픽스: 골든/데드크로스 완벽 일치를 위해 2년치(1일봉), 730일치(1시간봉) 다운로드
             df_1d_raw = yf.download(ticker_symbol, period="2y", interval="1d", progress=False, session=session)
             df_1h_raw = yf.download(ticker_symbol, period="730d", interval="1h", progress=False, session=session)
             bm_raw = yf.download(benchmark_ticker, period="2y", interval="1d", progress=False, session=session)
@@ -310,9 +317,10 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "8% 이상 급변동일 없음"
             
-            earnings_html = get_market_cap_and_earnings(ticker_symbol, df_1d, is_korean)
+            # 실적 가져오기
+            earnings_html = get_market_cap_and_earnings(ticker_symbol, is_korean)
 
-            # 💡 핵심 픽스: 4H/1D 크로스 계산 로직 완전 동기화
+            # 4H/1D 크로스 계산
             df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
             df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
             
