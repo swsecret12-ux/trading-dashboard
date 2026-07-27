@@ -28,7 +28,7 @@ def render_research_tab():
     with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
             c1, c2 = st.columns(2)
-            s_ticker = c1.text_input("야후 파이낸스 티커 (한국종목은 005930 또는 005930.KS 형태 입력)")
+            s_ticker = c1.text_input("야후 파이낸스 티커 (한국종목은 011200 또는 011200.KS 형태 입력)")
             s_sector = c2.selectbox("섹터 분류", ["AI", "소프트웨어", "반도체", "조선", "헬스케어", "금융", "기타"])
             s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
             
@@ -37,16 +37,16 @@ def render_research_tab():
                 if clean_ticker:
                     with st.spinner("데이터 수집 및 크로스체크 심층 분석 중... (최대 10~20초)"):
                         try:
-                            # 💡 1. 재무 데이터 수집 시작
+                            # 1. 재무 데이터 수집 시작
                             fin_data = fetch_financial_data(clean_ticker)
                             
                             if "error" in fin_data: 
                                 st.error(f"데이터 수집 실패: {fin_data['error']}")
                             else:
-                                # 💡 2. 추출해온 회사 이름(Company Name) 확보
+                                # 2. 추출해온 회사 이름(Company Name) 확보
                                 company_name = fin_data.get('company_name', '')
                                 
-                                # 💡 3. AI에게 회사 이름을 명확히 알려주어 분석 요청
+                                # 3. AI에게 회사 이름을 명확히 알려주어 분석 요청
                                 ai_res = analyze_sector_with_ai(clean_ticker, company_name, s_sector, fin_data, s_issue, "별도 뉴스 생략")
                                 
                                 left_column_html = f"""
@@ -59,7 +59,7 @@ def render_research_tab():
                                 
                                 safe_market_cap = float(fin_data.get('market_cap', 0)) if pd.notna(fin_data.get('market_cap', 0)) else 0.0
                                 
-                                # 💡 4. DB에 저장할 때 회사 이름을 티커 옆에 찰싹 붙여서 저장! (예: 011200 (HMM))
+                                # 💡 핵심 픽스: DB에 저장할 때 회사 이름을 티커 옆에 찰싹 붙여서 저장! (예: 011200 (HMM))
                                 display_ticker = f"{clean_ticker} ({company_name})" if company_name else clean_ticker
 
                                 res = insert_db("sector_analysis", {
@@ -92,7 +92,13 @@ def render_research_tab():
         disp_cols = ["ticker", "sector", "market_cap_formatted", "vol_1d", "vol_1w"]
         df_selected = st.dataframe(
             df_display[disp_cols],
-            column_config={"ticker": st.column_config.TextColumn("종목명(티커)", width="large"), "sector": "섹터", "market_cap_formatted": "시가총액", "vol_1d": "EMA 크로스 (4H/1D)", "vol_1w": "크로스 발생일"},
+            column_config={
+                "ticker": st.column_config.TextColumn("종목명(티커)", width="large"), 
+                "sector": "섹터", 
+                "market_cap_formatted": "시가총액", 
+                "vol_1d": "EMA 크로스 (4H/1D)", 
+                "vol_1w": "크로스 발생일"
+            },
             use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
         )
         
@@ -113,11 +119,12 @@ def render_research_tab():
             
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
             
-            # 💡 핵심 픽스: 트레이딩뷰 위젯에 들어갈 심볼(Symbol) 정밀 포맷팅!
-            # 예: "011200 (HMM)" -> "011200" 추출 -> 한국 종목이면 "KRX:011200" 으로 변환
+            # 💡 핵심 픽스: 트레이딩뷰 위젯에 들어갈 심볼(Symbol) 정밀 포맷팅! (애플 차트 방지)
             raw_ticker = stock_data['ticker']
+            # "011200 (HMM)" 형태에서 "011200"만 깔끔하게 추출
             ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
             
+            # 한국 주식(숫자 6자리)이면 반드시 앞에 "KRX:"를 붙여야 트레이딩뷰가 인식함!
             if ticker_only.isdigit():
                 tv_symbol = f"KRX:{ticker_only}"
             else:
