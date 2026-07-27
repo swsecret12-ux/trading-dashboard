@@ -138,55 +138,67 @@ def fetch_investing_news(ticker, company_name=""):
         return "\n".join(news_items) if news_items else f"[{search_term}]에 대한 최근 구글 뉴스가 없습니다."
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
-def get_earnings_alternative(ticker):
-    clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
-    records = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": "https://www.nasdaq.com",
-        "Referer": "https://www.nasdaq.com/"
-    }
+def get_detailed_earnings_with_impact(ticker_symbol, df_1d):
+    """한국 시간(KST) 변환 및 발표 직후 주가 반응을 포함한 완벽한 실적 표 생성"""
+    earnings_html = ""
     try:
-        url_history = f"https://api.nasdaq.com/api/company/{clean_ticker}/earnings-surprise"
-        res = requests.get(url_history, headers=headers, timeout=5)
-        if res.status_code == 200:
-            rows = res.json().get('data', {}).get('earningsSurpriseTable', {}).get('rows', [])
-            for r in rows:
-                date_str = r.get('dateReported')
-                if not date_str: continue
-                try:
-                    dt = pd.to_datetime(date_str).tz_localize('UTC')
-                    eps_est = float(r.get('consensusForecast')) if r.get('consensusForecast') else pd.NA
-                    eps_act = float(r.get('eps')) if r.get('eps') else pd.NA
-                    surp = float(r.get('percentageSurprise')) / 100.0 if r.get('percentageSurprise') else pd.NA
-                    records.append({'Date': dt, 'EPS Estimate': eps_est, 'Reported EPS': eps_act, 'Surprise(%)': surp})
-                except: continue
-    except: pass
-
-    if not records:
-        try:
-            target_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
-            proxy_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
-            res_proxy = requests.get(proxy_url, timeout=10)
-            if res_proxy.status_code == 200:
-                proxy_data = json.loads(res_proxy.json().get('contents', '{}'))
-                result = proxy_data.get('quoteSummary', {}).get('result', [])
-                if result:
-                    for h in result[0].get("earningsHistory", {}).get("history", []):
-                        dt_fmt = h.get("quarter", {}).get("fmt")
-                        if not dt_fmt: continue
-                        records.append({
-                            "Date": pd.to_datetime(dt_fmt).tz_localize('UTC'),
-                            "EPS Estimate": h.get("epsEstimate", {}).get("raw", pd.NA),
-                            "Reported EPS": h.get("epsActual", {}).get("raw", pd.NA),
-                            "Surprise(%)": h.get("surprisePercent", {}).get("raw", pd.NA)
-                        })
-        except: pass
-
-    if not records: return pd.DataFrame()
-    df = pd.DataFrame(records).sort_values('Date', ascending=False).drop_duplicates(subset=['Date'])
-    return df.set_index('Date')
+        tkr = yf.Ticker(ticker_symbol)
+        earn_df = tkr.get_earnings_dates(limit=8)
+        
+        if earn_df is not None and not earn_df.empty:
+            # 💡 핵심: UTC 시간을 한국 시간(KST)으로 완벽하게 변환
+            earn_df.index = earn_df.index.tz_convert('Asia/Seoul')
+            
+            rows = []
+            for dt, row in earn_df.iterrows():
+                # 예상치와 실제치가 모두 NaN이면 미래 데이터거나 쓰레기값이므로 스킵
+                if pd.isna(row.get('EPS Estimate')) and pd.isna(row.get('Reported EPS')):
+                    continue
+                    
+                dt_str = dt.strftime('%Y-%m-%d %H:%M')
+                est = row.get('EPS Estimate', pd.NA)
+                act = row.get('Reported EPS', pd.NA)
+                surp = row.get('Surprise(%)', pd.NA)
+                
+                est_str = f"{est:.2f}" if pd.notna(est) else "-"
+                act_str = f"{act:.2f}" if pd.notna(act) else "-"
+                
+                surp_str = "-"
+                if pd.notna(surp):
+                    s_val = surp * 100
+                    color = "#22c55e" if s_val > 0 else "#ef4444"
+                    surp_str = f"<span style='color:{color}; font-weight:bold;'>{s_val:+.1f}%</span>"
+                    
+                # 💡 주가 반응(Impact) 계산: 실적 발표일 당시의 등락률 추적
+                impact_str = "-"
+                date_only = dt.strftime('%Y-%m-%d')
+                if not df_1d.empty:
+                    df_1d_dates = df_1d.index.strftime('%Y-%m-%d')
+                    if date_only in df_1d_dates:
+                        target_idx = df_1d.index[df_1d_dates == date_only][0]
+                        pct = df_1d.loc[target_idx, 'Pct_Change']
+                        c = "#22c55e" if pct > 0 else "#ef4444"
+                        impact_str = f"<span style='color:{c}; font-weight:bold;'>{pct:+.2f}%</span>"
+                    else:
+                        # 장 마감 후 발표거나 휴일이면 최대 3일 뒤의 거래일 반응 확인
+                        for i in range(1, 4):
+                            next_day = (dt + pd.Timedelta(days=i)).strftime('%Y-%m-%d')
+                            if next_day in df_1d_dates:
+                                target_idx = df_1d.index[df_1d_dates == next_day][0]
+                                pct = df_1d.loc[target_idx, 'Pct_Change']
+                                c = "#22c55e" if pct > 0 else "#ef4444"
+                                impact_str = f"<span style='color:{c}; font-weight:bold;'>{pct:+.2f}% (직후 거래일)</span>"
+                                break
+                
+                rows.append(f"<tr><td>{dt_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_str}</td><td>{impact_str}</td></tr>")
+            
+            if rows:
+                earnings_html = f"<table class='ma-table'><tr><th>발표 일시 (한국시간)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈 (차이)</th><th>발표 직후 주가 반응</th></tr>"
+                earnings_html += "".join(rows) + "</table>"
+    except:
+        pass
+        
+    return earnings_html
 
 def get_valuation_html(ticker_symbol):
     try:
@@ -203,58 +215,32 @@ def get_valuation_html(ticker_symbol):
             
         calc_forward_price = trailing_pe * forward_eps if isinstance(trailing_pe, (int, float)) and isinstance(forward_eps, (int, float)) else 0
         
-        html = "<table class='ma-table'>"
-        html += "<tr><th>현재 주가</th><th>현재 PER</th><th>현재 EPS(TTM)</th><th>내년 예상 EPS</th><th>기대 적정주가</th><th>월가 목표가</th></tr>"
-        html += "<tr>"
-        html += f"<td>${curr_price:.2f}</td>" if isinstance(curr_price, (int, float)) else "<td>-</td>"
-        html += f"<td>{trailing_pe:.2f}배</td>" if isinstance(trailing_pe, (int, float)) else "<td>-</td>"
-        html += f"<td>${trailing_eps:.2f}</td>" if isinstance(trailing_eps, (int, float)) else "<td>-</td>"
-        html += f"<td>${forward_eps:.2f}</td>" if isinstance(forward_eps, (int, float)) else "<td>-</td>"
-        
+        val_html = f"""
+        <div style='background-color: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 10px;'>
+            <h5 style='color: #1e40af; margin-top: 0; font-size: 1.15rem;'>💡 한눈에 이해하는 가치 평가 (Valuation)</h5>
+            <ul style='line-height: 1.8; font-size: 1.05rem; margin-bottom: 15px;'>
+                <li><b>현재 주가:</b> ${curr_price:.2f}</li>
+                <li><b style='color:#0f172a;'>현재 EPS (주당순이익):</b> ${trailing_eps:.2f} <br><span style='color: #64748b; font-size: 0.95rem;'>👉 이 회사가 1주당 벌어들인 실제 '순수익'입니다.</span></li>
+                <li><b style='color:#0f172a;'>내년 예상 EPS:</b> ${forward_eps:.2f}</li>
+                <li><b style='color:#0f172a;'>현재 PER (주가수익비율):</b> {trailing_pe:.2f}배 <br><span style='color: #64748b; font-size: 0.95rem;'>👉 현재 벌어들이는 수익(EPS) 대비 주가가 몇 배로 평가받고 있는지 나타냅니다.</span></li>
+            </ul>
+        """
         if calc_forward_price:
             color = "#22c55e" if calc_forward_price > curr_price else "#ef4444"
-            html += f"<td><span style='color:{color}; font-weight:bold;'>${calc_forward_price:.2f}</span></td>"
-        else: html += "<td>-</td>"
-            
-        html += f"<td>${target_price:.2f}</td>" if isinstance(target_price, (int, float)) else "<td>-</td>"
-        html += "</tr></table>"
-        html += "<p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* <strong>기대 적정주가</strong> = 내년 예상 EPS × 현재 PER</p>"
-        return html
+            val_html += f"""
+            <div style='background-color: #ffffff; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;'>
+                <h5 style='color: #0f172a; margin-top:0;'>🎯 이론적 기대 적정주가 계산기</h5>
+                <p style='margin:0;'>만약 이 회사가 내년에도 현재의 프리미엄(PER)을 유지한다고 가정하면?</p>
+                <p style='font-size: 1.2rem; margin-top: 10px; margin-bottom: 5px;'><b>기대 적정주가:</b> ${forward_eps:.2f} (내년 EPS) × {trailing_pe:.2f}배 (현재 PER) = <b style='color: {color};'>${calc_forward_price:.2f}</b></p>
+            </div>
+            """
+        if target_price > 0:
+            val_html += f"<p style='margin-top:15px; font-size:1.1rem;'><b>📈 월가 애널리스트 평균 목표주가:</b> <b style='color: #ef4444;'>${target_price:.2f}</b></p>"
+        val_html += "</div>"
+        
+        return val_html
     except Exception as e:
-        if "429" in str(e) or "Too Many Requests" in str(e):
-            return "<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. (야후 파이낸스 접속량 제한 방어됨. 잠시 후 시도하세요)</p>"
-        return f"<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. ({str(e)})</p>"
-
-def get_market_cap_and_earnings(ticker):
-    earnings_html = ""
-    rows = []
-    earn_df = get_earnings_alternative(ticker)
-    if not earn_df.empty:
-        for idx_date, row in earn_df.iterrows():
-            date_str = idx_date.strftime('%Y-%m-%d')
-            eps_est = row.get('EPS Estimate', pd.NA)
-            eps_act = row.get('Reported EPS', pd.NA)
-            surp = row.get('Surprise(%)', pd.NA)
-
-            if pd.isna(eps_act) and pd.isna(eps_est): continue 
-
-            est_str = f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
-            act_str = f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
-
-            surp_html = "-"
-            if pd.notna(surp):
-                surp_val = surp * 100
-                color = "#22c55e" if surp_val > 0 else "#ef4444"
-                surp_html = f"<span style='color:{color}; font-weight:bold;'>{surp_val:+.1f}%</span>"
-
-            rows.append(f"<tr><td>{date_str}</td><td>{est_str}</td><td>{act_str}</td><td>{surp_html}</td></tr>")
-
-    if rows:
-        earnings_html = f"<table class='ma-table'><tr><th>발표일(분기)</th><th>예상 EPS</th><th>실측 EPS</th><th>서프라이즈</th></tr>"
-        earnings_html += "".join(rows) + "</table>"
-    else:
-        earnings_html = "<p style='color:#ef4444;'>해당 종목의 분기 실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
-    return earnings_html
+        return "<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. (야후 파이낸스 접속량 제한 방어됨)</p>"
 
 def parse_yf_df(raw_df):
     if raw_df.empty: return pd.DataFrame(columns=['Open', 'Close'])
@@ -276,7 +262,7 @@ def fetch_financial_data(ticker_symbol):
     earnings_html = ""
     
     if is_korean:
-        # 💡 한국 종목은 이제 이 함수 하나로 4가지(이름, 시총, 친절한 가치평가, 실적 표)를 완벽하게 받아옵니다.
+        # 한국 종목은 네이버 크롤링으로 완벽 커버 (적정주가, 실적 포함)
         company_name, market_cap, valuation_html, earnings_html = get_korean_stock_info(ticker_symbol)
     else:
         try:
@@ -284,7 +270,6 @@ def fetch_financial_data(ticker_symbol):
             company_name = tkr.info.get('longName', tkr.info.get('shortName', ''))
             market_cap = tkr.info.get('marketCap', 0.0)
             valuation_html = get_valuation_html(ticker_symbol)
-            earnings_html = get_market_cap_and_earnings(ticker_symbol)
         except: pass
 
     for attempt in range(3):
@@ -335,6 +320,12 @@ def fetch_financial_data(ticker_symbol):
                 extreme_events_str = "\n".join(events)
             else:
                 extreme_events_str = "8% 이상 급변동일 없음"
+            
+            # 미국 주식일 경우 완벽한 실적 표(한국시간 + 주가반응) 생성
+            if not is_korean:
+                us_earnings = get_detailed_earnings_with_impact(ticker_symbol, df_1d)
+                if us_earnings: earnings_html = us_earnings
+                else: earnings_html = "<p style='color:#ef4444;'>해당 종목의 분기 실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
             
             if df_1h.empty:
                 ma_html = "<p style='color:#ef4444;'>해당 종목은 1시간봉 차트 데이터가 제공되지 않아 크로스 분석이 불가능합니다.</p>"
