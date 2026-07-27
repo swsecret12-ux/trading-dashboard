@@ -11,7 +11,6 @@ import numpy as np
 import json
 
 def get_robust_session():
-    """야후 파이낸스 접속 차단을 완벽히 우회하기 위한 스텔스 세션 헤더 및 토큰 획득"""
     session = requests.Session()
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -36,59 +35,91 @@ def get_robust_session():
     return session, crumb
 
 def get_korean_stock_info(ticker):
-    """야후 접속 차단을 막기 위해 네이버 금융을 크롤링하여 한국 주식의 종목명, 시총, PER, EPS 등을 완벽하게 가져옵니다."""
+    """한국 주식 전용: 기업 정보, 친절한 가치평가(PER/EPS 해설), 4분기 실적 표를 크롤링"""
     clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
     company_name = clean_ticker
     market_cap_usd = 0.0
     valuation_html = "<p style='color:#64748b;'>가치 평가 데이터가 제공되지 않습니다.</p>"
+    earnings_html = "<p style='color:#ef4444;'>실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
     
     try:
-        # 네이버 금융 웹페이지 직접 크롤링 (Too Many Requests 방어)
         url_web = f"https://finance.naver.com/item/main.naver?code={clean_ticker}"
         res_web = requests.get(url_web, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
         soup = BeautifulSoup(res_web.text, 'html.parser')
         
-        # 1. 회사 이름 추출
+        # 1. 회사 이름 & 시총 추출
         name_tag = soup.select_one('.wrap_company h2 a')
         if name_tag: company_name = name_tag.text.strip()
         
-        # 2. 시가총액 추출 (억원)
         mcap_tag = soup.select_one('#_market_sum')
         if mcap_tag:
             mcap_str = mcap_tag.text.replace(',', '').replace('\t', '').replace('\n', '')
             if mcap_str.isdigit():
                 mcap_100m = float(mcap_str)
-                # 억원 -> 원 -> 달러 변환 (미국 주식과 단위 통일을 위해 임시 변환)
                 market_cap_usd = (mcap_100m * 100000000) / 1380 
         
-        # 3. 현재가, PER, EPS 추출
+        # 2. 초보자를 위한 가치 평가 해설 (EPS, PER, 적정주가)
         curr_price_str = soup.select_one('.no_today .blind').text.replace(',', '') if soup.select_one('.no_today .blind') else "0"
         curr_price = float(curr_price_str) if curr_price_str.isdigit() else 0
-        
         per_str = soup.select_one('#_per').text.replace(',', '') if soup.select_one('#_per') else "0"
         eps_str = soup.select_one('#_eps').text.replace(',', '') if soup.select_one('#_eps') else "0"
-        
         per = float(per_str) if per_str.replace('.','',1).isdigit() else 0
         eps = float(eps_str) if eps_str.replace('.','',1).isdigit() else 0
         
-        # html 표 제작
-        html = "<table class='ma-table'>"
-        html += "<tr><th>현재 주가</th><th>현재 PER</th><th>현재 EPS</th><th>산출 기준</th></tr>"
-        html += "<tr>"
-        html += f"<td>₩{curr_price:,.0f}</td>" if curr_price else "<td>-</td>"
-        html += f"<td>{per:.2f}배</td>" if per else "<td>-</td>"
-        html += f"<td>₩{eps:,.0f}</td>" if eps else "<td>-</td>"
-        html += "<td>네이버 금융 제공</td>"
-        html += "</tr></table>"
-        valuation_html = html
+        target_price_tag = soup.select_one('.r_cmp_inv .f_up em')
+        target_price_str = target_price_tag.text.replace(',', '') if target_price_tag else "0"
+        target_price = float(target_price_str) if target_price_str.isdigit() else 0
+        
+        fair_value = eps * 10 # 코스피 평균 수준(PER 10배) 가정 시의 이론적 적정주가
+        
+        val_html = f"""
+        <div style='background-color: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 10px;'>
+            <h5 style='color: #1e40af; margin-top: 0; font-size: 1.15rem;'>💡 한눈에 이해하는 가치 평가 (Valuation)</h5>
+            <ul style='line-height: 1.8; font-size: 1.05rem; margin-bottom: 15px;'>
+                <li><b>현재 주가:</b> ₩{curr_price:,.0f}</li>
+                <li><b style='color:#0f172a;'>EPS (주당순이익):</b> ₩{eps:,.0f} <br><span style='color: #64748b; font-size: 0.95rem;'>👉 <b>쉽게 말해:</b> 이 회사가 1주당 벌어들인 실제 '순수익'입니다. (이 숫자가 클수록 우량한 기업입니다.)</span></li>
+                <li><b style='color:#0f172a;'>PER (주가수익비율):</b> {per:.2f}배 <br><span style='color: #64748b; font-size: 0.95rem;'>👉 <b>쉽게 말해:</b> 내가 투자한 원금을 이 회사의 순수익만으로 모두 회수하는 데 걸리는 시간(년)입니다. (보통 10배 이하를 저평가로 봅니다.)</span></li>
+            </ul>
+            <div style='background-color: #ffffff; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;'>
+                <h5 style='color: #0f172a; margin-top:0;'>🎯 이론적 적정주가 계산기</h5>
+                <p style='margin:0;'>만약 이 회사가 대한민국 주식시장 평균 수준(PER 10배)의 대우를 받는다고 가정하면?</p>
+                <p style='font-size: 1.2rem; margin-top: 10px; margin-bottom: 5px;'><b>이론적 적정주가:</b> ₩{eps:,.0f} (EPS) × 10배 (PER) = <b style='color: #22c55e;'>₩{fair_value:,.0f}</b></p>
+                <p style='font-size: 0.9rem; color:#64748b; margin:0;'>(이론 가격보다 현재 주가가 높다면 미래 성장 기대감이 반영된 것이고, 낮다면 저평가 구간일 수 있습니다.)</p>
+            </div>
+        """
+        if target_price > 0:
+            val_html += f"<p style='margin-top:15px; font-size:1.1rem;'><b>📈 증권사 평균 목표주가:</b> <b style='color: #ef4444;'>₩{target_price:,.0f}</b></p>"
+        val_html += "</div>"
+        valuation_html = val_html
+        
+        # 3. 분기/연간 실적 표 크롤링
+        try:
+            cop_table = soup.select_one('div.cop_analysis table')
+            if cop_table:
+                ths = cop_table.select('thead tr:nth-child(2) th')
+                dates = [th.text.strip() for th in ths][-4:] # 최근 4개 데이터만
+                
+                tbody_trs = cop_table.select('tbody tr')
+                rev_tds = [td.text.strip() for td in tbody_trs[0].select('td')][-4:] # 매출액
+                op_tds = [td.text.strip() for td in tbody_trs[1].select('td')][-4:]  # 영업이익
+                net_tds = [td.text.strip() for td in tbody_trs[2].select('td')][-4:] # 당기순이익
+                
+                html = "<table class='ma-table'><tr><th>구분</th>"
+                for d in dates: html += f"<th>{d}</th>"
+                html += "</tr>"
+                html += f"<tr><td><b>매출액(억원)</b></td>{''.join([f'<td>{v}</td>' for v in rev_tds])}</tr>"
+                html += f"<tr><td><b>영업이익(억원)</b></td>{''.join([f'<td>{v}</td>' for v in op_tds])}</tr>"
+                html += f"<tr><td><b>당기순이익(억원)</b></td>{''.join([f'<td>{v}</td>' for v in net_tds])}</tr>"
+                html += "</table><p style='font-size: 0.85rem; color: #666; margin-top: 5px;'>* (E) 표시는 증권사 추정치입니다. 출처: 네이버 금융</p>"
+                earnings_html = html
+        except: pass
             
     except Exception as e:
-        valuation_html = f"<p style='color:#ef4444;'>한국 종목 가치 평가 데이터를 불러올 수 없습니다. ({str(e)})</p>"
+        pass
         
-    return company_name, market_cap_usd, valuation_html
+    return company_name, market_cap_usd, valuation_html, earnings_html
 
 def fetch_investing_news(ticker, company_name=""):
-    """회사 이름(Name)을 우선적으로 사용하여 구글 뉴스를 정밀 타격 검색합니다."""
     try:
         search_term = company_name if company_name else ticker
         query = urllib.parse.quote(f"{search_term} (주식 OR 실적 OR 전망 OR 호재)")
@@ -108,17 +139,14 @@ def fetch_investing_news(ticker, company_name=""):
     except: return "뉴스 수집 실패 (Google RSS 우회 실패)"
 
 def get_earnings_alternative(ticker):
-    """나스닥 공식 API & AllOrigins 우회 병합 실적 크롤러 (미국 전용)"""
     clean_ticker = ticker.replace('.KS', '').replace('.KQ', '')
     records = []
-    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept": "application/json, text/plain, */*",
         "Origin": "https://www.nasdaq.com",
         "Referer": "https://www.nasdaq.com/"
     }
-    
     try:
         url_history = f"https://api.nasdaq.com/api/company/{clean_ticker}/earnings-surprise"
         res = requests.get(url_history, headers=headers, timeout=5)
@@ -140,12 +168,10 @@ def get_earnings_alternative(ticker):
         try:
             target_url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=earningsHistory,calendarEvents"
             proxy_url = f"https://api.allorigins.win/get?url={urllib.parse.quote(target_url)}"
-            
             res_proxy = requests.get(proxy_url, timeout=10)
             if res_proxy.status_code == 200:
                 proxy_data = json.loads(res_proxy.json().get('contents', '{}'))
                 result = proxy_data.get('quoteSummary', {}).get('result', [])
-                
                 if result:
                     for h in result[0].get("earningsHistory", {}).get("history", []):
                         dt_fmt = h.get("quarter", {}).get("fmt")
@@ -199,14 +225,9 @@ def get_valuation_html(ticker_symbol):
             return "<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. (야후 파이낸스 접속량 제한 방어됨. 잠시 후 시도하세요)</p>"
         return f"<p style='color:#ef4444;'>가치 평가 데이터를 불러올 수 없습니다. ({str(e)})</p>"
 
-def get_market_cap_and_earnings(ticker, is_korean):
-    if is_korean:
-        # 💡 핵심 픽스: 한국 주식은 나스닥 API나 야후 실적을 찌르지 않고 안내 멘트만 출력 (429 차단 원천 봉쇄)
-        return "<p style='color:#64748b;'>한국 종목의 상세 분기별 어닝 서프라이즈 데이터는 지원되지 않습니다. 상단의 네이버 금융 기준 <b>기업 가치(PER/EPS)</b>를 참고해 주세요.</p>"
-        
+def get_market_cap_and_earnings(ticker):
     earnings_html = ""
     rows = []
-    
     earn_df = get_earnings_alternative(ticker)
     if not earn_df.empty:
         for idx_date, row in earn_df.iterrows():
@@ -233,51 +254,45 @@ def get_market_cap_and_earnings(ticker, is_korean):
         earnings_html += "".join(rows) + "</table>"
     else:
         earnings_html = "<p style='color:#ef4444;'>해당 종목의 분기 실적 데이터를 불러올 수 없거나 제공되지 않습니다.</p>"
-        
     return earnings_html
 
 def parse_yf_df(raw_df):
-    """yfinance 최신 버전의 MultiIndex 반환 꼬임을 방지하는 안전 파서"""
     if raw_df.empty: return pd.DataFrame(columns=['Open', 'Close'])
     if isinstance(raw_df.columns, pd.MultiIndex):
         try:
             return pd.DataFrame({'Open': raw_df['Open'].iloc[:, 0], 'Close': raw_df['Close'].iloc[:, 0]})
-        except:
-            pass
+        except: pass
     return raw_df[['Open', 'Close']]
 
 def fetch_financial_data(ticker_symbol):
-    # 한국 주식 판단 로직
     if ticker_symbol.isdigit(): ticker_symbol = f"{ticker_symbol}.KS"
     is_korean = ticker_symbol.endswith('.KS') or ticker_symbol.endswith('.KQ')
     benchmark_ticker = "^KS11" if is_korean else "^IXIC" 
     benchmark_name = "코스피(KOSPI)" if is_korean else "나스닥(NASDAQ)"
 
-    # 회사 이름 및 시가총액/가치평가 초기화
     company_name = ""
     market_cap = 0.0
     valuation_html = ""
+    earnings_html = ""
     
     if is_korean:
-        # 💡 한국 종목은 네이버에서 직접 크롤링하여 에러 0% 보장
-        company_name, market_cap, valuation_html = get_korean_stock_info(ticker_symbol)
+        # 💡 한국 종목은 이제 이 함수 하나로 4가지(이름, 시총, 친절한 가치평가, 실적 표)를 완벽하게 받아옵니다.
+        company_name, market_cap, valuation_html, earnings_html = get_korean_stock_info(ticker_symbol)
     else:
         try:
             tkr = yf.Ticker(ticker_symbol)
             company_name = tkr.info.get('longName', tkr.info.get('shortName', ''))
             market_cap = tkr.info.get('marketCap', 0.0)
             valuation_html = get_valuation_html(ticker_symbol)
+            earnings_html = get_market_cap_and_earnings(ticker_symbol)
         except: pass
 
     for attempt in range(3):
         try:
-            # 💡 핵심 픽스 1: 1시간봉(1h) 요청 기간을 야후 제한(730일)에 걸리지 않도록 1y(1년)로 단축!
-            # 💡 핵심 픽스 2: 최신 yfinance 충돌을 막기 위해 session 강제 주입 제거
             df_1d_raw = yf.download(ticker_symbol, period="2y", interval="1d", progress=False)
             df_1h_raw = yf.download(ticker_symbol, period="1y", interval="1h", progress=False)
             bm_raw = yf.download(benchmark_ticker, period="2y", interval="1d", progress=False)
             
-            # 💡 핵심 픽스 3: 1시간봉이 없다고 전체 분석을 죽이지 않고, 일봉(1d)만이라도 살아있으면 무조건 통과!
             if df_1d_raw.empty:
                 return {"error": f"일봉 차트 데이터를 가져올 수 없습니다. 야후 파이낸스에 '{ticker_symbol}' 종목이 존재하는지 확인해주세요."}
                 
@@ -321,10 +336,6 @@ def fetch_financial_data(ticker_symbol):
             else:
                 extreme_events_str = "8% 이상 급변동일 없음"
             
-            # 실적 가져오기
-            earnings_html = get_market_cap_and_earnings(ticker_symbol, is_korean)
-
-            # 4H/1D 크로스 계산 (1시간봉 데이터가 정상적으로 있을 때만 계산)
             if df_1h.empty:
                 ma_html = "<p style='color:#ef4444;'>해당 종목은 1시간봉 차트 데이터가 제공되지 않아 크로스 분석이 불가능합니다.</p>"
                 last_cross_type, last_cross_date = "데이터 없음", "-"
@@ -382,7 +393,6 @@ def fetch_financial_data(ticker_symbol):
             curr_str = f"₩{current_price:,.0f}" if is_korean else f"${current_price:.2f}"
             momentum_html = f"<table class='ma-table'><tr><th>기간</th><th>현재가: {curr_str}</th><th>{benchmark_name} 비교</th></tr>" + "".join(mom_rows) + "</table>"
             
-            # 💡 핵심 픽스: 추출해온 회사 이름(company_name)을 뉴스 검색기에 전달!
             raw_news = fetch_investing_news(ticker_symbol, company_name)
 
             return {
@@ -403,7 +413,6 @@ def analyze_sector_with_ai(ticker, company_name, sector, fin_data, user_issue, n
     today = datetime.now().strftime('%Y-%m-%d')
     extreme_info = fin_data.get('extreme_events', '')
     
-    # 💡 핵심 픽스: AI 프롬프트에 '회사 이름(company_name)'을 명확하게 심어주어 분석 수준을 높임
     display_name = f"{company_name} ({ticker})" if company_name else ticker
     
     prompt = f"""
