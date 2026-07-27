@@ -24,6 +24,106 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
+def draw_korean_chart(ticker_only):
+    """트레이딩뷰 차단을 우회하기 위한 자체 네이버 캔들 차트 렌더링"""
+    import altair as alt
+    import xml.etree.ElementTree as ET
+    import requests
+    
+    st.markdown(f"#### 📈 {ticker_only} 실시간 자체 차트 (네이버 금융 연동)")
+    st.caption("💡 한국 주식은 트레이딩뷰 위젯 지원이 제한되어 있어 자체 캔들 차트를 렌더링합니다.")
+    try:
+        url = f"https://fchart.stock.naver.com/sise.nhn?symbol={ticker_only}&timeframe=day&count=200&requestType=0"
+        res = requests.get(url)
+        root = ET.fromstring(res.text)
+        items = root.findall('.//item')
+        data = []
+        for item in items:
+            row = item.attrib['data'].split('|')
+            data.append({
+                'Date': pd.to_datetime(row[0]),
+                'Open': float(row[1]),
+                'High': float(row[2]),
+                'Low': float(row[3]),
+                'Close': float(row[4]),
+                'Volume': float(row[5])
+            })
+        
+        if not data:
+            st.warning("차트 데이터를 불러오지 못했습니다.")
+            return
+
+        df_chart = pd.DataFrame(data)
+        
+        # RSI 계산 (14일)
+        delta = df_chart['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).fillna(0)
+        loss = (-delta.where(delta < 0, 0)).fillna(0)
+        avg_gain = gain.rolling(window=14).mean()
+        avg_loss = loss.rolling(window=14).mean()
+        rs = avg_gain / avg_loss
+        df_chart['RSI'] = 100 - (100 / (1 + rs))
+
+        color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
+        min_price = df_chart['Low'].min() * 0.98
+        max_price = df_chart['High'].max() * 1.02
+        hover = alt.selection_point(fields=['Date'], nearest=True, on='mouseover', empty=False, clear='mouseout')
+
+        x_axis_hidden = alt.X('Date:O', axis=alt.Axis(labels=False, ticks=False, domain=False, title=None))
+        x_axis_show = alt.X('Date:O', title=None, axis=alt.Axis(
+            labelAngle=0, labelColor='#787b86',
+            labelExpr="indexof(datum.label, datum.value) % 20 == 0 ? timeFormat(datum.value, '%Y-%m-%d') : ''",
+            grid=True, gridColor='#e0e3eb', gridDash=[2, 2], domain=False, ticks=False
+        ))
+        
+        base = alt.Chart(df_chart)
+
+        selectors = base.mark_point(size=100).encode(
+            x=x_axis_hidden, opacity=alt.value(0),
+            tooltip=[
+                alt.Tooltip('Date:T', format='%Y-%m-%d', title='날짜'),
+                alt.Tooltip('Open:Q', format=',.0f', title='시가'),
+                alt.Tooltip('High:Q', format=',.0f', title='고가'),
+                alt.Tooltip('Low:Q', format=',.0f', title='저가'),
+                alt.Tooltip('Close:Q', format=',.0f', title='종가'),
+                alt.Tooltip('Volume:Q', format=',.0f', title='거래량'),
+                alt.Tooltip('RSI:Q', format='.2f', title='RSI')
+            ]
+        ).add_params(hover)
+
+        rules = base.mark_rule(color='#787b86', strokeWidth=1, strokeDash=[5,5]).encode(
+            x=x_axis_hidden
+        ).transform_filter(hover)
+        
+        rule_candle = base.mark_rule(size=2.0).encode(
+            x=x_axis_hidden,
+            y=alt.Y('Low:Q', title=None, scale=alt.Scale(domain=[min_price, max_price]), axis=alt.Axis(orient='right', format=',.0f')),
+            y2='High:Q',
+            color=color_condition
+        )
+        bar_candle = base.mark_bar(size=5.0).encode(
+            x=x_axis_hidden, y='Open:Q', y2='Close:Q', color=color_condition
+        )
+        candlestick = (rule_candle + bar_candle + selectors + rules).properties(height=450)
+        
+        volume_bar = base.mark_bar(size=5.0).encode(
+            x=x_axis_hidden, y=alt.Y('Volume:Q', title=None, axis=alt.Axis(orient='right', format='.2s')), color=color_condition
+        )
+        volume_chart = (volume_bar + selectors + rules).properties(height=100)
+
+        rsi_line = base.mark_line(color='#673ab7', strokeWidth=2).encode(
+            x=x_axis_show, y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right'))
+        )
+        rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
+        rsi_chart = (rsi_line + rsi_baseline + selectors.encode(x=x_axis_show) + rules.encode(x=x_axis_show)).properties(height=100)
+        
+        combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(
+            stroke='lightgray', strokeWidth=1 
+        )
+        st.altair_chart(combined, use_container_width=True)
+    except Exception as e:
+        st.error(f"차트 렌더링 중 오류 발생: {e}")
+
 def render_research_tab():
     with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
@@ -37,16 +137,12 @@ def render_research_tab():
                 if clean_ticker:
                     with st.spinner("데이터 수집 및 크로스체크 심층 분석 중... (최대 10~20초)"):
                         try:
-                            # 1. 재무 데이터 수집 시작
                             fin_data = fetch_financial_data(clean_ticker)
                             
                             if "error" in fin_data: 
                                 st.error(f"데이터 수집 실패: {fin_data['error']}")
                             else:
-                                # 2. 추출해온 회사 이름(Company Name) 확보
                                 company_name = fin_data.get('company_name', '')
-                                
-                                # 3. AI에게 회사 이름을 명확히 알려주어 분석 요청
                                 ai_res = analyze_sector_with_ai(clean_ticker, company_name, s_sector, fin_data, s_issue, "별도 뉴스 생략")
                                 
                                 left_column_html = f"""
@@ -58,8 +154,6 @@ def render_research_tab():
                                 """
                                 
                                 safe_market_cap = float(fin_data.get('market_cap', 0)) if pd.notna(fin_data.get('market_cap', 0)) else 0.0
-                                
-                                # 💡 핵심 픽스: DB에 저장할 때 회사 이름을 티커 옆에 찰싹 붙여서 저장! (예: 011200 (HMM))
                                 display_ticker = f"{clean_ticker} ({company_name})" if company_name else clean_ticker
 
                                 res = insert_db("sector_analysis", {
@@ -117,37 +211,32 @@ def render_research_tab():
                     delete_db("sector_analysis", "id", s_id)
                     st.rerun()
             
-            st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
-            
-            # 💡 핵심 픽스: 트레이딩뷰 위젯에 들어갈 심볼(Symbol) 정밀 포맷팅! (애플 차트 방지)
             raw_ticker = stock_data['ticker']
-            # "011200 (HMM)" 형태에서 "011200"만 깔끔하게 추출
             ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
             
-            # 한국 주식(숫자 6자리)이면 반드시 앞에 "KRX:"를 붙여야 트레이딩뷰가 인식함!
+            # 💡 핵심 로직: 한국 주식(숫자)이면 자체 차트를, 미국 주식이면 트레이딩뷰를 띄웁니다!
             if ticker_only.isdigit():
-                tv_symbol = f"KRX:{ticker_only}"
+                draw_korean_chart(ticker_only)
             else:
-                tv_symbol = ticker_only
-
-            tv_widget = f"""
-            <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
-              <div id="tradingview_{ticker_only}" style="height:calc(100% - 32px);width:100%"></div>
-              <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-              <script type="text/javascript">
-              new TradingView.widget({{
-              "autosize": true, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
-              "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
-              "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
-              "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-              "studies": ["MAExp@tv-basicstudies", "RSI@tv-basicstudies"],
-              "container_id": "tradingview_{ticker_only}"
-              }});
-              </script>
-            </div>
-            """
-            components.html(tv_widget, height=650)
-            st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
+                st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
+                tv_widget = f"""
+                <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
+                  <div id="tradingview_{ticker_only}" style="height:calc(100% - 32px);width:100%"></div>
+                  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+                  <script type="text/javascript">
+                  new TradingView.widget({{
+                  "autosize": true, "symbol": "{ticker_only}", "interval": "D", "timezone": "Etc/UTC",
+                  "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
+                  "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
+                  "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
+                  "studies": ["MAExp@tv-basicstudies", "RSI@tv-basicstudies"],
+                  "container_id": "tradingview_{ticker_only}"
+                  }});
+                  </script>
+                </div>
+                """
+                components.html(tv_widget, height=650)
+                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
             
             st.markdown("---")
             c_left, c_right = st.columns([4, 6], gap="large")
