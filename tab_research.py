@@ -33,16 +33,22 @@ def render_research_tab():
             s_issue = st.text_area("🔥 내가 주목하는 핵심 이슈 (나만의 투자 관점)", height=100)
             
             if st.form_submit_button("🤖 금융 데이터 자동 긁어오기 & AI 리서치 시작", type="primary"):
-                if s_ticker:
-                    with st.spinner("데이터 수집 및 크로스체크 심층 분석 중... (최대 10초)"):
+                clean_ticker = s_ticker.strip().upper()
+                if clean_ticker:
+                    with st.spinner("데이터 수집 및 크로스체크 심층 분석 중... (최대 10~20초)"):
                         try:
-                            fin_data = fetch_financial_data(s_ticker.strip())
-                            st_news_content = "별도 뉴스 생략"
+                            # 💡 1. 재무 데이터 수집 시작
+                            fin_data = fetch_financial_data(clean_ticker)
                             
                             if "error" in fin_data: 
                                 st.error(f"데이터 수집 실패: {fin_data['error']}")
                             else:
-                                ai_res = analyze_sector_with_ai(s_ticker, s_sector, fin_data, s_issue, st_news_content)
+                                # 💡 2. 추출해온 회사 이름(Company Name) 확보
+                                company_name = fin_data.get('company_name', '')
+                                
+                                # 💡 3. AI에게 회사 이름을 명확히 알려주어 분석 요청
+                                ai_res = analyze_sector_with_ai(clean_ticker, company_name, s_sector, fin_data, s_issue, "별도 뉴스 생략")
+                                
                                 left_column_html = f"""
                                 <div class='info-card'><h4>📉 이평선 분석 (4H vs 1D EMA 200)</h4>{fin_data.get('ma_html', '')}</div>
                                 <div class='info-card'><h4>📊 가격 및 거래량 모멘텀</h4>{fin_data.get('momentum_html', '')}</div>
@@ -51,23 +57,24 @@ def render_research_tab():
                                 <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
                                 """
                                 
-                                # 💡 수정 1: market_cap 데이터를 float으로 강제 변환하여 JSON 에러(np.int64 튕김) 방지
                                 safe_market_cap = float(fin_data.get('market_cap', 0)) if pd.notna(fin_data.get('market_cap', 0)) else 0.0
+                                
+                                # 💡 4. DB에 저장할 때 회사 이름을 티커 옆에 찰싹 붙여서 저장! (예: 011200 (HMM))
+                                display_ticker = f"{clean_ticker} ({company_name})" if company_name else clean_ticker
 
                                 res = insert_db("sector_analysis", {
-                                    "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": safe_market_cap,
+                                    "ticker": display_ticker, 
+                                    "sector": s_sector, "market_cap": safe_market_cap,
                                     "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
                                     "vol_1m": "", "vol_1q": "", "vol_1y": "",
                                     "issue": left_column_html, "detail_data": fin_data.get('raw_news', ''), "ai_analysis": ai_res
                                 })
                                 
-                                # 💡 수정 2: DB 저장이 완벽하게 성공(200 또는 201)했을 때만 화면 새로고침
                                 if res is not None and res.status_code in [200, 201]:
-                                    st.success("✅ 리서치 리포트 등록 완료! DB에 안전하게 저장되었습니다.")
-                                    time.sleep(2) # 성공 문구를 읽을 수 있도록 2초 대기
+                                    st.success(f"✅ [{display_ticker}] 리서치 리포트 등록 완료! DB에 안전하게 저장되었습니다.")
+                                    time.sleep(2)
                                     st.rerun()
                                 else:
-                                    # DB 저장이 실패하면 화면을 새로고침하지 않고 에러를 화면에 고정 표시
                                     err_msg = res.text if hasattr(res, 'text') else 'DB 응답 없음 (타임아웃 또는 연결 오류)'
                                     st.error(f"❌ DB 저장 실패! 에러 원인: {err_msg}")
                                     
@@ -85,7 +92,7 @@ def render_research_tab():
         disp_cols = ["ticker", "sector", "market_cap_formatted", "vol_1d", "vol_1w"]
         df_selected = st.dataframe(
             df_display[disp_cols],
-            column_config={"ticker": "티커", "sector": "섹터", "market_cap_formatted": "시가총액", "vol_1d": "EMA 크로스 (4H/1D)", "vol_1w": "크로스 발생일"},
+            column_config={"ticker": st.column_config.TextColumn("종목명(티커)", width="large"), "sector": "섹터", "market_cap_formatted": "시가총액", "vol_1d": "EMA 크로스 (4H/1D)", "vol_1w": "크로스 발생일"},
             use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
         )
         
@@ -105,18 +112,29 @@ def render_research_tab():
                     st.rerun()
             
             st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
+            
+            # 💡 핵심 픽스: 트레이딩뷰 위젯에 들어갈 심볼(Symbol) 정밀 포맷팅!
+            # 예: "011200 (HMM)" -> "011200" 추출 -> 한국 종목이면 "KRX:011200" 으로 변환
+            raw_ticker = stock_data['ticker']
+            ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
+            
+            if ticker_only.isdigit():
+                tv_symbol = f"KRX:{ticker_only}"
+            else:
+                tv_symbol = ticker_only
+
             tv_widget = f"""
             <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
-              <div id="tradingview_{stock_data['ticker']}" style="height:calc(100% - 32px);width:100%"></div>
+              <div id="tradingview_{ticker_only}" style="height:calc(100% - 32px);width:100%"></div>
               <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
               <script type="text/javascript">
               new TradingView.widget({{
-              "autosize": true, "symbol": "{stock_data['ticker']}", "interval": "D", "timezone": "Etc/UTC",
+              "autosize": true, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Etc/UTC",
               "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
               "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
               "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
               "studies": ["MAExp@tv-basicstudies", "RSI@tv-basicstudies"],
-              "container_id": "tradingview_{stock_data['ticker']}"
+              "container_id": "tradingview_{ticker_only}"
               }});
               </script>
             </div>
