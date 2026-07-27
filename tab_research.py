@@ -50,15 +50,27 @@ def render_research_tab():
                                 <div class='info-card'><h4>⚖️ 기업 가치 및 적정주가 (EPS × PER)</h4>{fin_data.get('valuation_html', '')}</div>
                                 <div class='info-card'><h4>🔥 나의 투자 관점</h4><p>{s_issue}</p></div>
                                 """
-                                insert_db("sector_analysis", {
-                                    "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": fin_data.get('market_cap', 0),
+                                
+                                # 💡 수정 1: market_cap 데이터를 float으로 강제 변환하여 JSON 에러(np.int64 튕김) 방지
+                                safe_market_cap = float(fin_data.get('market_cap', 0)) if pd.notna(fin_data.get('market_cap', 0)) else 0.0
+
+                                res = insert_db("sector_analysis", {
+                                    "ticker": s_ticker.upper(), "sector": s_sector, "market_cap": safe_market_cap,
                                     "vol_1d": fin_data.get('last_cross_type', '-'), "vol_1w": fin_data.get('last_cross_date', '-'), 
                                     "vol_1m": "", "vol_1q": "", "vol_1y": "",
                                     "issue": left_column_html, "detail_data": fin_data.get('raw_news', ''), "ai_analysis": ai_res
                                 })
-                                st.success("리서치 리포트 등록 완료!")
-                                time.sleep(1)
-                                st.rerun()
+                                
+                                # 💡 수정 2: DB 저장이 완벽하게 성공(200 또는 201)했을 때만 화면 새로고침
+                                if res is not None and res.status_code in [200, 201]:
+                                    st.success("✅ 리서치 리포트 등록 완료! DB에 안전하게 저장되었습니다.")
+                                    time.sleep(2) # 성공 문구를 읽을 수 있도록 2초 대기
+                                    st.rerun()
+                                else:
+                                    # DB 저장이 실패하면 화면을 새로고침하지 않고 에러를 화면에 고정 표시
+                                    err_msg = res.text if hasattr(res, 'text') else 'DB 응답 없음 (타임아웃 또는 연결 오류)'
+                                    st.error(f"❌ DB 저장 실패! 에러 원인: {err_msg}")
+                                    
                         except Exception as e:
                             st.error(f"분석 중 치명적 오류 발생: {str(e)}")
 
