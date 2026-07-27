@@ -236,6 +236,16 @@ def get_market_cap_and_earnings(ticker, is_korean):
         
     return earnings_html
 
+def parse_yf_df(raw_df):
+    """yfinance 최신 버전의 MultiIndex 반환 꼬임을 방지하는 안전 파서"""
+    if raw_df.empty: return pd.DataFrame(columns=['Open', 'Close'])
+    if isinstance(raw_df.columns, pd.MultiIndex):
+        try:
+            return pd.DataFrame({'Open': raw_df['Open'].iloc[:, 0], 'Close': raw_df['Close'].iloc[:, 0]})
+        except:
+            pass
+    return raw_df[['Open', 'Close']]
+
 def fetch_financial_data(ticker_symbol):
     # 한국 주식 판단 로직
     if ticker_symbol.isdigit(): ticker_symbol = f"{ticker_symbol}.KS"
@@ -259,31 +269,25 @@ def fetch_financial_data(ticker_symbol):
             valuation_html = get_valuation_html(ticker_symbol)
         except: pass
 
-    session, crumb = get_robust_session()
-
     for attempt in range(3):
         try:
-            # 💡 핵심 픽스: 골든/데드크로스 완벽 일치를 위해 2년치(1일봉), 730일치(1시간봉) 다운로드
-            df_1d_raw = yf.download(ticker_symbol, period="2y", interval="1d", progress=False, session=session)
-            df_1h_raw = yf.download(ticker_symbol, period="730d", interval="1h", progress=False, session=session)
-            bm_raw = yf.download(benchmark_ticker, period="2y", interval="1d", progress=False, session=session)
+            # 💡 핵심 픽스 1: 1시간봉(1h) 요청 기간을 야후 제한(730일)에 걸리지 않도록 1y(1년)로 단축!
+            # 💡 핵심 픽스 2: 최신 yfinance 충돌을 막기 위해 session 강제 주입 제거
+            df_1d_raw = yf.download(ticker_symbol, period="2y", interval="1d", progress=False)
+            df_1h_raw = yf.download(ticker_symbol, period="1y", interval="1h", progress=False)
+            bm_raw = yf.download(benchmark_ticker, period="2y", interval="1d", progress=False)
             
-            if df_1d_raw.empty or df_1h_raw.empty:
-                return {"error": "차트 데이터를 가져올 수 없습니다. 종목명을 확인해주세요."}
+            # 💡 핵심 픽스 3: 1시간봉이 없다고 전체 분석을 죽이지 않고, 일봉(1d)만이라도 살아있으면 무조건 통과!
+            if df_1d_raw.empty:
+                return {"error": f"일봉 차트 데이터를 가져올 수 없습니다. 야후 파이낸스에 '{ticker_symbol}' 종목이 존재하는지 확인해주세요."}
                 
-            if isinstance(df_1d_raw.columns, pd.MultiIndex):
-                df_1d = pd.DataFrame({'Close': df_1d_raw['Close'].iloc[:, 0], 'Open': df_1d_raw['Open'].iloc[:, 0]})
-                df_1h = pd.DataFrame({'Close': df_1h_raw['Close'].iloc[:, 0], 'Open': df_1h_raw['Open'].iloc[:, 0]})
-                bm_1d = pd.DataFrame({'Close': bm_raw['Close'].iloc[:, 0], 'Open': bm_raw['Open'].iloc[:, 0]})
-            else:
-                df_1d, df_1h, bm_1d = df_1d_raw[['Open', 'Close']], df_1h_raw[['Open', 'Close']], bm_raw[['Open', 'Close']]
+            df_1d = parse_yf_df(df_1d_raw)
+            df_1h = parse_yf_df(df_1h_raw)
+            bm_1d = parse_yf_df(bm_raw)
                 
             df_1d.index = pd.to_datetime(df_1d.index, utc=True)
-            df_1h.index = pd.to_datetime(df_1h.index, utc=True)
             bm_1d.index = pd.to_datetime(bm_1d.index, utc=True)
-            
             df_1d = df_1d.dropna(subset=['Close'])
-            df_1h = df_1h.dropna(subset=['Close'])
             bm_1d = bm_1d.dropna(subset=['Close'])
 
             current_price = df_1d['Close'].iloc[-1]
@@ -320,42 +324,47 @@ def fetch_financial_data(ticker_symbol):
             # 실적 가져오기
             earnings_html = get_market_cap_and_earnings(ticker_symbol, is_korean)
 
-            # 4H/1D 크로스 계산
-            df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
-            df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
-            
-            df_1h_ma = pd.DataFrame({'Close': df_1h['Close']})
-            df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
-            df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
-            
-            df_1d_ma.index = pd.to_datetime(df_1d_ma.index, utc=True)
-            df_4h_ma.index = pd.to_datetime(df_4h_ma.index, utc=True)
-            df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
-            df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
-            
-            merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
-            merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
-            merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
-            
-            gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])].copy()
-            dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])].copy()
-            gc['Type'] = "🟢 골든크로스"
-            dc['Type'] = "🔴 데드크로스"
-            crosses = pd.concat([gc, dc]).sort_index()
-            
-            if crosses.empty:
-                ma_html = "<p>최근 1년 내 4H/1D EMA 200 크로스가 없습니다.</p>"
-                last_cross_type, last_cross_date = "크로스 없음", "-"
+            # 4H/1D 크로스 계산 (1시간봉 데이터가 정상적으로 있을 때만 계산)
+            if df_1h.empty:
+                ma_html = "<p style='color:#ef4444;'>해당 종목은 1시간봉 차트 데이터가 제공되지 않아 크로스 분석이 불가능합니다.</p>"
+                last_cross_type, last_cross_date = "데이터 없음", "-"
             else:
-                last_cross_type = crosses.iloc[-1]['Type']
-                last_cross_date = crosses.index[-1].strftime('%Y-%m-%d %H:%M')
-                ma_rows = []
-                for idx, row in crosses.tail(3)[::-1].iterrows():
-                    color = "#22c55e" if "골든" in row['Type'] else "#ef4444"
-                    date_str = idx.strftime('%Y-%m-%d %H:%M')
-                    price_str = f"₩{row['Close']:,.0f}" if is_korean else f"${row['Close']:.2f}"
-                    ma_rows.append(f"<tr><td><span style='color:{color}; font-weight:bold;'>{row['Type']}</span></td><td>{date_str}</td><td>{price_str}</td></tr>")
-                ma_html = "<table class='ma-table'><tr><th>상태 (최근 3회)</th><th>발생일</th><th>당시 주가</th></tr>" + "".join(ma_rows) + "</table>"
+                df_1h.index = pd.to_datetime(df_1h.index, utc=True)
+                df_1h = df_1h.dropna(subset=['Close'])
+                
+                df_1d_ma = pd.DataFrame({'Close': df_1d['Close']})
+                df_1d_ma['EMA200_1D'] = df_1d_ma['Close'].ewm(span=200, adjust=False).mean()
+                
+                df_1h_ma = pd.DataFrame({'Close': df_1h['Close']})
+                df_4h_ma = df_1h_ma.resample('4h').agg({'Close': 'last'}).dropna()
+                df_4h_ma['EMA200_4H'] = df_4h_ma['Close'].ewm(span=200, adjust=False).mean()
+                
+                df_1d_ma = df_1d_ma[['EMA200_1D']].sort_index()
+                df_4h_ma = df_4h_ma[['EMA200_4H', 'Close']].sort_index()
+                
+                merged = pd.merge_asof(df_4h_ma, df_1d_ma, left_index=True, right_index=True, direction='backward').dropna()
+                merged['Prev_4H'] = merged['EMA200_4H'].shift(1)
+                merged['Prev_1D'] = merged['EMA200_1D'].shift(1)
+                
+                gc = merged[(merged['EMA200_4H'] > merged['EMA200_1D']) & (merged['Prev_4H'] <= merged['Prev_1D'])].copy()
+                dc = merged[(merged['EMA200_4H'] < merged['EMA200_1D']) & (merged['Prev_4H'] >= merged['Prev_1D'])].copy()
+                gc['Type'] = "🟢 골든크로스"
+                dc['Type'] = "🔴 데드크로스"
+                crosses = pd.concat([gc, dc]).sort_index()
+                
+                if crosses.empty:
+                    ma_html = "<p>최근 1년 내 4H/1D EMA 200 크로스가 없습니다.</p>"
+                    last_cross_type, last_cross_date = "크로스 없음", "-"
+                else:
+                    last_cross_type = crosses.iloc[-1]['Type']
+                    last_cross_date = crosses.index[-1].strftime('%Y-%m-%d %H:%M')
+                    ma_rows = []
+                    for idx, row in crosses.tail(3)[::-1].iterrows():
+                        color = "#22c55e" if "골든" in row['Type'] else "#ef4444"
+                        date_str = idx.strftime('%Y-%m-%d %H:%M')
+                        price_str = f"₩{row['Close']:,.0f}" if is_korean else f"${row['Close']:.2f}"
+                        ma_rows.append(f"<tr><td><span style='color:{color}; font-weight:bold;'>{row['Type']}</span></td><td>{date_str}</td><td>{price_str}</td></tr>")
+                    ma_html = "<table class='ma-table'><tr><th>상태 (최근 3회)</th><th>발생일</th><th>당시 주가</th></tr>" + "".join(ma_rows) + "</table>"
 
             def get_ret(series, days):
                 if len(series) > days: return ((series.iloc[-1] - series.iloc[-(days+1)]) / series.iloc[-(days+1)]) * 100
@@ -425,14 +434,14 @@ def analyze_sector_with_ai(ticker, company_name, sector, fin_data, user_issue, n
     ### 3. 💰 실적 및 모멘텀 종합 의견 (상세하고 풍부하게 분석)
     ### 4. 💡 기관 트레이딩 결론
     - **현재 포지션:** (롱/숏/관망 택 1)
-    - **핵심 리스크:** (상세 서술)
+    - **핵심 정량적 리스크:** (상세 서술)
     - **최종 Action:** (상세 서술) """
     
     for attempt in range(3):
         result = ask_gemini_dynamic(prompt, [])
         if "429" in result or "quota" in result.lower() or "소진" in result:
             if attempt < 2:
-                time.sleep(40) 
+                time.sleep(20) 
                 continue
         return result
         
