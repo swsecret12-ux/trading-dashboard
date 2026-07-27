@@ -7,6 +7,7 @@ import re
 import io
 import time
 import ccxt
+import os
 from PIL import Image
 import google.generativeai as genai
 from datetime import datetime
@@ -21,17 +22,17 @@ HEADERS = {
     "Prefer": "return=representation"
 }
 
-# 💡 DB 통신 에러로 앱 전체가 뻗는 것을 막기 위한 try-except 안전장치 추가
+# 💡 DB 통신 에러로 앱 전체가 뻗는 것을 막기 위한 try-except 안전장치 유지 및 타임아웃 10초로 연장
 def insert_db(table, data): 
-    try: return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data, timeout=5)
+    try: return requests.post(f"{URL}/rest/v1/{table}", headers=HEADERS, json=data, timeout=10)
     except: return None
 
 def update_db(table, match_col, match_val, data): 
-    try: return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data, timeout=5)
+    try: return requests.patch(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, json=data, timeout=10)
     except: return None
 
 def delete_db(table, match_col, match_val): 
-    try: return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, timeout=5)
+    try: return requests.delete(f"{URL}/rest/v1/{table}?{match_col}=eq.{match_val}", headers=HEADERS, timeout=10)
     except: return None
 
 def upload_image_to_supabase(img_file, prefix="img"):
@@ -42,21 +43,21 @@ def upload_image_to_supabase(img_file, prefix="img"):
         if not file_bytes: return None
         upload_url = f"{URL}/storage/v1/object/chart_images/{file_name}"
         img_headers = {"apikey": KEY, "Authorization": f"Bearer {KEY}", "Content-Type": getattr(img_file, 'type', 'image/png')}
-        res = requests.post(upload_url, headers=img_headers, data=file_bytes, timeout=10)
+        res = requests.post(upload_url, headers=img_headers, data=file_bytes, timeout=15)
         if res.status_code == 200: return f"{URL}/storage/v1/object/public/chart_images/{file_name}"
         return None
     except: return None
 
 def load_trade_data():
     try:
-        res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS, timeout=5)
+        res = requests.get(f"{URL}/rest/v1/trade_history?select=*&order=created_at.desc", headers=HEADERS, timeout=10)
         if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     except: pass
     return pd.DataFrame(columns=["id", "date", "ticker", "timeframe", "setup_pattern", "position", "result", "rr_ratio", "profit", "chart_image_paths", "entry_basis", "exit_basis"])
 
 def load_archive_data():
     try:
-        res = requests.get(f"{URL}/rest/v1/analysis_archive?select=*&order=created_at.desc", headers=HEADERS, timeout=5)
+        res = requests.get(f"{URL}/rest/v1/analysis_archive?select=*&order=created_at.desc", headers=HEADERS, timeout=10)
         if res.status_code == 200 and res.json():
             df = pd.DataFrame(res.json())
             if 'ai_advice_mapping' not in df.columns: df['ai_advice_mapping'] = "{}"
@@ -67,7 +68,7 @@ def load_archive_data():
 
 def load_sector_data():
     try:
-        res = requests.get(f"{URL}/rest/v1/sector_analysis?select=*&order=created_at.desc", headers=HEADERS, timeout=5)
+        res = requests.get(f"{URL}/rest/v1/sector_analysis?select=*&order=created_at.desc", headers=HEADERS, timeout=10)
         if res.status_code == 200 and res.json(): return pd.DataFrame(res.json())
     except: pass
     return pd.DataFrame(columns=["id", "ticker", "sector", "market_cap", "vol_1d", "vol_1w", "vol_1m", "vol_1q", "vol_1y", "issue", "detail_data", "ai_analysis"])
@@ -75,7 +76,7 @@ def load_sector_data():
 def load_theory_db():
     db_dict = get_base_theory_dict()
     try:
-        res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS, timeout=5)
+        res = requests.get(f"{URL}/rest/v1/theory_db?select=*", headers=HEADERS, timeout=10)
         if res.status_code == 200 and res.json():
             for row in res.json():
                 cat, title = row['category'], row['title']
