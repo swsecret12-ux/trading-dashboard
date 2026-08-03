@@ -5,6 +5,8 @@ import requests
 import xml.etree.ElementTree as ET
 import yfinance as yf
 import altair as alt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from api_utils import insert_db, delete_db, load_sector_data
 from market_research import fetch_financial_data, analyze_sector_with_ai
 
@@ -28,42 +30,14 @@ def format_mcap_krw(usd_val):
         return usd_val
 
 def render_native_chart(ticker_only, is_korean):
-    st.markdown(f"#### 📈 {ticker_only} 실시간 자체 렌더링 차트")
-    st.caption("💡 대시보드 내에서는 딜레이나 끊김이 없는 자체 차트로 흐름을 빠르게 파악하세요.")
-    
-    # 💡 가독성 극대화를 위한 툴팁(Tooltip) 및 표면 CSS 강제 주입
-    st.markdown("""
-    <style>
-    #vg-tooltip-element {
-        font-size: 16px !important;
-        font-family: 'Pretendard', 'Malgun Gothic', sans-serif !important;
-        font-weight: 700 !important;
-        color: #1e293b !important;
-        background-color: rgba(255, 255, 255, 0.95) !important;
-        border: 3px solid #3b82f6 !important;
-        border-radius: 8px !important;
-        padding: 12px 18px !important;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2) !important;
-        z-index: 9999 !important;
-    }
-    #vg-tooltip-element td.key { 
-        color: #64748b !important; 
-        font-size: 15px !important; 
-        padding-right: 15px !important;
-    }
-    #vg-tooltip-element td.value { 
-        font-size: 18px !important; 
-        color: #0f172a !important; 
-        font-weight: 900 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    st.markdown(f"#### 📈 {ticker_only} 실시간 자체 렌더링 차트 (Plotly 정밀 차트)")
+    st.caption("💡 툴팁이 캔들을 가리던 현상을 완벽히 해결하고, 프로 트레이더용 십자선(Crosshair)과 통합 데이터 패널을 적용했습니다.")
     
     # 💡 유료 사용자를 위한 특급 솔루션: 진짜 트레이딩뷰 다이렉트 브릿지 버튼!
     tv_symbol = f"KRX:{ticker_only}" if is_korean else ticker_only
     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_symbol}"
     st.link_button(f"🚀 내 유료 트레이딩뷰(Pro) 계정에서 [{ticker_only}] 정밀 차트 열기 (작도/지표 완벽 연동)", tv_url, type="primary", use_container_width=True)
-    st.write("") # 간격 띄우기
+    st.write("") 
     
     try:
         df_chart = pd.DataFrame()
@@ -107,6 +81,7 @@ def render_native_chart(ticker_only, is_korean):
             st.warning("차트 데이터를 불러오지 못했습니다. 종목 코드를 확인해주세요.")
             return
 
+        # RSI 계산
         delta = df_chart['Close'].diff()
         gain = (delta.where(delta > 0, 0)).fillna(0)
         loss = (-delta.where(delta < 0, 0)).fillna(0)
@@ -115,68 +90,56 @@ def render_native_chart(ticker_only, is_korean):
         rs = avg_gain / avg_loss
         df_chart['RSI'] = 100 - (100 / (1 + rs))
 
-        color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
-        min_price = df_chart['Low'].min() * 0.98
-        max_price = df_chart['High'].max() * 1.02
-        fmt_price = ',.0f' if is_korean else ',.2f'
+        # 💡 Plotly 서브플롯 생성 (비율 조정)
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
+                            row_heights=[0.6, 0.2, 0.2], 
+                            vertical_spacing=0.03)
         
-        hover = alt.selection_point(fields=['Date'], nearest=True, on='mouseover', empty=False, clear='mouseout')
+        # 1. 캔들스틱 레이어
+        fig.add_trace(go.Candlestick(
+            x=df_chart['Date'], open=df_chart['Open'], high=df_chart['High'],
+            low=df_chart['Low'], close=df_chart['Close'], name='가격',
+            increasing_line_color='#089981', decreasing_line_color='#f23645'
+        ), row=1, col=1)
         
-        x_axis_hidden = alt.X('Date:O', axis=alt.Axis(labels=False, ticks=False, domain=False, title=None))
-        x_axis_show = alt.X('Date:O', title=None, axis=alt.Axis(
-            labelAngle=0, labelColor='#787b86', 
-            labelExpr="indexof(datum.label, datum.value) % 20 == 0 ? datum.value : ''", 
-            grid=True, gridColor='#e0e3eb', gridDash=[2, 2], domain=False, ticks=False
-        ))
+        # 2. 거래량 레이어 (음봉/양봉 색상 동기화)
+        colors = ['#089981' if row['Open'] <= row['Close'] else '#f23645' for i, row in df_chart.iterrows()]
+        fig.add_trace(go.Bar(
+            x=df_chart['Date'], y=df_chart['Volume'], marker_color=colors, name='거래량'
+        ), row=2, col=1)
         
-        base = alt.Chart(df_chart)
+        # 3. RSI 레이어
+        fig.add_trace(go.Scatter(
+            x=df_chart['Date'], y=df_chart['RSI'], line=dict(color='#673ab7', width=2), name='RSI'
+        ), row=3, col=1)
+        # RSI 30, 70 점선 가이드 추가
+        fig.add_hline(y=70, line_dash="dash", line_color="gray", row=3, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="gray", row=3, col=1)
         
-        selectors = base.mark_point(size=100).encode(
-            x=x_axis_hidden, opacity=alt.value(0),
-            tooltip=[
-                alt.Tooltip('Date:O', title='날짜'),
-                alt.Tooltip('Open:Q', format=fmt_price, title='시가'),
-                alt.Tooltip('High:Q', format=fmt_price, title='고가'),
-                alt.Tooltip('Low:Q', format=fmt_price, title='저가'),
-                alt.Tooltip('Close:Q', format=fmt_price, title='종가'),
-                alt.Tooltip('Volume:Q', format=',.0f', title='거래량'),
-                alt.Tooltip('RSI:Q', format='.2f', title='RSI(14)')
-            ]
-        ).add_params(hover)
-        
-        rules = base.mark_rule(color='#787b86', strokeWidth=1, strokeDash=[5,5]).encode(x=x_axis_hidden).transform_filter(hover)
-        
-        rule_candle = base.mark_rule(size=2.0).encode(
-            x=x_axis_hidden,
-            y=alt.Y('Low:Q', title=None, scale=alt.Scale(domain=[min_price, max_price]), axis=alt.Axis(orient='right', format=fmt_price, labelFontSize=12)),
-            y2='High:Q',
-            color=color_condition
+        # 💡 레이아웃 및 툴팁 업데이트 (핵심: x unified hovermode)
+        fig.update_layout(
+            hovermode='x unified', # 이것이 핵심! 툴팁을 하나로 묶고 십자선을 생성
+            hoverdistance=100,
+            spikedistance=1000,
+            xaxis_rangeslider_visible=False, # 하단 슬라이더 제거하여 깔끔하게
+            height=750,
+            margin=dict(l=10, r=10, t=30, b=10),
+            showlegend=False,
+            plot_bgcolor='#ffffff',
+            paper_bgcolor='#ffffff'
         )
-        bar_candle = base.mark_bar(size=5.0).encode(x=x_axis_hidden, y='Open:Q', y2='Close:Q', color=color_condition)
-        candlestick = (rule_candle + bar_candle + selectors + rules).properties(height=450)
         
-        volume_bar = base.mark_bar(size=5.0).encode(
-            x=x_axis_hidden, 
-            y=alt.Y('Volume:Q', title=None, axis=alt.Axis(orient='right', format='.2s', labelFontSize=12)), 
-            color=color_condition
+        # 축(Axis) 정밀 설정
+        fig.update_xaxes(
+            type='category', # 주말 빈 캔들 갭(Gap) 완벽 제거
+            showgrid=True, gridcolor='#f0f3fa', 
+            showspikes=True, spikemode='across', spikesnap='cursor', showline=False, spikedash='dash', spikecolor='#999999', spikethickness=1
         )
-        volume_chart = (volume_bar + selectors + rules).properties(height=100)
+        fig.update_yaxes(
+            side="right", showgrid=True, gridcolor='#f0f3fa', tickformat=",.0f" if is_korean else ",.2f"
+        )
         
-        rsi_line = base.mark_line(color='#673ab7', strokeWidth=2).encode(
-            x=x_axis_show, 
-            y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', labelFontSize=12))
-        )
-        rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
-        rsi_chart = (rsi_line + rsi_baseline + selectors.encode(x=x_axis_show) + rules.encode(x=x_axis_show)).properties(height=100)
-        
-        # 💡 축(Axis) 글씨 크기 및 굵기 대폭 상향
-        combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(stroke='lightgray', strokeWidth=1).configure_axis(
-            labelFontSize=13,
-            titleFontSize=15,
-            labelFontWeight='bold',
-            labelColor='#1e293b'
-        )
-        st.altair_chart(combined, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
         
     except Exception as e:
         st.error(f"차트 렌더링 중 치명적 오류 발생 (서버 확인 필요): {e}")
