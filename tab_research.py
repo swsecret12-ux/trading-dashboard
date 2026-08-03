@@ -31,6 +31,34 @@ def render_native_chart(ticker_only, is_korean):
     st.markdown(f"#### 📈 {ticker_only} 실시간 자체 렌더링 차트")
     st.caption("💡 대시보드 내에서는 딜레이나 끊김이 없는 자체 차트로 흐름을 빠르게 파악하세요.")
     
+    # 💡 가독성 극대화를 위한 툴팁(Tooltip) 및 표면 CSS 강제 주입
+    st.markdown("""
+    <style>
+    #vg-tooltip-element {
+        font-size: 16px !important;
+        font-family: 'Pretendard', 'Malgun Gothic', sans-serif !important;
+        font-weight: 700 !important;
+        color: #1e293b !important;
+        background-color: rgba(255, 255, 255, 0.95) !important;
+        border: 3px solid #3b82f6 !important;
+        border-radius: 8px !important;
+        padding: 12px 18px !important;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2) !important;
+        z-index: 9999 !important;
+    }
+    #vg-tooltip-element td.key { 
+        color: #64748b !important; 
+        font-size: 15px !important; 
+        padding-right: 15px !important;
+    }
+    #vg-tooltip-element td.value { 
+        font-size: 18px !important; 
+        color: #0f172a !important; 
+        font-weight: 900 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # 💡 유료 사용자를 위한 특급 솔루션: 진짜 트레이딩뷰 다이렉트 브릿지 버튼!
     tv_symbol = f"KRX:{ticker_only}" if is_korean else ticker_only
     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_symbol}"
@@ -141,7 +169,13 @@ def render_native_chart(ticker_only, is_korean):
         rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
         rsi_chart = (rsi_line + rsi_baseline + selectors.encode(x=x_axis_show) + rules.encode(x=x_axis_show)).properties(height=100)
         
-        combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(stroke='lightgray', strokeWidth=1).configure_axis(labelFontSize=14)
+        # 💡 축(Axis) 글씨 크기 및 굵기 대폭 상향
+        combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(stroke='lightgray', strokeWidth=1).configure_axis(
+            labelFontSize=13,
+            titleFontSize=15,
+            labelFontWeight='bold',
+            labelColor='#1e293b'
+        )
         st.altair_chart(combined, use_container_width=True)
         
     except Exception as e:
