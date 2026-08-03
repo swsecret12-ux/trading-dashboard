@@ -4,9 +4,8 @@ import time
 import requests
 import xml.etree.ElementTree as ET
 import yfinance as yf
-import altair as alt
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import json
+import streamlit.components.v1 as components
 from api_utils import insert_db, delete_db, load_sector_data
 from market_research import fetch_financial_data, analyze_sector_with_ai
 
@@ -30,18 +29,19 @@ def format_mcap_krw(usd_val):
         return usd_val
 
 def render_native_chart(ticker_only, is_korean):
-    st.markdown(f"#### 📈 {ticker_only} 실시간 자체 렌더링 차트 (Plotly 정밀 차트)")
-    st.caption("💡 툴팁이 캔들을 가리던 현상을 완벽히 해결하고, 프로 트레이더용 십자선(Crosshair)과 통합 데이터 패널을 적용했습니다.")
+    st.markdown(f"#### 📈 {ticker_only} 실시간 정밀 차트 (TradingView 오픈소스 엔진)")
+    st.caption("💡 캔들을 가리던 팝업 박스를 제거하고, 트레이딩뷰처럼 차트 좌측 상단에 수치 패널(OHLC)을 고정 배치했습니다.")
     
     # 💡 유료 사용자를 위한 특급 솔루션: 진짜 트레이딩뷰 다이렉트 브릿지 버튼!
     tv_symbol = f"KRX:{ticker_only}" if is_korean else ticker_only
     tv_url = f"https://www.tradingview.com/chart/?symbol={tv_symbol}"
-    st.link_button(f"🚀 내 유료 트레이딩뷰(Pro) 계정에서 [{ticker_only}] 정밀 차트 열기 (작도/지표 완벽 연동)", tv_url, type="primary", use_container_width=True)
+    st.link_button(f"🚀 내 유료 트레이딩뷰(Pro) 계정에서 [{ticker_only}] 정밀 차트 열기 (작도/지표 연동)", tv_url, type="primary", use_container_width=True)
     st.write("") 
     
     try:
         df_chart = pd.DataFrame()
         
+        # 1. 데이터 수집 로직 (한국=네이버, 미국=야후)
         if is_korean:
             url = f"https://fchart.stock.naver.com/sise.nhn?symbol={ticker_only}&timeframe=day&count=365&requestType=0"
             res = requests.get(url, timeout=5)
@@ -52,14 +52,9 @@ def render_native_chart(ticker_only, is_korean):
                 row = item.attrib['data'].split('|')
                 data.append({
                     'Date': f"{row[0][:4]}-{row[0][4:6]}-{row[0][6:8]}",
-                    'Open': float(row[1]),
-                    'High': float(row[2]),
-                    'Low': float(row[3]),
-                    'Close': float(row[4]),
-                    'Volume': float(row[5])
+                    'Open': float(row[1]), 'High': float(row[2]), 'Low': float(row[3]), 'Close': float(row[4]), 'Volume': float(row[5])
                 })
-            if data: 
-                df_chart = pd.DataFrame(data)
+            if data: df_chart = pd.DataFrame(data)
         else:
             yf_data = yf.download(ticker_only, period="1y", interval="1d", progress=False)
             if not yf_data.empty:
@@ -81,7 +76,7 @@ def render_native_chart(ticker_only, is_korean):
             st.warning("차트 데이터를 불러오지 못했습니다. 종목 코드를 확인해주세요.")
             return
 
-        # RSI 계산
+        # 2. RSI 계산
         delta = df_chart['Close'].diff()
         gain = (delta.where(delta > 0, 0)).fillna(0)
         loss = (-delta.where(delta < 0, 0)).fillna(0)
@@ -89,57 +84,106 @@ def render_native_chart(ticker_only, is_korean):
         avg_loss = loss.rolling(window=14).mean()
         rs = avg_gain / avg_loss
         df_chart['RSI'] = 100 - (100 / (1 + rs))
+        df_chart = df_chart.fillna(0) # JSON 변환 에러 방어
 
-        # 💡 Plotly 서브플롯 생성 (비율 조정)
-        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                            row_heights=[0.6, 0.2, 0.2], 
-                            vertical_spacing=0.03)
+        # 3. 자바스크립트에 넘길 JSON 데이터 정제
+        candle_data = [{"time": row['Date'], "open": row['Open'], "high": row['High'], "low": row['Low'], "close": row['Close']} for _, row in df_chart.iterrows()]
+        volume_data = [{"time": row['Date'], "value": row['Volume'], "color": "rgba(8, 153, 129, 0.5)" if row['Close'] >= row['Open'] else "rgba(242, 54, 69, 0.5)"} for _, row in df_chart.iterrows()]
+        rsi_data = [{"time": row['Date'], "value": row['RSI']} for _, row in df_chart.iterrows() if row['RSI'] > 0]
         
-        # 1. 캔들스틱 레이어
-        fig.add_trace(go.Candlestick(
-            x=df_chart['Date'], open=df_chart['Open'], high=df_chart['High'],
-            low=df_chart['Low'], close=df_chart['Close'], name='가격',
-            increasing_line_color='#089981', decreasing_line_color='#f23645'
-        ), row=1, col=1)
-        
-        # 2. 거래량 레이어 (음봉/양봉 색상 동기화)
-        colors = ['#089981' if row['Open'] <= row['Close'] else '#f23645' for i, row in df_chart.iterrows()]
-        fig.add_trace(go.Bar(
-            x=df_chart['Date'], y=df_chart['Volume'], marker_color=colors, name='거래량'
-        ), row=2, col=1)
-        
-        # 3. RSI 레이어
-        fig.add_trace(go.Scatter(
-            x=df_chart['Date'], y=df_chart['RSI'], line=dict(color='#673ab7', width=2), name='RSI'
-        ), row=3, col=1)
-        # RSI 30, 70 점선 가이드 추가
-        fig.add_hline(y=70, line_dash="dash", line_color="gray", row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="gray", row=3, col=1)
-        
-        # 💡 레이아웃 및 툴팁 업데이트 (핵심: x unified hovermode)
-        fig.update_layout(
-            hovermode='x unified', # 이것이 핵심! 툴팁을 하나로 묶고 십자선을 생성
-            hoverdistance=100,
-            spikedistance=1000,
-            xaxis_rangeslider_visible=False, # 하단 슬라이더 제거하여 깔끔하게
-            height=750,
-            margin=dict(l=10, r=10, t=30, b=10),
-            showlegend=False,
-            plot_bgcolor='#ffffff',
-            paper_bgcolor='#ffffff'
-        )
-        
-        # 축(Axis) 정밀 설정
-        fig.update_xaxes(
-            type='category', # 주말 빈 캔들 갭(Gap) 완벽 제거
-            showgrid=True, gridcolor='#f0f3fa', 
-            showspikes=True, spikemode='across', spikesnap='cursor', showline=False, spikedash='dash', spikecolor='#999999', spikethickness=1
-        )
-        fig.update_yaxes(
-            side="right", showgrid=True, gridcolor='#f0f3fa', tickformat=",.0f" if is_korean else ",.2f"
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
+        json_candle = json.dumps(candle_data)
+        json_volume = json.dumps(volume_data)
+        json_rsi = json.dumps(rsi_data)
+
+        # 4. Lightweight Charts 엔진 HTML & JS 생성 (오버레이 없이 최상단 고정 패널 탑재!)
+        html_code = f"""
+        <div style="position: relative; width: 100%; height: 600px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background: white;">
+            <div id="tv_legend" style="position: absolute; top: 12px; left: 16px; z-index: 10; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; pointer-events: none; background: rgba(255,255,255,0.85); padding: 8px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);"></div>
+            <div id="tv_chart" style="width: 100%; height: 100%;"></div>
+        </div>
+        <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+        <script>
+            const chart = LightweightCharts.createChart(document.getElementById('tv_chart'), {{
+                layout: {{ textColor: '#191919', background: {{ type: 'solid', color: '#ffffff' }} }},
+                grid: {{ vertLines: {{ color: '#f0f3fa' }}, horzLines: {{ color: '#f0f3fa' }} }},
+                crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
+                timeScale: {{ borderColor: '#e0e3eb', timeVisible: true }}
+            }});
+
+            // 가격 차트 공간 (상단 75%)
+            chart.priceScale('right').applyOptions({{ scaleMargins: {{ top: 0.15, bottom: 0.25 }} }});
+
+            const candleSeries = chart.addCandlestickSeries({{
+                upColor: '#089981', downColor: '#f23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#f23645'
+            }});
+
+            // 거래량 차트 공간 (하단 25% 가격 위에 겹침)
+            const volumeSeries = chart.addHistogramSeries({{
+                color: '#26a69a', priceFormat: {{ type: 'volume' }}, priceScaleId: 'vol'
+            }});
+            chart.priceScale('vol').applyOptions({{ scaleMargins: {{ top: 0.65, bottom: 0.25 }}, visible: false }});
+
+            // RSI 차트 공간 (최하단 20%)
+            const rsiSeries = chart.addLineSeries({{ color: '#673ab7', lineWidth: 2, priceScaleId: 'rsi' }});
+            const rsiTop = chart.addLineSeries({{ color: '#a3a3a3', lineWidth: 1, lineStyle: 2, priceScaleId: 'rsi', lastValueVisible: false, priceLineVisible: false }});
+            const rsiBot = chart.addLineSeries({{ color: '#a3a3a3', lineWidth: 1, lineStyle: 2, priceScaleId: 'rsi', lastValueVisible: false, priceLineVisible: false }});
+            chart.priceScale('rsi').applyOptions({{ scaleMargins: {{ top: 0.8, bottom: 0 }} }});
+
+            // 데이터 렌더링
+            candleSeries.setData({json_candle});
+            volumeSeries.setData({json_volume});
+            rsiSeries.setData({json_rsi});
+            rsiTop.setData({json_rsi}.map(d => ({{time: d.time, value: 70}})));
+            rsiBot.setData({json_rsi}.map(d => ({{time: d.time, value: 30}})));
+
+            chart.timeScale().fitContent();
+
+            // 상단 고정 패널 로직 (툴팁 차단)
+            const legend = document.getElementById('tv_legend');
+            const formatNum = (n) => new Intl.NumberFormat('ko-KR').format(n);
+
+            function updateLegend(param) {{
+                let data, vol, rsi, timeStr;
+                if (param && param.time) {{
+                    data = param.seriesData.get(candleSeries);
+                    vol = param.seriesData.get(volumeSeries);
+                    rsi = param.seriesData.get(rsiSeries);
+                    timeStr = param.time;
+                }} else {{
+                    // 마우스가 차트를 벗어나면 가장 마지막 캔들 표시
+                    data = {json_candle}[{json_candle}.length - 1];
+                    vol = {json_volume}[{json_volume}.length - 1];
+                    rsi = {json_rsi}[{json_rsi}.length - 1];
+                    timeStr = data ? data.time : '';
+                }}
+                
+                if (data) {{
+                    const o = formatNum(data.open), h = formatNum(data.high), l = formatNum(data.low), c = formatNum(data.close);
+                    const v = vol ? formatNum(vol.value) : '-';
+                    const r = rsi ? rsi.value.toFixed(2) : '-';
+                    const color = data.close >= data.open ? '#089981' : '#f23645';
+                    
+                    legend.innerHTML = `
+                        <div style="font-size: 20px; font-weight: 800; margin-bottom: 6px;">{ticker_only} <span style="font-size: 14px; color: #787b86; font-weight: normal; margin-left: 8px;">${{timeStr}}</span></div>
+                        <div style="font-size: 16px; margin-bottom: 4px;">
+                            <span style="color:#787b86">시가</span> <b style="color:${{color}}">${{o}}</b> &nbsp;&nbsp;
+                            <span style="color:#787b86">고가</span> <b style="color:${{color}}">${{h}}</b> &nbsp;&nbsp;
+                            <span style="color:#787b86">저가</span> <b style="color:${{color}}">${{l}}</b> &nbsp;&nbsp;
+                            <span style="color:#787b86">종가</span> <b style="color:${{color}}">${{c}}</b>
+                        </div>
+                        <div style="font-size: 14px;">
+                            <span style="color:#787b86">거래량</span> <b>${{v}}</b> &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;
+                            <span style="color:#787b86">RSI</span> <b>${{r}}</b>
+                        </div>
+                    `;
+                }}
+            }}
+
+            chart.subscribeCrosshairMove(updateLegend);
+            updateLegend(null); // 초기 렌더링
+        </script>
+        """
+        components.html(html_code, height=620)
         
     except Exception as e:
         st.error(f"차트 렌더링 중 치명적 오류 발생 (서버 확인 필요): {e}")
@@ -219,10 +263,9 @@ def render_research_tab():
         
         selected_rows = df_selected.get('selection', {}).get('rows', [])
         
+        # 다중 선택 로직
         if selected_rows:
             st.markdown("---")
-            
-            # 다중 선택 삭제 로직
             col_title, col_btn = st.columns([8, 2])
             with col_title:
                 st.markdown(f"### ⚙️ 선택 항목 관리 ({len(selected_rows)}개 선택됨)")
@@ -233,7 +276,7 @@ def render_research_tab():
                         delete_db("sector_analysis", "id", row_id)
                     st.rerun()
 
-            # 단 1개만 선택했을 때 리포트 렌더링
+            # 단 1개만 선택했을 때 상세 리포트 렌더링
             if len(selected_rows) == 1:
                 stock_data = df_display.iloc[selected_rows[0]]
                 mcap_str = stock_data['market_cap_formatted']
@@ -245,7 +288,7 @@ def render_research_tab():
                 raw_ticker = stock_data['ticker']
                 ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
                 
-                # 오류 제로의 파이썬 네이티브 차트 호출 (내부에는 유료계정 직행 버튼 포함)
+                # 💡 방금 교체한 무적의 Lightweight Charts 엔진 호출!
                 render_native_chart(ticker_only, is_korean=ticker_only.isdigit())
                 
                 st.markdown("---")
