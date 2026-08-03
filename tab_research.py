@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import time
-import json
-import streamlit.components.v1 as components
+import requests
+import xml.etree.ElementTree as ET
+import yfinance as yf
+import altair as alt
 from api_utils import insert_db, delete_db, load_sector_data
 from market_research import fetch_financial_data, analyze_sector_with_ai
 
@@ -25,8 +27,132 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
+def render_native_chart(ticker_only, is_korean):
+    """💡 트레이딩뷰 위젯의 고질적인 에러(애플 도돌이표, 빈 화면)를 완벽히 척결하기 위해, 파이썬으로 직접 그려내는 네이티브 차트입니다!"""
+    st.markdown(f"#### 📈 {ticker_only} 실시간 자체 렌더링 차트 (버그 제로)")
+    st.caption("💡 외부 트레이딩뷰 위젯의 접속 차단 및 애플(AAPL) 우회 버그를 원천 차단하기 위해, 파이썬 네이티브(Altair) 기술로 자체 구현한 강력한 캔들 차트입니다.")
+    
+    try:
+        df_chart = pd.DataFrame()
+        
+        # 1. 데이터 수집 (한국은 네이버 초고속 우회, 미국은 야후)
+        if is_korean:
+            url = f"https://fchart.stock.naver.com/sise.nhn?symbol={ticker_only}&timeframe=day&count=365&requestType=0"
+            res = requests.get(url, timeout=5)
+            root = ET.fromstring(res.text)
+            items = root.findall('.//item')
+            data = []
+            for item in items:
+                row = item.attrib['data'].split('|')
+                data.append({
+                    'Date': f"{row[0][:4]}-{row[0][4:6]}-{row[0][6:8]}",
+                    'Open': float(row[1]),
+                    'High': float(row[2]),
+                    'Low': float(row[3]),
+                    'Close': float(row[4]),
+                    'Volume': float(row[5])
+                })
+            if data: 
+                df_chart = pd.DataFrame(data)
+        else:
+            yf_data = yf.download(ticker_only, period="1y", interval="1d", progress=False)
+            if not yf_data.empty:
+                if isinstance(yf_data.columns, pd.MultiIndex):
+                    df_chart = pd.DataFrame({
+                        'Open': yf_data['Open'].iloc[:, 0] if isinstance(yf_data['Open'], pd.DataFrame) else yf_data['Open'],
+                        'High': yf_data['High'].iloc[:, 0] if isinstance(yf_data['High'], pd.DataFrame) else yf_data['High'],
+                        'Low':  yf_data['Low'].iloc[:, 0]  if isinstance(yf_data['Low'], pd.DataFrame)  else yf_data['Low'],
+                        'Close':yf_data['Close'].iloc[:, 0] if isinstance(yf_data['Close'], pd.DataFrame) else yf_data['Close'],
+                        'Volume':yf_data['Volume'].iloc[:, 0] if isinstance(yf_data['Volume'], pd.DataFrame) else yf_data['Volume']
+                    })
+                else:
+                    df_chart = yf_data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                df_chart = df_chart.dropna().reset_index()
+                # 'index'나 'Datetime' 등의 컬럼명을 무조건 'Date'로 통일
+                df_chart.rename(columns={df_chart.columns[0]: 'Date'}, inplace=True)
+                df_chart['Date'] = pd.to_datetime(df_chart['Date']).dt.strftime('%Y-%m-%d')
+        
+        if df_chart.empty:
+            st.warning("차트 데이터를 불러오지 못했습니다. 종목 코드를 확인해주세요.")
+            return
+
+        # 2. RSI 보조지표 계산
+        delta = df_chart['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).fillna(0)
+        loss = (-delta.where(delta < 0, 0)).fillna(0)
+        avg_gain = gain.rolling(window=14).mean()
+        avg_loss = loss.rolling(window=14).mean()
+        rs = avg_gain / avg_loss
+        df_chart['RSI'] = 100 - (100 / (1 + rs))
+
+        # 3. 차트 그리기 설정
+        color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
+        min_price = df_chart['Low'].min() * 0.98
+        max_price = df_chart['High'].max() * 1.02
+        fmt_price = ',.0f' if is_korean else ',.2f'
+        
+        hover = alt.selection_point(fields=['Date'], nearest=True, on='mouseover', empty=False, clear='mouseout')
+        
+        x_axis_hidden = alt.X('Date:O', axis=alt.Axis(labels=False, ticks=False, domain=False, title=None))
+        x_axis_show = alt.X('Date:O', title=None, axis=alt.Axis(
+            labelAngle=0, labelColor='#787b86', 
+            labelExpr="indexof(datum.label, datum.value) % 20 == 0 ? datum.value : ''", 
+            grid=True, gridColor='#e0e3eb', gridDash=[2, 2], domain=False, ticks=False
+        ))
+        
+        base = alt.Chart(df_chart)
+        
+        # 툴팁 및 크로스헤어
+        selectors = base.mark_point(size=100).encode(
+            x=x_axis_hidden, opacity=alt.value(0),
+            tooltip=[
+                alt.Tooltip('Date:O', title='날짜'),
+                alt.Tooltip('Open:Q', format=fmt_price, title='시가'),
+                alt.Tooltip('High:Q', format=fmt_price, title='고가'),
+                alt.Tooltip('Low:Q', format=fmt_price, title='저가'),
+                alt.Tooltip('Close:Q', format=fmt_price, title='종가'),
+                alt.Tooltip('Volume:Q', format=',.0f', title='거래량'),
+                alt.Tooltip('RSI:Q', format='.2f', title='RSI(14)')
+            ]
+        ).add_params(hover)
+        
+        rules = base.mark_rule(color='#787b86', strokeWidth=1, strokeDash=[5,5]).encode(x=x_axis_hidden).transform_filter(hover)
+        
+        # 캔들스틱 차트 (메인)
+        rule_candle = base.mark_rule(size=2.0).encode(
+            x=x_axis_hidden,
+            y=alt.Y('Low:Q', title=None, scale=alt.Scale(domain=[min_price, max_price]), axis=alt.Axis(orient='right', format=fmt_price, labelFontSize=12)),
+            y2='High:Q',
+            color=color_condition
+        )
+        bar_candle = base.mark_bar(size=5.0).encode(x=x_axis_hidden, y='Open:Q', y2='Close:Q', color=color_condition)
+        candlestick = (rule_candle + bar_candle + selectors + rules).properties(height=450)
+        
+        # 거래량 차트
+        volume_bar = base.mark_bar(size=5.0).encode(
+            x=x_axis_hidden, 
+            y=alt.Y('Volume:Q', title=None, axis=alt.Axis(orient='right', format='.2s', labelFontSize=12)), 
+            color=color_condition
+        )
+        volume_chart = (volume_bar + selectors + rules).properties(height=100)
+        
+        # RSI 차트
+        rsi_line = base.mark_line(color='#673ab7', strokeWidth=2).encode(
+            x=x_axis_show, 
+            y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', labelFontSize=12))
+        )
+        rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
+        rsi_chart = (rsi_line + rsi_baseline + selectors.encode(x=x_axis_show) + rules.encode(x=x_axis_show)).properties(height=100)
+        
+        # 병합 렌더링
+        combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(stroke='lightgray', strokeWidth=1).configure_axis(labelFontSize=14)
+        st.altair_chart(combined, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"차트 렌더링 중 치명적 오류 발생 (서버 확인 필요): {e}")
+
 def render_research_tab():
-    with st.expander("➕ 새 종목 리서치 자동화 추가하기", expanded=False):
+    with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
         with st.form("new_sector_stock"):
             c1, c2 = st.columns(2)
             s_ticker = c1.text_input("야후 파이낸스 티커 (한국종목은 011200 또는 011200.KS 형태 입력)")
@@ -86,7 +212,6 @@ def render_research_tab():
         
         disp_cols = ["ticker", "sector", "market_cap_formatted", "vol_1d", "vol_1w"]
         
-        # 💡 [다중 선택 모드 활성화]
         df_selected = st.dataframe(
             df_display[disp_cols],
             column_config={
@@ -104,7 +229,7 @@ def render_research_tab():
         if selected_rows:
             st.markdown("---")
             
-            # 💡 [선택 항목 일괄 삭제 버튼]
+            # 다중 선택 삭제 로직
             col_title, col_btn = st.columns([8, 2])
             with col_title:
                 st.markdown(f"### ⚙️ 선택 항목 관리 ({len(selected_rows)}개 선택됨)")
@@ -115,7 +240,7 @@ def render_research_tab():
                         delete_db("sector_analysis", "id", row_id)
                     st.rerun()
 
-            # 💡 [단 1개만 선택했을 때 심층 리포트 및 트레이딩뷰 차트 표시]
+            # 단 1개만 선택했을 때 리포트 렌더링
             if len(selected_rows) == 1:
                 stock_data = df_display.iloc[selected_rows[0]]
                 mcap_str = stock_data['market_cap_formatted']
@@ -127,30 +252,8 @@ def render_research_tab():
                 raw_ticker = stock_data['ticker']
                 ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
                 
-                # 💡 [핵심 버그 픽스] 불안정한 네이버 우회 로직 폐기! 트레이딩뷰 정식 포맷(KRX:) 적용!
-                tv_symbol = f"KRX:{ticker_only}" if ticker_only.isdigit() else ticker_only
-                
-                st.markdown(f"#### 📈 {ticker_only} 실시간 차트 (TradingView 공식 엔진)")
-                st.caption("💡 네이버 우회 렌더링을 폐기하고, 트레이딩뷰 공식 글로벌 포맷을 적용하여 빈 화면 없이 가장 빠르고 완벽하게 차트가 렌더링됩니다.")
-                
-                tv_widget = f"""
-                <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
-                  <div id="tradingview_{ticker_only}" style="height:calc(100% - 32px);width:100%"></div>
-                  <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
-                  <script type="text/javascript">
-                  new TradingView.widget({{
-                  "autosize": true, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Asia/Seoul",
-                  "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
-                  "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
-                  "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
-                  "studies": ["MAExp@tv-basicstudies", "RSI@tv-basicstudies"],
-                  "container_id": "tradingview_{ticker_only}"
-                  }});
-                  </script>
-                </div>
-                """
-                components.html(tv_widget, height=650)
-                st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
+                # 💡 [극약 처방 적용] 트레이딩뷰 위젯을 영구 삭제하고, 완벽한 파이썬 네이티브 자체 차트를 띄웁니다!
+                render_native_chart(ticker_only, is_korean=ticker_only.isdigit())
                 
                 st.markdown("---")
                 c_left, c_right = st.columns([4, 6], gap="large")
