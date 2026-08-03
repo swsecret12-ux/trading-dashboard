@@ -25,60 +25,8 @@ def format_mcap_krw(usd_val):
     except:
         return usd_val
 
-def draw_korean_chart(ticker_only):
-    """💡 트레이딩뷰 위젯의 한국 주식(KRX) 차단 정책을 우회하기 위해, 트레이딩뷰 공식 Lightweight Charts 엔진에 네이버 데이터를 강제로 주입합니다!"""
-    import requests
-    import xml.etree.ElementTree as ET
-    
-    st.markdown(f"#### 📈 {ticker_only} 실시간 차트 (TradingView 엔진 우회 렌더링)")
-    st.caption("💡 트레이딩뷰의 한국 주식(KRX) 위젯 차단 정책을 우회하기 위해, 트레이딩뷰 공식 라이브러리에 네이버 실시간 데이터를 직결했습니다! (마우스 드래그 및 줌 가능)")
-    
-    try:
-        # 네이버 금융 XML 데이터 파싱
-        url = f"https://fchart.stock.naver.com/sise.nhn?symbol={ticker_only}&timeframe=day&count=300&requestType=0"
-        res = requests.get(url)
-        root = ET.fromstring(res.text)
-        
-        candle_data = []
-        for item in root.findall('.//item'):
-            row = item.attrib['data'].split('|')
-            # 트레이딩뷰 엔진이 요구하는 YYYY-MM-DD 포맷 변환
-            candle_data.append({
-                "time": f"{row[0][:4]}-{row[0][4:6]}-{row[0][6:8]}",
-                "open": float(row[1]),
-                "high": float(row[2]),
-                "low": float(row[3]),
-                "close": float(row[4])
-            })
-            
-        json_data = json.dumps(candle_data)
-        
-        # 순수 HTML + JS 코드 (트레이딩뷰 라이브러리 주입)
-        html_code = f"""
-        <div id="tv_chart_{ticker_only}" style="width: 100%; height: 500px; border: 1px solid #e2e8f0; border-radius: 8px;"></div>
-        <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-        <script>
-            const chart = LightweightCharts.createChart(document.getElementById('tv_chart_{ticker_only}'), {{
-                layout: {{ textColor: '#191919', background: {{ type: 'solid', color: '#ffffff' }} }},
-                grid: {{ vertLines: {{ color: '#f0f3fa' }}, horzLines: {{ color: '#f0f3fa' }} }},
-                crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
-                rightPriceScale: {{ borderColor: '#e0e3eb' }},
-                timeScale: {{ borderColor: '#e0e3eb', timeVisible: true }}
-            }});
-            const candleSeries = chart.addCandlestickSeries({{
-                upColor: '#089981', downColor: '#f23645', borderVisible: false,
-                wickUpColor: '#089981', wickDownColor: '#f23645'
-            }});
-            candleSeries.setData({json_data});
-            chart.timeScale().fitContent();
-        </script>
-        """
-        components.html(html_code, height=520)
-    except Exception as e:
-        st.error(f"차트 렌더링 중 오류 발생: {e}")
-
 def render_research_tab():
-    with st.expander("➕ 새 종목 리서치 자동화 추가하기"):
+    with st.expander("➕ 새 종목 리서치 자동화 추가하기", expanded=False):
         with st.form("new_sector_stock"):
             c1, c2 = st.columns(2)
             s_ticker = c1.text_input("야후 파이낸스 티커 (한국종목은 011200 또는 011200.KS 형태 입력)")
@@ -137,6 +85,8 @@ def render_research_tab():
         df_display['market_cap_formatted'] = df_display['market_cap'].apply(lambda x: format_mcap_krw(float(x)) if pd.notna(x) and str(x).replace('.','',1).isdigit() else x)
         
         disp_cols = ["ticker", "sector", "market_cap_formatted", "vol_1d", "vol_1w"]
+        
+        # 💡 [다중 선택 모드 활성화]
         df_selected = st.dataframe(
             df_display[disp_cols],
             column_config={
@@ -146,39 +96,50 @@ def render_research_tab():
                 "vol_1d": "EMA 크로스 (4H/1D)", 
                 "vol_1w": "크로스 발생일"
             },
-            use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row"
+            use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row"
         )
         
-        if df_selected.get('selection', {}).get('rows', []):
-            st.divider()
-            stock_data = df_sector.iloc[df_selected['selection']['rows'][0]]
-            s_id = stock_data['id']
-            mcap_str = format_mcap_krw(float(stock_data['market_cap'])) if pd.notna(stock_data['market_cap']) and str(stock_data['market_cap']).replace('.','',1).isdigit() else stock_data['market_cap']
+        selected_rows = df_selected.get('selection', {}).get('rows', [])
+        
+        if selected_rows:
+            st.markdown("---")
             
-            col_st1, col_st2 = st.columns([8, 2])
-            with col_st1:
+            # 💡 [선택 항목 일괄 삭제 버튼]
+            col_title, col_btn = st.columns([8, 2])
+            with col_title:
+                st.markdown(f"### ⚙️ 선택 항목 관리 ({len(selected_rows)}개 선택됨)")
+            with col_btn:
+                if st.button("🗑️ 선택 항목 일괄 삭제", type="primary", use_container_width=True):
+                    for idx in selected_rows:
+                        row_id = df_display.iloc[idx]["id"]
+                        delete_db("sector_analysis", "id", row_id)
+                    st.rerun()
+
+            # 💡 [단 1개만 선택했을 때 심층 리포트 및 트레이딩뷰 차트 표시]
+            if len(selected_rows) == 1:
+                stock_data = df_display.iloc[selected_rows[0]]
+                mcap_str = stock_data['market_cap_formatted']
+                
+                st.markdown("---")
                 st.markdown(f"## 🏢 {stock_data['ticker']} 심층 리서치 리포트")
                 st.caption(f"섹터: {stock_data['sector']} | 시총: {mcap_str}")
-            with col_st2:
-                if st.button("🗑️ 삭제", type="primary", use_container_width=True): 
-                    delete_db("sector_analysis", "id", s_id)
-                    st.rerun()
-            
-            raw_ticker = stock_data['ticker']
-            ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
-            
-            # 💡 핵심 로직: 한국 주식(숫자)이면 우리가 해킹한 Lightweight 차트를, 미국 주식이면 원래 트뷰 위젯을 띄웁니다!
-            if ticker_only.isdigit():
-                draw_korean_chart(ticker_only)
-            else:
-                st.markdown(f"#### 📈 {stock_data['ticker']} 실시간 차트 (TradingView)")
+                
+                raw_ticker = stock_data['ticker']
+                ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
+                
+                # 💡 [핵심 버그 픽스] 불안정한 네이버 우회 로직 폐기! 트레이딩뷰 정식 포맷(KRX:) 적용!
+                tv_symbol = f"KRX:{ticker_only}" if ticker_only.isdigit() else ticker_only
+                
+                st.markdown(f"#### 📈 {ticker_only} 실시간 차트 (TradingView 공식 엔진)")
+                st.caption("💡 네이버 우회 렌더링을 폐기하고, 트레이딩뷰 공식 글로벌 포맷을 적용하여 빈 화면 없이 가장 빠르고 완벽하게 차트가 렌더링됩니다.")
+                
                 tv_widget = f"""
                 <div class="tradingview-widget-container" style="height:650px;width:100%; margin-bottom: 20px;">
                   <div id="tradingview_{ticker_only}" style="height:calc(100% - 32px);width:100%"></div>
                   <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
                   <script type="text/javascript">
                   new TradingView.widget({{
-                  "autosize": true, "symbol": "{ticker_only}", "interval": "D", "timezone": "Etc/UTC",
+                  "autosize": true, "symbol": "{tv_symbol}", "interval": "D", "timezone": "Asia/Seoul",
                   "theme": "light", "style": "1", "locale": "kr", "enable_publishing": false,
                   "backgroundColor": "rgba(255, 255, 255, 1)", "gridColor": "rgba(240, 243, 250, 0)",
                   "hide_top_toolbar": false, "hide_legend": false, "save_image": false,
@@ -190,14 +151,16 @@ def render_research_tab():
                 """
                 components.html(tv_widget, height=650)
                 st.caption("💡 팁: 차트 상단 톱니바퀴 버튼을 눌러 EMA(지수이동평균)와 RSI의 설정을 입맛대로 변경하세요!")
-            
-            st.markdown("---")
-            c_left, c_right = st.columns([4, 6], gap="large")
-            with c_left:
-                st.markdown(stock_data['issue'], unsafe_allow_html=True)
-                with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (출처 명확 표기)", expanded=False):
-                    st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
-            with c_right:
-                if stock_data.get('ai_analysis'):
-                    st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트 (비판적 시각 적용)")
-                    st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
+                
+                st.markdown("---")
+                c_left, c_right = st.columns([4, 6], gap="large")
+                with c_left:
+                    st.markdown(stock_data['issue'], unsafe_allow_html=True)
+                    with st.expander("📰 구글 기반 글로벌 핵심 뉴스 (출처 명확 표기)", expanded=False):
+                        st.write(stock_data.get('detail_data', '수집된 뉴스가 없습니다.'))
+                with c_right:
+                    if stock_data.get('ai_analysis'):
+                        st.markdown("#### 🤖 AI 월스트리트 애널리스트 심층 리포트 (비판적 시각 적용)")
+                        st.markdown(stock_data['ai_analysis'], unsafe_allow_html=True)
+            else:
+                st.info("💡 하단의 상세 리포트와 차트를 보려면 표에서 **단 1개의 종목만** 체크해주세요.")
