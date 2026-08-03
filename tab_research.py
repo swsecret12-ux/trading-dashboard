@@ -28,14 +28,18 @@ def format_mcap_krw(usd_val):
         return usd_val
 
 def render_native_chart(ticker_only, is_korean):
-    """💡 트레이딩뷰 위젯의 고질적인 에러(애플 도돌이표, 빈 화면)를 완벽히 척결하기 위해, 파이썬으로 직접 그려내는 네이티브 차트입니다!"""
-    st.markdown(f"#### 📈 {ticker_only} 실시간 자체 렌더링 차트 (버그 제로)")
-    st.caption("💡 외부 트레이딩뷰 위젯의 접속 차단 및 애플(AAPL) 우회 버그를 원천 차단하기 위해, 파이썬 네이티브(Altair) 기술로 자체 구현한 강력한 캔들 차트입니다.")
+    st.markdown(f"#### 📈 {ticker_only} 실시간 자체 렌더링 차트")
+    st.caption("💡 대시보드 내에서는 딜레이나 끊김이 없는 자체 차트로 흐름을 빠르게 파악하세요.")
+    
+    # 💡 유료 사용자를 위한 특급 솔루션: 진짜 트레이딩뷰 다이렉트 브릿지 버튼!
+    tv_symbol = f"KRX:{ticker_only}" if is_korean else ticker_only
+    tv_url = f"https://www.tradingview.com/chart/?symbol={tv_symbol}"
+    st.link_button(f"🚀 내 유료 트레이딩뷰(Pro) 계정에서 [{ticker_only}] 정밀 차트 열기 (작도/지표 완벽 연동)", tv_url, type="primary", use_container_width=True)
+    st.write("") # 간격 띄우기
     
     try:
         df_chart = pd.DataFrame()
         
-        # 1. 데이터 수집 (한국은 네이버 초고속 우회, 미국은 야후)
         if is_korean:
             url = f"https://fchart.stock.naver.com/sise.nhn?symbol={ticker_only}&timeframe=day&count=365&requestType=0"
             res = requests.get(url, timeout=5)
@@ -68,7 +72,6 @@ def render_native_chart(ticker_only, is_korean):
                 else:
                     df_chart = yf_data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
                 df_chart = df_chart.dropna().reset_index()
-                # 'index'나 'Datetime' 등의 컬럼명을 무조건 'Date'로 통일
                 df_chart.rename(columns={df_chart.columns[0]: 'Date'}, inplace=True)
                 df_chart['Date'] = pd.to_datetime(df_chart['Date']).dt.strftime('%Y-%m-%d')
         
@@ -76,7 +79,6 @@ def render_native_chart(ticker_only, is_korean):
             st.warning("차트 데이터를 불러오지 못했습니다. 종목 코드를 확인해주세요.")
             return
 
-        # 2. RSI 보조지표 계산
         delta = df_chart['Close'].diff()
         gain = (delta.where(delta > 0, 0)).fillna(0)
         loss = (-delta.where(delta < 0, 0)).fillna(0)
@@ -85,7 +87,6 @@ def render_native_chart(ticker_only, is_korean):
         rs = avg_gain / avg_loss
         df_chart['RSI'] = 100 - (100 / (1 + rs))
 
-        # 3. 차트 그리기 설정
         color_condition = alt.condition("datum.Open <= datum.Close", alt.value("#089981"), alt.value("#f23645"))
         min_price = df_chart['Low'].min() * 0.98
         max_price = df_chart['High'].max() * 1.02
@@ -102,7 +103,6 @@ def render_native_chart(ticker_only, is_korean):
         
         base = alt.Chart(df_chart)
         
-        # 툴팁 및 크로스헤어
         selectors = base.mark_point(size=100).encode(
             x=x_axis_hidden, opacity=alt.value(0),
             tooltip=[
@@ -118,7 +118,6 @@ def render_native_chart(ticker_only, is_korean):
         
         rules = base.mark_rule(color='#787b86', strokeWidth=1, strokeDash=[5,5]).encode(x=x_axis_hidden).transform_filter(hover)
         
-        # 캔들스틱 차트 (메인)
         rule_candle = base.mark_rule(size=2.0).encode(
             x=x_axis_hidden,
             y=alt.Y('Low:Q', title=None, scale=alt.Scale(domain=[min_price, max_price]), axis=alt.Axis(orient='right', format=fmt_price, labelFontSize=12)),
@@ -128,7 +127,6 @@ def render_native_chart(ticker_only, is_korean):
         bar_candle = base.mark_bar(size=5.0).encode(x=x_axis_hidden, y='Open:Q', y2='Close:Q', color=color_condition)
         candlestick = (rule_candle + bar_candle + selectors + rules).properties(height=450)
         
-        # 거래량 차트
         volume_bar = base.mark_bar(size=5.0).encode(
             x=x_axis_hidden, 
             y=alt.Y('Volume:Q', title=None, axis=alt.Axis(orient='right', format='.2s', labelFontSize=12)), 
@@ -136,7 +134,6 @@ def render_native_chart(ticker_only, is_korean):
         )
         volume_chart = (volume_bar + selectors + rules).properties(height=100)
         
-        # RSI 차트
         rsi_line = base.mark_line(color='#673ab7', strokeWidth=2).encode(
             x=x_axis_show, 
             y=alt.Y('RSI:Q', title='RSI', scale=alt.Scale(domain=[0, 100]), axis=alt.Axis(orient='right', labelFontSize=12))
@@ -144,7 +141,6 @@ def render_native_chart(ticker_only, is_korean):
         rsi_baseline = alt.Chart(pd.DataFrame({'y': [30, 70]})).mark_rule(strokeDash=[5,5], color='gray').encode(y='y')
         rsi_chart = (rsi_line + rsi_baseline + selectors.encode(x=x_axis_show) + rules.encode(x=x_axis_show)).properties(height=100)
         
-        # 병합 렌더링
         combined = alt.vconcat(candlestick, volume_chart, rsi_chart, spacing=0).resolve_scale(x='shared').configure_view(stroke='lightgray', strokeWidth=1).configure_axis(labelFontSize=14)
         st.altair_chart(combined, use_container_width=True)
         
@@ -252,7 +248,7 @@ def render_research_tab():
                 raw_ticker = stock_data['ticker']
                 ticker_only = raw_ticker.split(' ')[0].replace('.KS', '').replace('.KQ', '')
                 
-                # 💡 [극약 처방 적용] 트레이딩뷰 위젯을 영구 삭제하고, 완벽한 파이썬 네이티브 자체 차트를 띄웁니다!
+                # 오류 제로의 파이썬 네이티브 차트 호출 (내부에는 유료계정 직행 버튼 포함)
                 render_native_chart(ticker_only, is_korean=ticker_only.isdigit())
                 
                 st.markdown("---")
