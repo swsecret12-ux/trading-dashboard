@@ -6,12 +6,14 @@ services:
     startCommand: python mcp_server.py
     autoDeploy: true
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
       - key: MCP_AUTH_MODE
         value: github
       - key: MCP_BASE_URL
         sync: false
       - key: MCP_ALLOWED_GITHUB_LOGIN
-        value: swsecret12-ux
+        sync: false
       - key: MCP_JWT_SIGNING_KEY
         generateValue: true
       - key: GITHUB_CLIENT_ID

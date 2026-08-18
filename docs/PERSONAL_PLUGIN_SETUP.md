@@ -7,7 +7,7 @@
 
 1. ChatGPT가 공개 HTTPS 주소의 `/mcp`로 필요한 조회 도구를 호출합니다.
 2. MCP 서버가 GitHub OAuth 로그인을 요구합니다.
-3. 로그인 계정이 `MCP_ALLOWED_GITHUB_LOGIN`과 일치할 때만 Supabase 데이터를 읽습니다.
+3. 로그인 계정이 배포 환경의 `MCP_ALLOWED_GITHUB_LOGIN`과 일치할 때만 Supabase 데이터를 읽습니다.
 4. 반환된 기록은 현재 ChatGPT 대화 모델이 분석합니다.
 
 MCP 서버에는 쓰기·삭제·주문 기능이 없습니다. `bot.py`도 가져오거나 호출하지 않습니다.
@@ -49,28 +49,53 @@ Secrets에 복사하지 않습니다.
 |---|---|
 | `MCP_AUTH_MODE` | `github` |
 | `MCP_BASE_URL` | 배포 서비스의 기본 HTTPS 주소. `/mcp` 제외 |
-| `MCP_ALLOWED_GITHUB_LOGIN` | `swsecret12-ux` |
+| `MCP_ALLOWED_GITHUB_LOGIN` | 접속을 허용할 본인의 GitHub 로그인 이름 |
 | `MCP_JWT_SIGNING_KEY` | 충분히 긴 임의 문자열. 배포 서비스에서 생성 |
 | `GITHUB_CLIENT_ID` | GitHub OAuth 앱의 Client ID |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth 앱의 Client Secret |
 | `SUPABASE_URL` | 현재 Streamlit Secrets와 같은 프로젝트 URL |
 | `SUPABASE_PUBLISHABLE_KEY` | 현재 공개/anon 키. 가능하면 최신 publishable key 사용 |
+| `SUPABASE_DATA_TOKEN` | 선택 사항. 별도 읽기 전용 RLS 역할의 JWT를 사용할 때 설정 |
 
 배포 서비스의 기본 주소가 결정되면 GitHub OAuth 앱의 Homepage와 callback URL을 그
 주소로 다시 확인해야 합니다. Supabase 프로젝트가 일시중지 상태라면 먼저 프로젝트를
 정상 상태로 복구해야 조회가 됩니다.
 
+`render.yaml`은 MCP 서비스에 Python 3.13.5를 지정하고, 사용자 로그인 이름과 모든
+비밀정보는 Render 환경변수로만 받습니다. `requirements-mcp.txt`는 MCP 서버에 필요한
+패키지만 고정 버전으로 설치하므로 기존 Streamlit 대시보드의 `requirements.txt`와
+독립적입니다.
+
+### Supabase 읽기 전용 권한 권고
+
+코드 자체는 허용된 테이블과 컬럼에 대한 HTTP GET 요청만 만들지만, 운영 환경에서는
+데이터베이스 권한도 별도로 제한하는 것이 안전합니다. 기존 대시보드가 같은 anon 역할로
+쓰기 작업을 사용한다면 그 역할의 쓰기 정책을 제거하면 대시보드가 손상됩니다. 대신 MCP
+전용 Postgres/RLS 읽기 역할과 JWT를 발급해 `SUPABASE_DATA_TOKEN`에 넣고, 다음 네 테이블의
+SELECT만 허용하세요.
+
+- `trade_history`
+- `analysis_archive`
+- `sector_analysis`
+- `theory_db`
+
+MCP 전용 역할에는 INSERT, UPDATE, DELETE 및 Storage 쓰기 권한을 주지 않습니다. JWT와
+Supabase 서명 비밀은 저장소에 커밋하지 말고 Render 환경변수에만 저장합니다.
+
 ## 3. ChatGPT에 연결
 
-ChatGPT에서 **Settings → Apps & Connectors → Advanced settings → Developer mode**를
-활성화한 뒤, **Plugins**의 추가 버튼에서 다음 주소를 입력합니다.
+ChatGPT에서 **Settings → Security and login → Developer mode**를 활성화합니다. 계정이나
+워크스페이스 정책에 따라 Developer mode가 보이지 않을 수 있습니다. 그다음
+[ChatGPT Plugins](https://chatgpt.com/plugins)의 추가 버튼에서 표시 이름과 설명을 입력하고,
+Connection에 다음 MCP 서버 주소를 입력합니다.
 
 ```text
 https://배포한-주소.example.com/mcp
 ```
 
-GitHub 로그인 화면이 열리면 허용된 계정으로 승인합니다. 이후 Work 대화에서 플러그인을
-선택하거나 `@`로 호출할 수 있습니다.
+연결을 만들 때 검색된 도구 이름, 설명, 입력 스키마와 읽기 전용 표시를 확인합니다. GitHub
+로그인 화면이 열리면 허용된 계정으로 승인합니다. 이후 개인 Plugins 목록에서 설치한 뒤
+새 Work 대화에서 `@`를 입력해 플러그인을 선택할 수 있습니다.
 
 예시 질문:
 
@@ -88,6 +113,10 @@ python -m venv .venv
 pip install -r requirements-mcp.txt
 python -m unittest discover -s tests -v
 ```
+
+Windows PowerShell에서는 활성화 명령으로 `.\.venv\Scripts\Activate.ps1`을 사용합니다.
+배포 전에 MCP Inspector에서 Streamable HTTP 주소 `http://localhost:8000/mcp`를 열어 도구
+검색, 인증 실패, 정상 호출과 빈 결과를 각각 확인하는 것도 권장합니다.
 
 로컬 HTTP 테스트에는 `MCP_AUTH_MODE=static`과 24자 이상의 `MCP_STATIC_TOKEN`을 사용할
 수 있지만, 인터넷에 공개되는 배포 환경에서는 반드시 `github` 모드를 사용합니다.

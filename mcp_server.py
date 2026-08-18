@@ -12,7 +12,7 @@ from fastmcp.server.auth.providers.github import GitHubProvider
 from fastmcp.server.dependencies import get_access_token
 
 from mcp_trading import SupabaseReadClient, get_market_snapshot as load_market_snapshot
-from mcp_trading.data import clamp_limit
+from mcp_trading.data import clamp_limit, normalize_filter
 from theory_data import get_base_theory_dict
 
 
@@ -176,14 +176,17 @@ def create_server() -> FastMCP:
         for item in data_client().list_custom_theories():
             records.append({"source": "custom", **item})
 
-        if category and category.strip():
-            term = category.strip().casefold()
+        category = normalize_filter(category)
+        title = normalize_filter(title)
+        query = normalize_filter(query)
+        if category:
+            term = category.casefold()
             records = [x for x in records if term in str(x.get("category", "")).casefold()]
-        if title and title.strip():
-            term = title.strip().casefold()
+        if title:
+            term = title.casefold()
             records = [x for x in records if term in str(x.get("title", "")).casefold()]
-        if query and query.strip():
-            term = query.strip()[:100].casefold()
+        if query:
+            term = query.casefold()
             records = [
                 x
                 for x in records

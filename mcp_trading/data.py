@@ -10,12 +10,53 @@ from typing import Any
 import requests
 
 
-ALLOWED_TABLES = {
-    "trade_history",
-    "analysis_archive",
-    "sector_analysis",
-    "theory_db",
+ALLOWED_COLUMNS = {
+    "trade_history": {
+        "id",
+        "date",
+        "ticker",
+        "timeframe",
+        "setup_pattern",
+        "position",
+        "result",
+        "rr_ratio",
+        "profit",
+        "entry_basis",
+        "exit_basis",
+        "chart_image_paths",
+        "created_at",
+    },
+    "analysis_archive": {
+        "id",
+        "date",
+        "ticker",
+        "category",
+        "source_view",
+        "chart_image_paths",
+        "detail_image_paths",
+        "memo",
+        "ai_advice_mapping",
+        "ocr_text_mapping",
+        "created_at",
+    },
+    "sector_analysis": {
+        "id",
+        "ticker",
+        "sector",
+        "market_cap",
+        "vol_1d",
+        "vol_1w",
+        "vol_1m",
+        "vol_1q",
+        "vol_1y",
+        "issue",
+        "detail_data",
+        "ai_analysis",
+        "created_at",
+    },
+    "theory_db": {"id", "category", "title", "content", "image_paths"},
 }
+ALLOWED_TABLES = frozenset(ALLOWED_COLUMNS)
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 TICKER_RE = re.compile(r"^[A-Za-z0-9.^=_:/-]{1,32}$")
 
@@ -35,6 +76,14 @@ def validate_ticker(ticker: str | None) -> str | None:
     if not TICKER_RE.fullmatch(value):
         raise ValueError("종목 기호 형식이 올바르지 않습니다.")
     return value
+
+
+def normalize_filter(value: str | None, maximum: int = 100) -> str | None:
+    """Normalize optional human-entered filters and bound local scan work."""
+    if value is None:
+        return None
+    normalized = " ".join(str(value).split())
+    return normalized[:maximum] or None
 
 
 def _contains(value: Any, query: str) -> bool:
@@ -87,6 +136,14 @@ class SupabaseReadClient:
     def _get(self, table: str, params: dict[str, str]) -> list[dict[str, Any]]:
         if table not in ALLOWED_TABLES:
             raise ValueError("허용되지 않은 데이터 테이블입니다.")
+        selected = params.get("select", "")
+        selected_columns = {column.strip() for column in selected.split(",")}
+        if (
+            not selected
+            or "*" in selected_columns
+            or not selected_columns.issubset(ALLOWED_COLUMNS[table])
+        ):
+            raise ValueError("허용되지 않은 데이터 컬럼입니다.")
         try:
             response = self.session.get(
                 f"{self.url}/rest/v1/{table}",
@@ -102,7 +159,9 @@ class SupabaseReadClient:
             ) from exc
         except ValueError as exc:
             raise RuntimeError("저장 데이터 응답 형식이 올바르지 않습니다.") from exc
-        if not isinstance(payload, list):
+        if not isinstance(payload, list) or not all(
+            isinstance(row, dict) for row in payload
+        ):
             raise RuntimeError("저장 데이터 응답 형식이 올바르지 않습니다.")
         return payload
 
@@ -130,6 +189,7 @@ class SupabaseReadClient:
     ) -> list[dict[str, Any]]:
         requested = clamp_limit(limit)
         ticker = validate_ticker(ticker)
+        result = normalize_filter(result)
         params = {
             "select": (
                 "id,date,ticker,timeframe,setup_pattern,position,result,rr_ratio,"
@@ -141,8 +201,8 @@ class SupabaseReadClient:
         if ticker:
             params["ticker"] = f"eq.{ticker}"
         rows = self._get("trade_history", params)
-        if result and result.strip():
-            rows = [row for row in rows if _contains(row.get("result"), result.strip())]
+        if result:
+            rows = [row for row in rows if _contains(row.get("result"), result)]
         return rows[:requested]
 
     def get_trade_detail(self, trade_id: str | int) -> dict[str, Any] | None:
@@ -151,7 +211,14 @@ class SupabaseReadClient:
             raise ValueError("매매 기록 ID 형식이 올바르지 않습니다.")
         rows = self._get(
             "trade_history",
-            {"select": "*", "id": f"eq.{value}", "limit": "1"},
+            {
+                "select": (
+                    "id,date,ticker,timeframe,setup_pattern,position,result,rr_ratio,"
+                    "profit,entry_basis,exit_basis,chart_image_paths,created_at"
+                ),
+                "id": f"eq.{value}",
+                "limit": "1",
+            },
         )
         return rows[0] if rows else None
 
@@ -164,6 +231,8 @@ class SupabaseReadClient:
     ) -> list[dict[str, Any]]:
         requested = clamp_limit(limit)
         ticker = validate_ticker(ticker)
+        query = normalize_filter(query)
+        category = normalize_filter(category)
         params = {
             "select": (
                 "id,date,ticker,category,source_view,chart_image_paths,"
@@ -175,12 +244,15 @@ class SupabaseReadClient:
         if ticker:
             params["ticker"] = f"eq.{ticker}"
         rows = self._get("analysis_archive", params)
-        if category and category.strip():
-            rows = [row for row in rows if _contains(row.get("category"), category.strip())]
-        if query and query.strip():
-            term = query.strip()[:100]
+        if category:
+            rows = [row for row in rows if _contains(row.get("category"), category)]
+        if query:
             searchable = ("ticker", "category", "source_view", "memo", "ocr_text_mapping")
-            rows = [row for row in rows if any(_contains(row.get(key), term) for key in searchable)]
+            rows = [
+                row
+                for row in rows
+                if any(_contains(row.get(key), query) for key in searchable)
+            ]
         return rows[:requested]
 
     def list_watchlist(
@@ -208,16 +280,20 @@ class SupabaseReadClient:
     ) -> list[dict[str, Any]]:
         requested = clamp_limit(limit)
         ticker = validate_ticker(ticker)
+        sector = normalize_filter(sector)
         params = {
-            "select": "*",
+            "select": (
+                "id,ticker,sector,market_cap,vol_1d,vol_1w,vol_1m,vol_1q,vol_1y,"
+                "issue,detail_data,ai_analysis,created_at"
+            ),
             "order": "created_at.desc",
             "limit": str(50 if sector else requested),
         }
         if ticker:
             params["ticker"] = f"eq.{ticker}"
         rows = self._get("sector_analysis", params)
-        if sector and sector.strip():
-            rows = [row for row in rows if _contains(row.get("sector"), sector.strip())]
+        if sector:
+            rows = [row for row in rows if _contains(row.get("sector"), sector)]
         return rows[:requested]
 
     def list_custom_theories(self, limit: int = 50) -> list[dict[str, Any]]:

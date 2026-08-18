@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("MCP_AUTH_MODE", "static")
 os.environ.setdefault("MCP_STATIC_TOKEN", "local-test-token-at-least-24-characters")
-os.environ.setdefault("MCP_ALLOWED_GITHUB_LOGIN", "swsecret12-ux")
+os.environ.setdefault("MCP_ALLOWED_GITHUB_LOGIN", "test-owner")
 
 import mcp_server
 
@@ -12,13 +12,13 @@ import mcp_server
 class AuthTest(unittest.TestCase):
     def test_allowed_login(self):
         self.assertEqual(
-            mcp_server.authorize_claims({"login": "swsecret12-ux"}, "swsecret12-ux"),
-            "swsecret12-ux",
+            mcp_server.authorize_claims({"login": "test-owner"}, "test-owner"),
+            "test-owner",
         )
 
     def test_other_login_is_denied(self):
         with self.assertRaises(PermissionError):
-            mcp_server.authorize_claims({"login": "someone-else"}, "swsecret12-ux")
+            mcp_server.authorize_claims({"login": "someone-else"}, "test-owner")
 
     def test_missing_production_secret_fails_closed(self):
         with patch.dict(os.environ, {"MCP_AUTH_MODE": "github"}, clear=True):
