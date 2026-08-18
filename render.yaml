@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: youngwoo-trading-mcp
+    runtime: python
+    buildCommand: pip install -r requirements-mcp.txt
+    startCommand: python mcp_server.py
+    autoDeploy: true
+    envVars:
+      - key: MCP_AUTH_MODE
+        value: github
+      - key: MCP_BASE_URL
+        sync: false
+      - key: MCP_ALLOWED_GITHUB_LOGIN
+        value: swsecret12-ux
+      - key: MCP_JWT_SIGNING_KEY
+        generateValue: true
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
