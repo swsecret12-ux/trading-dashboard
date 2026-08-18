@@ -33,7 +33,7 @@ GitHub의 **Settings → Developer settings → OAuth Apps → New OAuth App**�
 설정합니다.
 
 - Homepage URL: 배포 서비스의 기본 주소. 예: `https://youngwoo-trading-mcp.example.com`
-- Authorization callback URL: 기본 주소 뒤에 `/auth/callback`을 붙인 주소
+- Authorization callback URL: 기본 주소 뒤에 `/oauth/auth/callback`을 붙인 주소
 
 발급된 Client ID와 Client Secret은 아래 배포 환경변수에만 넣습니다. 저장소나 Streamlit
 Secrets에 복사하지 않습니다.
@@ -65,6 +65,10 @@ Secrets에 복사하지 않습니다.
 비밀정보는 Render 환경변수로만 받습니다. `requirements-mcp.txt`는 MCP 서버에 필요한
 패키지만 고정 버전으로 설치하므로 기존 Streamlit 대시보드의 `requirements.txt`와
 독립적입니다.
+
+OAuth의 자동 클라이언트 등록·로그인·콜백 경로는 호스팅 서비스와의 루트 경로 충돌을
+피하기 위해 `/oauth/*` 아래에서 제공됩니다. ChatGPT에 입력하는 MCP 주소는 계속
+`https://배포한-주소/mcp`이며 변경되지 않습니다.
 
 ### Supabase 읽기 전용 권한 권고
 

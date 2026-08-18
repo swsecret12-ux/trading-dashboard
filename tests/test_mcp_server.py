@@ -25,6 +25,49 @@ class AuthTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 mcp_server.build_auth()
 
+    def test_github_oauth_uses_prefixed_operational_routes(self):
+        env = {
+            "MCP_AUTH_MODE": "github",
+            "MCP_BASE_URL": "https://example.test",
+            "MCP_ALLOWED_GITHUB_LOGIN": "test-owner",
+            "MCP_JWT_SIGNING_KEY": "test-signing-key-at-least-24-characters",
+            "GITHUB_CLIENT_ID": "test-client-id",
+            "GITHUB_CLIENT_SECRET": "test-client-secret",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            auth = mcp_server.build_auth()
+
+        self.assertEqual(str(auth.base_url).rstrip("/"), "https://example.test/oauth")
+        self.assertEqual(
+            str(auth.resource_base_url).rstrip("/"), "https://example.test"
+        )
+        self.assertEqual(str(auth.issuer_url).rstrip("/"), "https://example.test")
+
+    def test_oauth_prefix_is_rewritten_for_the_inner_app(self):
+        captured = {}
+
+        async def inner(scope, receive, send):
+            captured.update(scope)
+
+        middleware = mcp_server.OAuthPrefixMiddleware(inner)
+
+        async def exercise():
+            await middleware(
+                {
+                    "type": "http",
+                    "path": "/oauth/register",
+                    "raw_path": b"/oauth/register",
+                },
+                None,
+                None,
+            )
+
+        import asyncio
+
+        asyncio.run(exercise())
+        self.assertEqual(captured["path"], "/register")
+        self.assertEqual(captured["raw_path"], b"/register")
+
 
 class ToolContractTest(unittest.IsolatedAsyncioTestCase):
     async def test_all_tools_are_read_only(self):
