@@ -72,11 +72,14 @@ class AuthTest(unittest.TestCase):
 class ToolContractTest(unittest.IsolatedAsyncioTestCase):
     async def test_all_tools_are_read_only(self):
         tools = await mcp_server.mcp.list_tools()
-        self.assertEqual(len(tools), 9)
+        self.assertEqual(len(tools), 10)
         self.assertTrue(all(tool.annotations.readOnlyHint for tool in tools))
         self.assertTrue(all(not tool.annotations.destructiveHint for tool in tools))
         open_world = {tool.name for tool in tools if tool.annotations.openWorldHint}
-        self.assertEqual(open_world, {"get_market_snapshot"})
+        self.assertEqual(
+            open_world,
+            {"get_market_snapshot", "get_chart_analysis_context"},
+        )
 
 
 if __name__ == "__main__":
